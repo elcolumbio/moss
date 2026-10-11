@@ -47,6 +47,7 @@ except Exception:  # noqa: BLE001 - no dimOS on a laptop
 TRUE_BYTES = b"\x1e\xbe\xf0jP\x95\x0e>\x01"   # std_msgs.Bool fingerprint + data=True
 LCM_START = "/explore_cmd#std_msgs.Bool"
 LCM_STOP = "/stop_explore_cmd#std_msgs.Bool"
+LCM_CLEAR = "/clear_map_cmd#std_msgs.Bool"
 OK = 0
 KO = 0
 
@@ -123,7 +124,7 @@ try:
         stack_lcm = {c: str(LCMTopic(transport_topic(f"/{n}"), Bool))
                      for c, n in explore_ctl.CHANNELS.items()}
         check("lcm channels match dimOS's factory",
-              stack_lcm == {"start": LCM_START, "stop": LCM_STOP}, str(stack_lcm))
+              stack_lcm == {"start": LCM_START, "stop": LCM_STOP, "clear": LCM_CLEAR}, str(stack_lcm))
         both = {}
         for (dimos_tr, tr), want in PAIRS:
             set_bus(dimos_tr, tr)

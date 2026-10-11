@@ -847,6 +847,13 @@ $("b-ex-yes").addEventListener("click", function () {
   post("explore", { action: "start" }).then(function (d) { answer(d, "Exploration started."); pollState(); },
                                             function () { say("The cockpit did not answer.", true); });
 });
+$("b-map-clear").addEventListener("click", function () {
+  // the page drops its own copy first: a cleared map must not stay on screen until the next one
+  post("map", { action: "clear" }).then(function (d) {
+    if (d && d.ok) { S.mapImg = null; S.mapStamp = null; S.meta = null; requestDraw(); }
+    answer(d, "Map cleared: a fresh grid from here.");
+  }, function () { say("The cockpit did not answer.", true); });
+});
 $("b-ex-stop").addEventListener("click", function () {
   post("explore", { action: "stop" }).then(function (d) { answer(d, "Exploration stopped."); pollState(); },
                                            function () { say("The cockpit did not answer.", true); });

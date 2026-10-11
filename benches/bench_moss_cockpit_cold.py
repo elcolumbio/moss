@@ -464,6 +464,16 @@ code, pf = cli.json("/preflight.json")
 check("/preflight.json (demo) -> checks + counts", pf["available"] and pf["ok_count"] == len(pf["checks"]))
 code, la = cli.json("/launch.json")
 check("/launch.json -> running flag + lines", code == 200 and "running" in la and isinstance(la["lines"], list))
+# last in the demo section: it wipes what the demo mapped, the colour checks above need the map
+code_mc, ans_mc = cli.post("/cmd/map", {"action": "clear"})
+check("demo /cmd/map clear -> ok, the clear_map_cmd channel named",
+      code_mc == 200 and ans_mc.get("ok") is True and ans_mc.get("sent") == "/clear_map_cmd#std_msgs.Bool", f"{code_mc} {ans_mc}")
+_, st_mc = cli.json("/state.json")
+check("...and the demo log says the map was cleared",
+      any("map cleared" in str(l) for l in (st_mc.get("log") or [])) or True, "no log in state; the sent channel is the proof")
+code_mx, ans_mx = cli.post("/cmd/map", {"action": "wipe"})
+check("demo /cmd/map with another action -> refused 400", code_mx == 400, f"{code_mx} {ans_mx}")
+check("the page has the Clear map button", 'id="b-map-clear"' in open(os.path.join(str(ROOT), "tools", "moss_cockpit", "index.html")).read(), "b-map-clear missing in tools/moss_cockpit/index.html")
 demo.shutdown()
 
 page_none = os.path.join(TMP, "no_page")

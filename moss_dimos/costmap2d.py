@@ -410,6 +410,7 @@ class MossCostMap(Module):
     explore_done: In[Bool]          # explorer2 found no reachable frontier left: logged, the map keeps writing
     stop_explore_cmd: In[Bool]      # exploration stopped on request (explore_ctl.py stop, the cockpit): logged, the map keeps writing
     explore_cmd: In[Bool]           # the order to explore: opens the map before the first motion
+    clear_map_cmd: In[Bool]         # the cockpit's Clear map (explore_ctl.py clear): a fresh grid, the mission gate as it is
     global_costmap: Out[OccupancyGrid]
 
     def __init__(self, world_frame: str = "world", **kwargs: Any) -> None:
@@ -503,6 +504,19 @@ class MossCostMap(Module):
         if self._mission_frozen:
             self._mission_frozen = False
             logger.info("costmap: explore_cmd received - map writing OPEN for the mission")
+
+    async def handle_clear_map_cmd(self, msg: Bool) -> None:
+        """A fresh grid on request (the cockpit's Clear map): everything the map
+        learned goes, centred again on the current pose; the mission gate stays
+        as it is, so an open mission keeps writing from the next revolution and
+        a run that has not started still waits for its order or its 5 cm."""
+        if not bool(getattr(msg, "data", False)) or self._pose_xy is None:
+            return
+        self._grid = ScoredGrid(centre=self._pose_xy)
+        self._revolutions = 0
+        self._camera_pts = self._camera_cells = 0
+        logger.info(f"costmap: map CLEARED on request - fresh grid centred on ({self._pose_xy[0]:+.2f}, "
+                    f"{self._pose_xy[1]:+.2f}), mission {'open' if not self._mission_frozen else 'not started'}")
 
     async def handle_camera_floor(self, msg: PointCloud2) -> None:
         if self._grid is None or self._pose_xy is None or self._write_frozen():

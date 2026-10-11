@@ -417,6 +417,33 @@ def test_explore_order_opens_the_map_before_any_motion() -> None:
           "'costmap: explore_cmd received' logged once")
 
 
+def test_clear_map_starts_a_fresh_grid_and_keeps_the_gate() -> None:
+    """The cockpit's Clear map: a fresh grid centred on the current pose; an open
+    mission stays open (the next revolution writes), a mission not started stays
+    shut; a clear before any pose does nothing."""
+    m = costmap()
+    asyncio.run(m.handle_clear_map_cmd(Bool(data=True)))       # no pose yet: nothing to clear
+    assert m._grid is None
+    asyncio.run(m.handle_odom(_odom(0.0, 0.0)))
+    asyncio.run(m.handle_explore_cmd(Bool(data=True)))
+    for y in (0.0, 0.15):
+        asyncio.run(m.handle_odom(_odom(0.0, y)))
+        asyncio.run(m.handle_lidar(_cloud(_lidar_cloud(ROOM))))
+    assert m._grid.value_at(2.5, 0.0) == 100, "the wall is mapped before the clear"
+    asyncio.run(m.handle_clear_map_cmd(Bool(data=True)))
+    assert m._grid.value_at(2.5, 0.0) == -1, "after the clear the wall's cell is unknown again"
+    assert m._write_frozen() is False, "an open mission stays open"
+    assert m._revolutions == 0
+    asyncio.run(m.handle_lidar(_cloud(_lidar_cloud(ROOM))))
+    assert m._grid.value_at(2.5, 0.0) != -1, "the next revolution writes into the fresh grid"
+    n = costmap()
+    asyncio.run(n.handle_odom(_odom(0.0, 0.0)))
+    asyncio.run(n.handle_clear_map_cmd(Bool(data=True)))
+    assert n._write_frozen() is True, "a mission not started stays shut after a clear"
+    asyncio.run(n.handle_clear_map_cmd(Bool(data=False)))
+    print("  clear_map_cmd: fresh grid centred on the pose, open mission stays open, unstarted one stays shut, False ignored")
+
+
 def test_what_goes_out_on_global_costmap() -> None:
     """One cropped OccupancyGrid every PUBLISH_EVERY revolutions."""
     from dimos.msgs.nav_msgs.OccupancyGrid import OccupancyGrid
@@ -458,6 +485,7 @@ def test_the_mission_signals_cross_the_process_boundary() -> None:
 
     cm = {(s.name, s.type): s.direction for s in BlueprintAtom.create(MossCostMap, {}).streams}
     want = {("lidar", PointCloud2): "in", ("camera_floor", PointCloud2): "in", ("odom", PoseStamped): "in", ("explore_cmd", Bool): "in",
+            ("clear_map_cmd", Bool): "in",
             ("explore_done", Bool): "in", ("stop_explore_cmd", Bool): "in",
             ("global_costmap", OccupancyGrid): "out"}
     assert cm == want, f"stream table: extra {set(cm) - set(want)}, missing {set(want) - set(cm)}"
@@ -863,7 +891,8 @@ TESTS = (test_leg_needs_two_viewpoints_and_ray_is_free, test_ramp_hit_from_one_s
          test_chair_moved_is_forgotten_by_lidar_rays, test_reinforcement_is_capped_and_unlearning_bounded,
          test_parked_rover_never_erases_an_established_wall, test_body_clear_is_the_moss_footprint,
          test_the_lidar_tag_is_one_exact_height, test_the_map_writes_only_during_the_mission,
-         test_explore_order_opens_the_map_before_any_motion, test_what_goes_out_on_global_costmap,
+         test_explore_order_opens_the_map_before_any_motion, test_clear_map_starts_a_fresh_grid_and_keeps_the_gate,
+         test_what_goes_out_on_global_costmap,
          test_the_mission_signals_cross_the_process_boundary, test_revolution_cost,
          test_camera_one_viewpoint_never_becomes_a_wall, test_camera_wall_no_longer_seen_is_carved_free,
          test_camera_wall_still_seen_survives_the_rays, test_the_knobs_are_read_at_import,

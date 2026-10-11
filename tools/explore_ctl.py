@@ -23,7 +23,7 @@ import sys
 
 from dimos_lcm.std_msgs import Bool
 
-CHANNELS = {"start": "explore_cmd", "stop": "stop_explore_cmd"}
+CHANNELS = {"start": "explore_cmd", "stop": "stop_explore_cmd", "clear": "clear_map_cmd"}   # clear: the costmap starts a fresh grid
 SUPPORTED_TRANSPORT = "lcm"
 TRANSPORT_VARS = ("DIMOS_TRANSPORT", "TRANSPORT")   # dimOS's order: the first one set wins
 
@@ -99,7 +99,7 @@ def publish(cmd: str) -> str:
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else "start"
     if cmd not in CHANNELS:
-        sys.exit("usage: explore_ctl.py start|stop")
+        sys.exit("usage: explore_ctl.py start|stop|clear")
     try:
         used = publish(cmd)
     except TransportError as exc:

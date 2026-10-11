@@ -251,7 +251,10 @@ the profile's lidar height; `camera` (and `camera_n`) are the depth camera's obs
 their true height, which the page draws in amber; `pose` is the rover's pose at the
 scan's time (x, y, yaw, age_s), so the page moves the rover marker at the scan's
 rate (3 Hz) rather than the state's (1 Hz). The raw `/pointcloud` fallback has no
-`camera` key. The base panel shows a STALLED badge for at least 4 s whenever the
+`camera` key. The map panel's **Clear map** button (`/cmd/map` with `action: clear`,
+`tools/explore_ctl.py clear` from a shell) makes the costmap start a fresh grid centred on
+the rover, without stopping the stack or the run: an open exploration keeps writing from
+the next revolution. The base panel shows a STALLED badge for at least 4 s whenever the
 base adapter's stall guard fires (a commanded track whose encoder did not move for
 1 s: the tracks stop and the planner backs off), and a `stalls` row counts them
 over the run.

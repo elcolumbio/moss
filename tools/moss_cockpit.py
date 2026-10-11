@@ -896,6 +896,13 @@ class BusCache:
             self._topics = {name: _Latest() for name in self._topics}
             self._decoded = {}
 
+    def forget(self, name: str) -> None:
+        """Drop one topic's last message (a cleared map must not be served from the cache)."""
+        with self._lock:
+            if name in self._topics:
+                self._topics[name] = _Latest()
+            self._decoded.pop(name, None)
+
     def latest(self, name: str):
         with self._lock:
             t = self._topics[name]
@@ -1327,6 +1334,16 @@ class LiveCockpit(Cockpit):
             with self._goal_lock:
                 self._goal_gen += 1
                 return {"ok": True, "sent": pub(explore_ctl.CHANNELS[action], Bool(data=True))}
+        if name == "map":
+            if body.get("action") != "clear":
+                raise ValueError('map needs "action": "clear"')
+            if self._moss_stack() is None:
+                return not_moss()
+            sent = pub(explore_ctl.CHANNELS["clear"], Bool(data=True))
+            # the last map must not be served again: the next one comes from the fresh grid
+            self.bus.forget("global_costmap")
+            self._map_cache = (None, None, 0.0)
+            return {"ok": True, "sent": sent}
         if name == "goal":
             x, y = _finite_xy(body)
             st = self._moss_stack()
@@ -1714,6 +1731,13 @@ class DemoCockpit(Cockpit):
                 self._say("info", f"demo: exploration {'started' if self.exploring else 'stopped'}")
                 return {"ok": True, "sent": "/explore_cmd#std_msgs.Bool" if self.exploring
                         else "/stop_explore_cmd#std_msgs.Bool"}
+            if name == "map":
+                if body.get("action") != "clear":
+                    raise ValueError('map needs "action": "clear"')
+                w.seen[:] = False                       # the demo forgets what it mapped and maps it again
+                self._map_cache = (None, None)
+                self._say("info", "demo: map cleared")
+                return {"ok": True, "sent": "/clear_map_cmd#std_msgs.Bool"}
             if name == "goal":
                 x, y = _finite_xy(body)
                 self.exploring = False
