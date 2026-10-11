@@ -96,7 +96,7 @@ from dimos.msgs.std_msgs.String import String
 from dimos.utils.logging_config import setup_logger
 
 from moss_dimos import robot_profile
-from dimos.msgs.std_msgs.Bool import Bool
+from dimos_lcm.std_msgs import Bool   # the SAME Bool class as Explorer2 / RecoveringPlanner: one 'bump' stream type on the bus
 from moss_dimos.moss_adapter import telemetry_payload
 from moss_dimos.robot_profile import (MOSS_LIDAR_MISSING, MOSS_QTPY_MISSING,
                                       RobotProfile)

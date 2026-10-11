@@ -547,6 +547,10 @@ check("MossRecorder records odom, global_costmap, lidar, color_image, wrist_imag
       {"odom", "global_costmap", "lidar", "color_image", "wrist_image", "cmd_vel", "base_telemetry", "episode_marker"} <= ins)
 check("MossControlCoordinator has the base_telemetry and bump Outs, and no other stream of its own",
       set(MossControlCoordinator.__annotations__) == {"base_telemetry", "bump"}, f"{sorted(MossControlCoordinator.__annotations__)}")
+import moss_dimos.blueprints as _bp_mod  # noqa: E402
+import moss_dimos.recovering_planner as _rp_mod  # noqa: E402
+check("the coordinator's bump carries the SAME Bool class as RecoveringPlanner's (dimOS refuses a blueprint otherwise)",
+      _bp_mod.Bool is _rp_mod.Bool, f"{_bp_mod.Bool} vs {_rp_mod.Bool}")
 check("its start/stop overrides keep @rpc (else dimOS pickles the module to call them)",
       {"start", "stop"} <= set(MossControlCoordinator.rpcs))
 check("it runs in its own worker (dedicated_worker)", MossControlCoordinator.dedicated_worker is True)
