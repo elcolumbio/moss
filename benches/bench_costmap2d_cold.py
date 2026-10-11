@@ -15,7 +15,10 @@ Known input -> known output, in metres and cells:
      cells at the origin; MOSS_BODY_CLEAR_M moves it at call time
   7. the lidar tag: a float32 point at exactly the profile's lidar height
      (0.20 m) is a lidar return; 0.37 m, 0.2005 m and the floor are not;
-     MOSS_LIDAR_HEIGHT_M moves the tag at call time
+     MOSS_LIDAR_HEIGHT_M moves the tag at call time; a camera obstacle maps
+     after two viewpoints (even when the second lands on a carving
+     revolution), survives the rays while the camera sees it, and is freed
+     by the camera's floor samples once taken away
   8. the mission gate: 20 revolutions and a passer-by on a PARKED rover ->
      0 cells; 6 cm of displacement -> the map opens and the room's wall at
      2.5 m is mapped; "exploration complete" and "exploration stopped" ->
@@ -28,6 +31,27 @@ Known input -> known output, in metres and cells:
      Bool class for explore_cmd / explore_done / stop_explore_cmd across
      costmap2d, explorer2 and tools/explore_ctl.py
  12. the cost of one revolution (400 rays, 0.5-12 m) stays under 40 ms
+ 13. a camera obstacle seen from ONE parked spot for 20 frames, with the
+     lidar rays crossing its cell, stays below OCCUPIED_AT (never a wall); a
+     camera cell at FREE_FLOOR hit 5 frames from one spot stays below 0
+ 14. a passer-by's legs: a camera wall (two viewpoints) in the camera's view,
+     no longer seen, under lidar rays through its cell -> freed within 10
+     revolutions (2 at score 2, 10 at score 6)
+ 15. a camera wall the camera KEEPS seeing from the same spot, rays carving
+     its cell every other revolution -> a wall for all 20 revolutions
+ 16. the knobs, read at import: MOSS_HIT_CAP=4 unlearns a leg seen from 6
+     viewpoints in fewer revolutions than 10; MOSS_FREE_FLOOR=-1 lets long-seen
+     floor become a wall in fewer hits; MOSS_RAY_MAX_M=6 carves a leg at 4.5 m
+     that the default 4 m never reaches; bad values fall back or clamp
+ 17. the rays carve the camera layer only inside the camera's view (87 deg,
+     3 m): a table top (320 cells, a wall from 3 viewpoints) stays a wall
+     while the rover turns its back on it and for 20 revolutions facing away,
+     rays through every cell; legs at 35 deg off the heading are freed while
+     in view, kept while behind the rover; MossCostMap passes the odom heading
+ 18. body_clear resets camera_wall: a camera wall the body drives over is
+     FREE_FLOOR and unflagged, and same-spot camera hits never make it a wall
+     again (10 frames right away, and 10 after new viewpoints lift it to
+     OCCUPIED_AT - 1)
 
 Needs dimOS (the messages are real).
 
@@ -35,6 +59,8 @@ Run:  PYTHONPATH=. .venv/bin/python benches/bench_costmap2d_cold.py
 """
 
 import asyncio
+import copy
+import importlib
 import importlib.util
 import math
 import os
@@ -55,7 +81,7 @@ from dimos_lcm.std_msgs import Bool  # noqa: E402
 
 from moss_dimos import costmap2d as cmod  # noqa: E402
 from moss_dimos.costmap2d import (  # noqa: E402
-    FREE_FLOOR, HIT_CAP, MISSION_START_M, OCCUPIED_AT, PUBLISH_EVERY, RESOLUTION_M,
+    FREE_FLOOR, HIT_CAP, MISSION_START_M, OCCUPIED_AT, PUBLISH_EVERY, RAY_EVERY, RESOLUTION_M,
     MossCostMap, ScoredGrid, lidar_returns,
 )
 from moss_dimos.robot_profile import MOSS  # noqa: E402
@@ -272,10 +298,15 @@ def test_the_lidar_tag_is_one_exact_height() -> None:
     asyncio.run(m2.handle_lidar(_cloud(np.vstack([_lidar_cloud(ROOM), low]))))
     assert m2._grid.value_at(1.5, -0.4) == 100, "the second viewpoint makes the shoe a wall"
     # the lidar sees the wall behind the shoe: its rays cross the shoe's cell every other
-    # revolution, and the shoe survives (camera layer, never carved by a lidar ray)
+    # revolution, and the shoe the camera still sees survives them
     for _ in range(6):
-        asyncio.run(m2.handle_lidar(_cloud(_lidar_cloud(ROOM))))
-    assert m2._grid.value_at(1.5, -0.4) == 100, "lidar rays through the shoe's cell do not erase it"
+        asyncio.run(m2.handle_lidar(_cloud(np.vstack([_lidar_cloud(ROOM), low]))))
+        assert m2._grid.value_at(1.5, -0.4) == 100, "the shoe the camera still sees survives the rays"
+    # the same rays without the shoe in the cloud do cross its cell: two revolutions free it
+    probe = copy.deepcopy(m2._grid)
+    for _ in range(2):
+        probe.lidar_revolution(ROOM, (0.0, 0.15), yaw=0.0)
+    assert probe.value_at(1.5, -0.4) != 100, "the rays cross the shoe's cell (so the survival above is the camera's)"
     # the shoe is taken away: the camera sees bare floor there -> freed after two floor samples
     floor = np.array([[1.5, -0.4, 0.0], [1.52, -0.42, 0.0]])
     for _ in range(2):
@@ -283,7 +314,8 @@ def test_the_lidar_tag_is_one_exact_height() -> None:
     assert m2._grid.value_at(1.5, -0.4) != 100, "bare floor seen by the camera frees the shoe's cell"
     # the camera point carves no ray: the floor between the rover and the shoe is not marked free by it
     print("  float32 0.20 m -> lidar; 0.2005 / 0.37 / 0.0 -> camera; MOSS_LIDAR_HEIGHT_M=0.37 moves the tag; "
-          "a camera obstacle maps after two viewpoints (a 5 cm shoe), never from one parked spot")
+          "a camera obstacle maps after two viewpoints (a 5 cm shoe), never from one parked spot; "
+          "it survives the rays while seen, and the camera's floor frees it")
 
 
 def test_the_map_writes_only_during_the_mission() -> None:
@@ -464,10 +496,367 @@ def test_revolution_cost() -> None:
     g = ScoredGrid(span_m=24.0)
     t0 = time.perf_counter()
     for i in range(10):
-        g.lidar_revolution(hits, (0.01 * i, 0.0))
+        g.lidar_revolution(hits, (0.01 * i, 0.0), yaw=0.0)
     ms = (time.perf_counter() - t0) / 10 * 1000
     assert ms < 40, ms
-    print(f"  one revolution (400 rays, 0.5-12 m, carving every other one) = {ms:.0f} ms")
+    print(f"  one revolution (400 rays, 0.5-12 m, carving every other one, camera layer in view) = {ms:.0f} ms")
+
+
+
+# --- the camera layer forgets: lidar rays carve it, the camera holds what it sees ---
+SHOE = np.array([[1.525, 0.025]])                  # a camera obstacle at a cell centre, 1.5 m ahead
+WALL = np.column_stack([np.full(101, 3.0), np.linspace(-0.5, 0.5, 101)])   # lidar returns behind it, 3 m away
+SPOT_B = (0.0, 0.025)                              # the last viewpoint: it looks straight through the shoe
+HEADING = 0.0                                      # the rover faces +x: the shoe is straight ahead, in the camera's view
+
+
+def _camera_score(g: ScoredGrid, xy: np.ndarray) -> int:
+    gx, gy = g.cell(xy[:, 0], xy[:, 1])
+    return int(g.camera[gy[0], gx[0]])
+
+
+def _in_view(xy: np.ndarray, rover_xy, yaw: float, margin_deg: float = 1.0) -> np.ndarray:
+    """What a D455 on MOSS's nose sees of these points, written here apart
+    from costmap2d: within 87 / 2 degrees (+ margin_deg) of the heading, seen
+    from the camera (the profile's camera_xyz_base_m ahead of base_link),
+    and within 3 m of the rover. The default margin makes this camera see a
+    degree wider than the carve, so every cell the carve reaches inside the
+    view is one the camera reports."""
+    cx, cy = MOSS.camera_xyz_base_m[0], MOSS.camera_xyz_base_m[1]
+    cam = (rover_xy[0] + math.cos(yaw) * cx - math.sin(yaw) * cy, rover_xy[1] + math.sin(yaw) * cx + math.cos(yaw) * cy)
+    off = np.degrees(np.arctan2(xy[:, 1] - cam[1], xy[:, 0] - cam[0])) - math.degrees(yaw)
+    off = (off + 180.0) % 360.0 - 180.0
+    return (np.abs(off) <= 87.0 / 2 + margin_deg) & (np.hypot(xy[:, 0] - rover_xy[0], xy[:, 1] - rover_xy[1]) <= 3.0)
+
+
+def _revolution(g: ScoredGrid, from_xy, camera_xy=None, spare=True) -> None:
+    """One revolution as MossCostMap.handle_lidar runs it: lidar rays and hits
+    (sparing the cells the camera sees in it), then the camera's hits.
+    spare=False lets the carve land on the camera's cells first, as it does
+    when the camera's points fall in a cell only every other revolution."""
+    g.lidar_revolution(WALL, from_xy, camera_xy=camera_xy if spare else None, yaw=HEADING)
+    if camera_xy is not None:
+        g.camera_hits(camera_xy, from_xy)
+
+
+def _camera_wall(viewpoints: int = 2) -> ScoredGrid:
+    """The shoe made a wall by the camera from `viewpoints` spots 0.15 m apart, ending at SPOT_B."""
+    g = fresh()
+    for k in range(viewpoints - 1, -1, -1):
+        g.camera_hits(SHOE, (0.0, SPOT_B[1] + 0.15 * k))
+    assert g.value_at(*SHOE[0]) == 100 and _camera_score(g, SHOE) == min(viewpoints, HIT_CAP)
+    return g
+
+
+def test_camera_one_viewpoint_never_becomes_a_wall() -> None:
+    """A camera hit from the same viewpoint adds 1 while the cell is at 0 or
+    above and below its ceiling (the camera must hold what it sees against
+    the rays), but one spot never makes a wall: 20 frames from one parked
+    spot, the rays crossing the cell, stay below OCCUPIED_AT. Below 0 it adds
+    nothing: a camera cell held free at FREE_FLOOR, hit 5 frames from one
+    spot, stays below 0 and needs OCCUPIED_AT - FREE_FLOOR viewpoints."""
+    traces = {}
+    for spare in (True, False):
+        g = fresh()
+        trace = []
+        for _ in range(20):
+            _revolution(g, SPOT_B, SHOE, spare=spare)
+            trace.append(_camera_score(g, SHOE))
+            assert g.value_at(*SHOE[0]) != 100, f"a wall from one spot after {len(trace)} frames (spare={spare})"
+        assert max(trace) == OCCUPIED_AT - 1, trace
+        traces[spare] = trace
+    # long-seen free floor on the camera layer: the camera's floor samples took it to FREE_FLOOR
+    g = fresh()
+    for _ in range(-FREE_FLOOR + 2):
+        g.camera_floor(SHOE)
+    assert _camera_score(g, SHOE) == FREE_FLOOR, _camera_score(g, SHOE)
+    floor_trace = []
+    for _ in range(5):                                 # a phantom seen 5 frames from one parked spot
+        g.camera_hits(SHOE, SPOT_B)
+        floor_trace.append(_camera_score(g, SHOE))
+    assert max(floor_trace) < 0, f"one spot lifted floor held free at {FREE_FLOOR} to {floor_trace}"
+    assert floor_trace == [FREE_FLOOR + 1] * 5, floor_trace
+    k = 1                                              # SPOT_B was the first viewpoint
+    while g.value_at(*SHOE[0]) != 100:
+        g.camera_hits(SHOE, (0.0, SPOT_B[1] + 0.15 * k)); k += 1
+        assert k <= 20
+    assert k == OCCUPIED_AT - FREE_FLOOR, k
+    print(f"  20 frames from one spot: camera score {sorted(set(traces[True]))} (OCCUPIED_AT {OCCUPIED_AT}); "
+          f"rays landing first every other frame: {sorted(set(traces[False]))}; never a wall")
+    print(f"  camera cell at FREE_FLOOR {FREE_FLOOR}, 5 frames from one spot: scores {floor_trace}; "
+          f"a wall after {k} viewpoints (as on the lidar layer)")
+
+
+def test_camera_wall_no_longer_seen_is_carved_free() -> None:
+    """The passer-by's legs: a camera wall in the camera's view that the
+    camera no longer sees, under lidar rays that pass through its cell, is
+    freed (1 per RAY_EVERY revolutions)."""
+    assert _in_view(SHOE, SPOT_B, HEADING, margin_deg=-1.0).all(), "the shoe is well inside the camera's view"
+    counts = {}
+    for viewpoints in (2, 6):
+        g = _camera_wall(viewpoints)
+        n = 0
+        while g.value_at(*SHOE[0]) == 100:
+            _revolution(g, SPOT_B); n += 1
+            assert n <= 10, f"a camera wall from {viewpoints} viewpoints still stands after 10 revolutions"
+        m = n
+        while _camera_score(g, SHOE) > 0:
+            _revolution(g, SPOT_B); m += 1
+            assert m <= 40
+        gx, gy = g.cell(SHOE[:, 0], SHOE[:, 1])
+        assert not g.camera_wall[gy[0], gx[0]], "carved back to 0: one spot no longer holds it"
+        counts[viewpoints] = (n, m)
+    assert counts[2][0] <= 2 and counts[6][0] <= 10, counts
+    # once forgotten, the same spot cannot raise it back to a wall: it needs two viewpoints again
+    g = _camera_wall(2)
+    while _camera_score(g, SHOE) > 0:
+        _revolution(g, SPOT_B)
+    for _ in range(10):
+        _revolution(g, SPOT_B, SHOE)
+    assert g.value_at(*SHOE[0]) != 100, "forgotten, then seen again from the same spot: not a wall"
+    print(f"  camera wall no longer seen: 2 viewpoints -> free after {counts[2][0]} revolutions (score 0 after "
+          f"{counts[2][1]}); 6 viewpoints -> free after {counts[6][0]} (score 0 after {counts[6][1]}); "
+          f"seen again from the same spot afterwards -> not a wall")
+
+
+def test_camera_wall_still_seen_survives_the_rays() -> None:
+    """The shoe the camera keeps seeing: the rays take 1 every RAY_EVERY
+    revolutions, the camera's same-viewpoint hit puts it back every
+    revolution, the wall holds. Both orders are checked: the module's (the
+    camera's cells spared by the carve) and the carve landing first."""
+    carves = 0
+    for spare in (True, False):
+        g = _camera_wall(2)
+        dips = 0
+        for k in range(20):
+            before = _camera_score(g, SHOE)
+            g.lidar_revolution(WALL, SPOT_B, camera_xy=SHOE if spare else None, yaw=HEADING)
+            dips += _camera_score(g, SHOE) < before
+            g.camera_hits(SHOE, SPOT_B)
+            assert g.value_at(*SHOE[0]) == 100, f"the wall the camera still sees fell at revolution {k + 1} (spare={spare})"
+        if spare:
+            assert dips == 0, f"the carve touched a cell the camera saw in the same revolution ({dips} times)"
+        else:
+            assert dips == 20 // RAY_EVERY, f"the rays reached the cell {dips} times, expected {20 // RAY_EVERY}"
+            carves = dips
+    print(f"  camera wall kept in view from one spot: a wall for 20/20 revolutions, spared by the carve; "
+          f"with the carve landing first ({carves} carves through it) the same-viewpoint hit holds it at "
+          f"{OCCUPIED_AT}")
+
+
+def _reload(**env):
+    """costmap2d re-imported with these knobs (and none of the other two)."""
+    for var in ("MOSS_HIT_CAP", "MOSS_FREE_FLOOR", "MOSS_RAY_MAX_M"):
+        os.environ.pop(var, None)
+    os.environ.update(env)
+    return importlib.reload(cmod)
+
+
+def test_the_knobs_are_read_at_import() -> None:
+    """MOSS_HIT_CAP, MOSS_FREE_FLOOR and MOSS_RAY_MAX_M, known input -> known
+    output in revolutions and hits."""
+    try:
+        unlearn = {}
+        for cap in ("10", "4"):
+            mod = _reload(MOSS_HIT_CAP=cap)
+            assert mod.HIT_CAP == int(cap), mod.HIT_CAP
+            for viewpoints in (6, 20):
+                g = mod.ScoredGrid(span_m=6.0)
+                for i in range(viewpoints):
+                    g.lidar_revolution(LEG, (0.0, 0.15 * i))
+                assert g.value_at(1.0, 0.0) == 100
+                n = 0
+                while g.value_at(1.0, 0.0) == 100:
+                    g.lidar_revolution(np.array([[3.0, 0.0]]), (0.0, 0.0)); n += 1
+                    assert n <= 40
+                unlearn[(cap, viewpoints)] = n
+        assert unlearn[("4", 6)] < unlearn[("10", 6)] and unlearn[("4", 20)] < unlearn[("10", 20)], unlearn
+
+        hits_to_wall = {}
+        for floor in ("-3", "-1"):
+            mod = _reload(MOSS_FREE_FLOOR=floor)
+            assert mod.FREE_FLOOR == int(floor), mod.FREE_FLOOR
+            g = mod.ScoredGrid(span_m=6.0)
+            for _ in range(20):                                  # long-seen floor at 1.0 m
+                g.lidar_revolution(np.array([[3.0, 0.0]]), (0.0, 0.0))
+            gx, gy = g.cell(np.array([1.0]), np.array([0.0]))
+            assert g.lidar[gy[0], gx[0]] == int(floor), g.lidar[gy[0], gx[0]]
+            k = 0
+            while g.value_at(1.0, 0.0) != 100:                   # somebody steps there; the rover drives on
+                k += 1
+                g.lidar_revolution(LEG, (0.0, 0.15 * k))
+                assert k <= 20
+            hits_to_wall[floor] = k
+        assert hits_to_wall["-1"] < hits_to_wall["-3"], hits_to_wall
+
+        far_leg = {}
+        for ray_max in (None, "6"):
+            mod = _reload(**({"MOSS_RAY_MAX_M": ray_max} if ray_max else {}))
+            assert mod.RAY_MAX_M == (float(ray_max) if ray_max else 4.0), mod.RAY_MAX_M
+            g = mod.ScoredGrid(span_m=16.0)
+            leg = np.array([[4.5, 0.0]])                         # somebody standing 4.5 m away
+            g.lidar_revolution(leg, (0.0, 0.0)); g.lidar_revolution(leg, (0.0, 0.15))
+            assert g.value_at(4.5, 0.0) == 100
+            n = 0
+            while g.value_at(4.5, 0.0) == 100 and n < 20:        # gone: the rays now reach the wall at 6 m
+                g.lidar_revolution(np.array([[6.0, 0.0]]), (0.0, 0.0)); n += 1
+            far_leg[ray_max or "4"] = n if g.value_at(4.5, 0.0) != 100 else None
+        assert far_leg["4"] is None and far_leg["6"] is not None and far_leg["6"] <= 2, far_leg
+
+        odd = {}
+        for var, raw in (("MOSS_HIT_CAP", "ten"), ("MOSS_HIT_CAP", "500"), ("MOSS_HIT_CAP", "1"),
+                         ("MOSS_HIT_CAP", "4.4"), ("MOSS_FREE_FLOOR", "2"), ("MOSS_RAY_MAX_M", "-1")):
+            mod = _reload(**{var: raw})
+            odd[(var, raw)] = {"MOSS_HIT_CAP": mod.HIT_CAP, "MOSS_FREE_FLOOR": mod.FREE_FLOOR,
+                               "MOSS_RAY_MAX_M": mod.RAY_MAX_M}[var]
+        assert list(odd.values()) == [10, 127, OCCUPIED_AT, 4, 0, 0.0], odd
+    finally:
+        mod = _reload()
+    assert (mod.HIT_CAP, mod.FREE_FLOOR, mod.RAY_MAX_M) == (10, -3, 4.0), "defaults restored"
+    print(f"  leg from 6 viewpoints: HIT_CAP 10 -> a wall for {unlearn[('10', 6)]} clear revolutions, "
+          f"MOSS_HIT_CAP=4 -> {unlearn[('4', 6)]}; from 20 viewpoints: {unlearn[('10', 20)]} vs {unlearn[('4', 20)]}")
+    print(f"  long-seen floor becomes a wall after {hits_to_wall['-3']} viewpoints at FREE_FLOOR -3, "
+          f"{hits_to_wall['-1']} at MOSS_FREE_FLOOR=-1")
+    print(f"  a leg at 4.5 m: never carved with rays to 4 m (20 revolutions), freed after {far_leg['6']} with "
+          f"MOSS_RAY_MAX_M=6; MOSS_HIT_CAP 'ten' / 500 / 1 / 4.4 -> {odd[('MOSS_HIT_CAP', 'ten')]} / "
+          f"{odd[('MOSS_HIT_CAP', '500')]} / {odd[('MOSS_HIT_CAP', '1')]} / {odd[('MOSS_HIT_CAP', '4.4')]}, "
+          f"MOSS_FREE_FLOOR 2 -> {odd[('MOSS_FREE_FLOOR', '2')]}, MOSS_RAY_MAX_M -1 -> {odd[('MOSS_RAY_MAX_M', '-1')]}")
+
+
+# --- the carve stays in the camera's view; body_clear forgets the camera_wall flag ---
+_tx, _ty = np.meshgrid(np.arange(1.525, 2.30, 0.05), np.arange(-0.475, 0.50, 0.05))
+TABLE = np.column_stack([_tx.ravel(), _ty.ravel()])            # a table top: 16 x 20 cell centres, 1.5-2.3 m ahead
+RING = np.column_stack([2.9 * np.cos(np.radians(np.arange(0, 360, 0.5))),
+                        2.9 * np.sin(np.radians(np.arange(0, 360, 0.5)))])   # lidar returns 2.9 m all around
+
+
+def _cells_scores(g: ScoredGrid, xy: np.ndarray) -> np.ndarray:
+    gx, gy = g.cell(xy[:, 0], xy[:, 1])
+    return g.camera[gy, gx].astype(int)
+
+
+def _turn(g: ScoredGrid, rover_xy, yaw: float, obstacle: np.ndarray | None) -> int:
+    """One revolution as MossCostMap.handle_lidar runs it, with the camera
+    seeing the part of `obstacle` inside its view. Returns how many points it saw."""
+    seen = obstacle[_in_view(obstacle, rover_xy, yaw)] if obstacle is not None else np.zeros((0, 2))
+    g.lidar_revolution(RING + rover_xy, rover_xy, camera_xy=seen if len(seen) else None, yaw=yaw)
+    if len(seen):
+        g.camera_hits(seen, rover_xy)
+    return len(seen)
+
+
+def test_the_carve_stays_in_the_cameras_view() -> None:
+    """The camera layer holds what the scan plane misses (a table top, a
+    chair seat, a shoe). A lidar ray passing under such a cell is no evidence
+    against it unless the camera looks at the cell too, so the rays carve the
+    camera layer only inside the camera's horizontal field of view.
+
+    Known input -> known output: a table top seen from 3 viewpoints (score 3
+    on 320 cells); the rover pivots 180 degrees on the spot in 10 revolutions,
+    then faces away for 20, the rays crossing every table cell -> all 320
+    cells still score 3. Facing it again with the table gone -> free in
+    RAY_EVERY * 2 revolutions."""
+    g = fresh()
+    for x in (-0.30, -0.15, 0.0):                                  # the approach, facing the table
+        assert _turn(g, (x, 0.0), 0.0, TABLE) == len(TABLE)
+    assert (_cells_scores(g, TABLE) == 3).all(), _cells_scores(g, TABLE)
+    seen_per_rev = []
+    for k in range(1, 11):                                         # pivot on the spot, 18 deg per revolution
+        seen_per_rev.append(_turn(g, (0.0, 0.0), math.radians(18.0 * k), TABLE))
+        assert (_cells_scores(g, TABLE) == 3).all(), f"table cells carved at yaw {18 * k} deg"
+    assert seen_per_rev[0] == len(TABLE) and seen_per_rev[-1] == 0, seen_per_rev
+    for _ in range(20):                                            # facing away: the table is behind the rover
+        _turn(g, (0.0, 0.0), math.pi, TABLE)
+    walls = int((_cells_scores(g, TABLE) >= OCCUPIED_AT).sum())
+    assert walls == len(TABLE) and (_cells_scores(g, TABLE) == 3).all(), walls
+    # the same rays DO cross every table cell: facing it with the table taken away frees it
+    probe = copy.deepcopy(g)
+    gone = 0
+    while (_cells_scores(probe, TABLE) >= OCCUPIED_AT).any():
+        _turn(probe, (0.0, 0.0), 0.0, None); gone += 1
+        assert gone <= 10, int((_cells_scores(probe, TABLE) >= OCCUPIED_AT).sum())
+    assert gone <= RAY_EVERY * 2, gone
+
+    # a passer-by's legs 35 deg off the heading, 1.2 m away: in the camera's view
+    legs = np.array([[1.025, 0.625]])
+    assert _in_view(legs, (0.0, 0.0), 0.0, margin_deg=-5.0).all() and not _in_view(legs, (0.0, 0.0), math.pi).any()
+    kept = None
+    freed = {}
+    for yaw, label in ((0.0, "facing"), (math.pi, "away")):
+        h = fresh()
+        h.camera_hits(legs, (0.0, -0.15)); h.camera_hits(legs, (0.0, 0.0))
+        assert h.value_at(*legs[0]) == 100
+        n = 0
+        while h.value_at(*legs[0]) == 100 and n < 20:              # gone: the camera sees nothing there any more
+            _turn(h, (0.0, 0.0), yaw, None); n += 1
+        freed[label] = n if h.value_at(*legs[0]) != 100 else None
+        if label == "away":
+            kept = h
+    assert freed["facing"] is not None and freed["facing"] <= 10 and freed["away"] is None, freed
+    m = 0
+    while kept.value_at(*legs[0]) == 100:                          # the rover turns back toward where they stood
+        _turn(kept, (0.0, 0.0), 0.0, None); m += 1
+        assert m <= 10
+    # through the module: handle_lidar carves with the odom heading
+    module = {}
+    for yaw in (math.pi, 0.0):
+        cm = costmap()
+        asyncio.run(cm.handle_odom(_odom(0.0, 0.0)))
+        asyncio.run(cm.handle_explore_cmd(Bool(data=True)))
+        top = np.array([[1.5, 0.3, 0.72]])                         # a table top corner: above the scan plane
+        for y in (0.0, 0.15):
+            asyncio.run(cm.handle_odom(_odom(0.0, y)))
+            asyncio.run(cm.handle_lidar(_cloud(np.vstack([_lidar_cloud(ROOM), top]))))
+        assert cm._grid.value_at(1.5, 0.3) == 100, "two viewpoints make the table top a wall"
+        asyncio.run(cm.handle_odom(_odom(0.0, 0.15, yaw)))
+        n = 0
+        while cm._grid.value_at(1.5, 0.3) == 100 and n < 10:      # the camera no longer reports it
+            asyncio.run(cm.handle_lidar(_cloud(_lidar_cloud(ROOM)))); n += 1
+        module[round(math.degrees(yaw))] = n if cm._grid.value_at(1.5, 0.3) != 100 else None
+    assert module[180] is None and module[0] is not None and module[0] <= RAY_EVERY, module
+    print(f"  table top, 320 cells at score 3: points in view while turning {seen_per_rev}; after the turn and "
+          f"20 revolutions facing away -> {walls}/320 still a wall; facing it with the table gone -> free after {gone} "
+          f"revolutions")
+    print(f"  legs 35 deg off the heading: freed after {freed['facing']} revolutions in view; behind the rover a wall "
+          f"for 20; turning back -> freed after {m}; MossCostMap with odom yaw 180 deg -> kept 10, yaw 0 -> freed after "
+          f"{module[0]}")
+
+
+def test_body_clear_resets_the_camera_wall_flag() -> None:
+    """What the body drove over is free, and a camera wall there loses its
+    `camera_wall` flag: with the flag left on, same-spot camera hits would
+    raise the cell back to OCCUPIED_AT, a wall from one spot."""
+    g = _camera_wall(2)
+    gx, gy = g.cell(SHOE[:, 0], SHOE[:, 1])
+    assert g.camera_wall[gy[0], gx[0]], "two viewpoints flag the camera wall"
+    g.body_clear((SHOE[0, 0], SHOE[0, 1], 0.0))                    # the rover drove over the shoe's cell
+    assert not g.camera_wall[gy[0], gx[0]], "body_clear resets the flag"
+    assert _camera_score(g, SHOE) == FREE_FLOOR and g.value_at(*SHOE[0]) == 0
+    right_away = []
+    for _ in range(10):                                            # the last viewpoint, 10 frames
+        g.camera_hits(SHOE, SPOT_B)
+        right_away.append(_camera_score(g, SHOE))
+    assert max(right_away) < OCCUPIED_AT, right_away
+    # new viewpoints lift it back to OCCUPIED_AT - 1, then 10 frames from the last of them
+    k = 0
+    while _camera_score(g, SHOE) < OCCUPIED_AT - 1:
+        k += 1
+        g.camera_hits(SHOE, (0.0, SPOT_B[1] - 0.15 * k))
+        assert k <= 10
+    last = (0.0, SPOT_B[1] - 0.15 * k)
+    flagged = copy.deepcopy(g)
+    flagged.camera_wall[gy[0], gx[0]] = True                       # what a body_clear that kept the flag leaves
+    after = []
+    for _ in range(10):
+        g.camera_hits(SHOE, last)
+        flagged.camera_hits(SHOE, last)
+        after.append(_camera_score(g, SHOE))
+        assert g.value_at(*SHOE[0]) != 100, "a wall from one spot after body_clear"
+    assert max(after) == OCCUPIED_AT - 1, after
+    assert flagged.value_at(*SHOE[0]) == 100, "the flag is what this check guards: left on, one spot makes a wall"
+    print(f"  camera wall under the body -> score {FREE_FLOOR}, flag reset; 10 same-spot frames -> {sorted(set(right_away))}; "
+          f"{k} new viewpoints to {OCCUPIED_AT - 1}, then 10 same-spot frames -> {sorted(set(after))} (with the flag "
+          f"left on: a wall)")
 
 
 TESTS = (test_leg_needs_two_viewpoints_and_ray_is_free, test_ramp_hit_from_one_spot_never_becomes_a_wall,
@@ -475,7 +864,10 @@ TESTS = (test_leg_needs_two_viewpoints_and_ray_is_free, test_ramp_hit_from_one_s
          test_parked_rover_never_erases_an_established_wall, test_body_clear_is_the_moss_footprint,
          test_the_lidar_tag_is_one_exact_height, test_the_map_writes_only_during_the_mission,
          test_explore_order_opens_the_map_before_any_motion, test_what_goes_out_on_global_costmap,
-         test_the_mission_signals_cross_the_process_boundary, test_revolution_cost)
+         test_the_mission_signals_cross_the_process_boundary, test_revolution_cost,
+         test_camera_one_viewpoint_never_becomes_a_wall, test_camera_wall_no_longer_seen_is_carved_free,
+         test_camera_wall_still_seen_survives_the_rays, test_the_knobs_are_read_at_import,
+         test_the_carve_stays_in_the_cameras_view, test_body_clear_resets_the_camera_wall_flag)
 
 if __name__ == "__main__":
     OK = KO = 0

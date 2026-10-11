@@ -13,7 +13,7 @@ Strategy: information gain per path cost, taken from dimensionalOS/dimos
 PR #2830. What is reused verbatim from that PR, and what is not:
 
   reused   the objective shape, multiplicative instead of the old weighted sum:
-             score = info_gain / (1 + path_cost)
+             score = info_gain / (1 + path_cost)       (here to a power: see below)
              score *= 1 + 0.5 * heading_alignment      (its only numeric weight)
              score *= revisit_fade                     (linear there, inside a radius)
   reused   info gain = frontier cluster cell count, normalised by
@@ -29,6 +29,11 @@ PR #2830. What is reused verbatim from that PR, and what is not:
   dropped  its info_gain_threshold / num_no_gain_attempts self-stop, and the
            loop's "10 consecutive failures" give-up. Both are timers, and a
            timer can end a run with valid clusters still on the map.
+  changed  the path cost is raised to Tuning.distance_exponent, 2 by default
+           (1 is the PR's own shape). To the first power a frontier twice as
+           far only needs twice the gain to win, so a big frontier at the other
+           end of a room beats a small one beside the rover, and the rover
+           crosses the room for it. Squared, it needs four times the gain.
   changed  path cost is ONE Dijkstra from the robot over the whole traversable
            grid instead of one A* per cluster: same currency, N clusters for
            the price of one search.
@@ -52,6 +57,15 @@ PR #2830. What is reused verbatim from that PR, and what is not:
            unfinished business rather than a revisit (see next_target).
   added    a cluster reachable only across unmapped ground is a PROBE and is
            ranked behind every safe frontier (Tuning.probe_penalty).
+  added    a goal cap (Tuning.max_goal_path_m): a frontier whose path cost is
+           over the cap waits while a safe frontier lies within it. With only
+           probes within the cap, the safe frontiers beyond it compete again,
+           under the probe penalty; with nothing within it, the best beyond
+           it goes out. An exploration radius (Tuning.explore_radius_m): a
+           frontier is not a candidate while its target lies farther than the
+           radius from the first pose of the run, and a map with nothing left
+           inside it is an explored map: set to a room's size, the rover stays
+           in the room it started in.
   added    a viewpoint the robot has already decided from is never handed out
            again (Tuning.observed_radius_m): driving to a spot it is already at
            reveals nothing. That is geometry, not a counter, and it is what
@@ -228,6 +242,32 @@ class Tuning:
     standoff_max_m: float = 1.00
 
     # Scoring.
+    # How hard distance counts against information:
+    #   score = gain / (1 + path cost) ** distance_exponent
+    # 1 is PR #2830's shape, under which a frontier twice as far needs only
+    # twice the gain to win, so a big frontier across the room beats a small
+    # one beside the rover. At 2 it needs four times the gain. A shape, like
+    # _REVISIT_FADE_POWER, but the operator's to set (MOSS_EXPLORE_DISTANCE_EXP):
+    # how far the rover may go for more map is a choice made for the room.
+    distance_exponent: float = 2.0
+    # The highest path cost a goal is sent at (0 = no limit), in the metres of
+    # _path_cost: a metre of unknown counts as unknown_cost_factor metres, a
+    # metre in the band too tight to pivot in up to 1 + pivot_cost_factor. A
+    # frontier beyond it waits for THIS decision only, and only while a safe
+    # frontier lies within it: once the rover is nearer it comes back. When
+    # only probes lie within the cap, the safe frontiers beyond it compete
+    # with them, and the probe penalty weighs the two as it would with no cap
+    # (probes beyond it still wait). When nothing lies within it, the
+    # best of the rest goes out: dropping them all would end a run with
+    # frontiers still within reach, and only `None` ends a run, only when
+    # nothing is left.
+    max_goal_path_m: float = 3.0
+    # The area the run stays in, in metres around the anchor (the first pose of
+    # the run, ExploreState.anchor); 0 = no limit. A frontier is not a
+    # candidate while its target lies farther than this from the anchor, and a
+    # map with nothing left inside the radius is an explored map: the run ends
+    # as it ends on a fully explored map. 4 m is a room.
+    explore_radius_m: float = 0.0
     forward_bonus: float = 0.5     # PR #2830's momentum weight, on the real heading
     revisit_radius_m: float = 1.0  # within 1 m of a goal already published this
                                    # run, the score fades as the square of the
@@ -291,6 +331,8 @@ class ExploreState:
       back_off_issued  set when a back-off goes out, cleared when a frontier does
       last_directive   what it just returned ("" if None)
       targets_issued   count of frontier targets handed out
+      anchor           set once, from the first pose it is given: the centre
+                       of Tuning.explore_radius_m
     Nothing else in the process is touched: no globals, no costmap writes.
     """
 
@@ -306,6 +348,9 @@ class ExploreState:
     last_directive: str = ""
     targets_issued: int = 0
     wait_streak: int = 0        # consecutive WAITs; WAIT_REOPEN_POLLS triggers the starvation escape
+    # Where the run started: the first pose next_target is given, never moved
+    # afterwards. A fresh ExploreState is a fresh run, so a fresh anchor.
+    anchor: tuple[float, float] | None = None
 
     def note_failed(self, x: float, y: float, robot_xy: tuple[float, float],
                     costmap: Any, radius_m: float = DEFAULT_TUNING.failed_goal_radius_m) -> None:
@@ -879,8 +924,9 @@ def next_target(costmap: Any, pose: Any, state: ExploreState, *,
         left to look at and no exclusion is holding anything back - either the
         map holds no frontier cluster at all, or every one it holds has already
         been looked straight at from where the rover stood, or nowhere the body
-        can stand can see it. No counters, no attempt limits, no timers; a rover
-        that is merely shut in gets a back-off, not a None.
+        can stand can see it, or its target lies outside the exploration radius.
+        No counters, no attempt limits, no timers; a rover that is merely shut
+        in gets a back-off, not a None.
     """
     now = time.monotonic() if now is None else float(now)
     grid = np.asarray(costmap.grid)
@@ -893,6 +939,8 @@ def next_target(costmap: Any, pose: Any, state: ExploreState, *,
     rx, ry_world = float(pose.position.x), float(pose.position.y)
     heading = _yaw_of(pose, state.heading)
     state.heading = heading
+    if state.anchor is None:
+        state.anchor = (rx, ry_world)
     # This pose has just had a lidar revolution. Record it once per half-radius
     # so the list stays short over a long run.
     half = tuning.observed_radius_m / 2.0
@@ -979,9 +1027,11 @@ def next_target(costmap: Any, pose: Any, state: ExploreState, *,
 
     # --- temporary exclusions ----------------------------------------------
     radius2 = tuning.failed_goal_radius_m ** 2
+    ax, ay = state.anchor
     eligible: list[Cluster] = []
     n_blocked = 0
     n_seen_from = 0
+    n_outside = 0
     for cluster in clusters:
         gx, gy = cluster.goal_xy
         if cluster.retired:
@@ -991,14 +1041,20 @@ def next_target(costmap: Any, pose: Any, state: ExploreState, *,
             # then asked to look.
             n_seen_from += 1
             continue
+        if tuning.explore_radius_m > 0 and math.hypot(gx - ax, gy - ay) > tuning.explore_radius_m:
+            # Its target lies outside the area this run stays in: not a
+            # candidate for this decision.
+            n_outside += 1
+            continue
         if any((gx - f[0]) ** 2 + (gy - f[1]) ** 2 < radius2 for f in state.failed):
             n_blocked += 1
         else:
             eligible.append(cluster)
 
     if not eligible and not n_blocked:
-        # Every cluster is one the rover has already stood at and looked from.
-        # Nothing reachable is worth going to: that is the end of the run.
+        # Every cluster is one the rover has already stood at and looked from,
+        # or lies outside the exploration radius. Nothing reachable is worth
+        # going to: that is the end of the run.
         state.last_directive = ""
         return None
 
@@ -1020,21 +1076,20 @@ def next_target(costmap: Any, pose: Any, state: ExploreState, *,
                             directive=DIRECTIVE_WAIT, wait_s=0.0,
                             reopened_xy=reopened,
                             n_clusters=len(clusters), n_excluded=n_blocked,
-                            n_already_seen_from=n_seen_from, n_on_the_map=on_the_map)
+                            n_already_seen_from=n_seen_from, n_outside_radius=n_outside,
+                            n_on_the_map=on_the_map)
 
     # --- score (information gain per path cost, PR #2830) -----------------
     costs = _path_cost(survey.reachable, survey.cell_cost, survey.seed, res)
 
-    best: Cluster | None = None
-    best_score = -math.inf
-    best_cost = math.inf
+    scored: list[tuple[Cluster, float, float]] = []     # (cluster, score, path cost)
     for cluster in eligible:
         gy, gx = cluster.goal_yx
         cost = float(costs[gy, gx]) if survey.reachable[gy, gx] else math.inf
         if not math.isfinite(cost):
             # Unreachable: PR #2830's -inf, dropped rather than published.
             continue
-        score = cluster.gain / (1.0 + cost)
+        score = cluster.gain / (1.0 + cost) ** tuning.distance_exponent
         if cluster.probe:
             score *= tuning.probe_penalty
 
@@ -1069,8 +1124,36 @@ def next_target(costmap: Any, pose: Any, state: ExploreState, *,
             if nearest < tuning.revisit_radius_m:
                 score *= (nearest / tuning.revisit_radius_m) ** _REVISIT_FADE_POWER
 
+        scored.append((cluster, score, cost))
+
+    # --- the goal cap (Tuning.max_goal_path_m) -----------------------------
+    # Which clusters compete, by where they lie against the cap:
+    #   a SAFE cluster within it     the ones within it compete; every one
+    #                                beyond it waits for this decision
+    #   only PROBES within it        they compete with the SAFE clusters
+    #                                beyond it, under the probe penalty; the
+    #                                probes beyond it wait
+    #   nothing within it            every cluster beyond it competes: the cap
+    #                                never ends a run with frontiers in reach
+    cap = tuning.max_goal_path_m
+    beyond = [cap > 0 and cost > cap for _, _, cost in scored]
+    n_beyond_cap = sum(beyond)
+    within = [entry for entry, out in zip(scored, beyond) if not out]
+    if any(not cluster.probe for cluster, _, _ in within):
+        pool = within
+    elif within:
+        pool = [entry for entry, out in zip(scored, beyond) if not out or not entry[0].probe]
+    else:
+        pool = scored
+
+    best: Cluster | None = None
+    best_score = -math.inf
+    best_cost = math.inf
+    for cluster, score, cost in pool:
         if score > best_score:
             best, best_score, best_cost = cluster, score, cost
+    # The goal lies beyond the cap: nothing safe was within it.
+    beyond_cap = best is not None and cap > 0 and best_cost > cap
 
     if best is None:
         # Clusters exist but none is reachable from where the body can stand.
@@ -1087,9 +1170,10 @@ def next_target(costmap: Any, pose: Any, state: ExploreState, *,
                         path_cost_m=best_cost, info_cells=best.size, info_gain=best.gain,
                         centroid_xy=best.centroid_xy, look_at_xy=best.look_at_xy,
                         on_frontier=best.on_frontier, probe=best.probe,
-                        in_sight=best.in_sight,
+                        in_sight=best.in_sight, beyond_cap=beyond_cap,
                         n_clusters=len(clusters), n_excluded=n_blocked,
-                        n_already_seen_from=n_seen_from, n_on_the_map=on_the_map)
+                        n_already_seen_from=n_seen_from, n_outside_radius=n_outside,
+                        n_beyond_cap=n_beyond_cap, n_on_the_map=on_the_map)
 
 
 # ===========================================================================
@@ -1137,6 +1221,9 @@ if HAVE_DIMOS:  # pragma: no cover - needs the dimOS stack
         footprint_clear_m: float = DEFAULT_TUNING.footprint_clear_m
         observed_radius_m: float = DEFAULT_TUNING.observed_radius_m
         forward_bonus: float = DEFAULT_TUNING.forward_bonus
+        distance_exponent: float = DEFAULT_TUNING.distance_exponent
+        max_goal_path_m: float = DEFAULT_TUNING.max_goal_path_m
+        explore_radius_m: float = DEFAULT_TUNING.explore_radius_m
         revisit_radius_m: float = DEFAULT_TUNING.revisit_radius_m
         failed_goal_radius_m: float = DEFAULT_TUNING.failed_goal_radius_m
         failed_goal_moved_m: float = DEFAULT_TUNING.failed_goal_moved_m
@@ -1191,6 +1278,9 @@ if HAVE_DIMOS:  # pragma: no cover - needs the dimOS stack
                 footprint_clear_m=self.config.footprint_clear_m,
                 observed_radius_m=self.config.observed_radius_m,
                 forward_bonus=self.config.forward_bonus,
+                distance_exponent=self.config.distance_exponent,
+                max_goal_path_m=self.config.max_goal_path_m,
+                explore_radius_m=self.config.explore_radius_m,
                 revisit_radius_m=self.config.revisit_radius_m,
                 failed_goal_radius_m=self.config.failed_goal_radius_m,
                 failed_goal_moved_m=self.config.failed_goal_moved_m,
@@ -1221,6 +1311,10 @@ if HAVE_DIMOS:  # pragma: no cover - needs the dimOS stack
         def _run_exploration_loop(self) -> None:  # type: ignore[override]
             self._state = ExploreState()
             state = self._state
+            tuning = self._tuning
+            logger.info(f"exploration start: distance exp {tuning.distance_exponent:g}, "
+                        f"cap {tuning.max_goal_path_m:g} m, radius {tuning.explore_radius_m:g} m "
+                        "(0 = no limit; the radius is centred on the first pose)")
             while self.exploration_active and not self.stop_event.is_set():
                 if self.latest_costmap is None or self.latest_odometry is None:
                     self.stop_event.wait(0.5)
@@ -1228,11 +1322,13 @@ if HAVE_DIMOS:  # pragma: no cover - needs the dimOS stack
 
                 costmap: OccupancyGrid = self.latest_costmap
                 t0 = time.perf_counter()
-                target = next_target(costmap, self.latest_odometry, state, tuning=self._tuning)
+                target = next_target(costmap, self.latest_odometry, state, tuning=tuning)
                 elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
                 if target is None:
-                    logger.info(f"exploration complete: no reachable frontier left "
+                    within = (f" within {tuning.explore_radius_m:g} m of the start"
+                              if tuning.explore_radius_m > 0 else "")
+                    logger.info(f"exploration complete: no reachable frontier left{within} "
                                 f"({state.targets_issued} targets, {elapsed_ms:.0f} ms)")
                     # said on the bus BEFORE the loop exits: consumers learn the
                     # end at this instant, not whenever someone notices the
@@ -1288,7 +1384,8 @@ if HAVE_DIMOS:  # pragma: no cover - needs the dimOS stack
                 self.goal_request.publish(goal)
                 logger.info(
                     f"goal {state.targets_issued}: ({goal.position.x:.2f}, {goal.position.y:.2f}) "
-                    f"{getattr(target, 'path_cost_m', float('nan')):.1f} m away, "
+                    f"{getattr(target, 'path_cost_m', float('nan')):.1f} m away"
+                    f"{' (beyond the cap: nothing safe within it)' if getattr(target, 'beyond_cap', False) else ''}, "
                     f"{getattr(target, 'info_cells', 0)} frontier cells, "
                     f"{getattr(target, 'n_clusters', 0)} clusters, chosen in {elapsed_ms:.0f} ms")
 
@@ -1336,6 +1433,7 @@ if HAVE_DIMOS:  # pragma: no cover - needs the dimOS stack
             return {"visited": list(self._state.visited),
                     "failed": list(self._state.failed),
                     "heading": self._state.heading,
+                    "anchor": self._state.anchor,
                     "targets_issued": self._state.targets_issued,
                     "last_directive": self._state.last_directive}
 

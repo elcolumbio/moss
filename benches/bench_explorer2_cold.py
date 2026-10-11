@@ -13,14 +13,25 @@ Every check is a known input giving a known output in physical units
   F. the end of a run           - None exactly when there is nothing left
   H. revisits                   - fresh ground beats ground already worked
   I. shut in                    - pinched is not finished
+  K. how far                    - the distance exponent (a big frontier across
+                                  the room does not beat a small one beside
+                                  the rover), the goal cap (a farther frontier
+                                  waits while a safe one lies within it, never
+                                  behind a probe, and never ends a run) and the
+                                  exploration radius around the first pose
+                                  (nothing left inside it is the end of a run)
   G. purity                     - the costmap, the pose and the rest of the
                                   state come back untouched, and the function
                                   is deterministic
-  J. the loop around it         - which goal a bare goal_reached is credited to
+  J. the loop around it         - which goal a bare goal_reached is credited to,
+                                  and the one line that states exp, cap, radius
+  L. the blueprint's knobs      - MOSS_EXPLORE_DISTANCE_EXP, MOSS_GOAL_MAX_M,
+                                  MOSS_EXPLORE_RADIUS_M -> the Explorer2 config
 
-No robot and no LCM. A to I need numpy and scipy only (the geometry is built on
-the default Tuning, a 0.50 m wide reference body). Only J touches the module
-class, and it skips itself where dimOS is not installed.
+No robot and no LCM. A to I, K and G need numpy and scipy only (the geometry is
+built on the default Tuning, a 0.50 m wide reference body). Only J and L touch
+the module class and the blueprint, and they skip themselves where dimOS is
+not installed.
 
 Run from the repository root:  python benches/bench_explorer2_cold.py
 """
@@ -557,6 +568,201 @@ for label, grid_in in (("one door", door(room(), "east", 70, 24)),
 
 
 # ===========================================================================
+print("K. how far: the distance exponent, the goal cap, the exploration radius")
+
+# A hall, 6 x 2 m, walled on three sides. Its east end opens onto 1 m of
+# unknown (the far frontier: 38 cells, the whole width of the hall). Halfway
+# along the north wall, a 0.50 m door into a 1.0 x 0.6 m closet (the near
+# frontier: 8 cells). Heading is taken out of the picture (forward_bonus 0) so
+# every score below is exactly gain / (1 + path) ** exponent.
+#
+# With `bay`, a 1.0 m opening in the south wall (x 2.0 .. 3.0 m) gives onto a
+# 0.10 m strip of unknown, then 0.25 m of seen floor, then a 0.70 m unknown
+# pocket closed by a wall. The pocket's frontier is looked at from that seen
+# floor, which the rover can only reach across the unknown strip: a PROBE.
+def hall(closet=True, bay=False):
+    g = np.full((120, 220), UNKNOWN, dtype=np.int8)
+    g[40:80, 20:140] = FREE                   # x 1.0 .. 7.0 m, y 2.0 .. 4.0 m
+    g[39:81, 19] = OCCUPIED                   # west wall
+    g[39, 19:161] = OCCUPIED                  # south wall, on past the open end
+    g[80, 19:161] = OCCUPIED                  # north wall, likewise
+    g[39:81, 160] = OCCUPIED                  # the far pocket's back wall, 1 m out
+    if closet:
+        g[80:93, 57] = OCCUPIED               # closet sides, x 2.85 and 3.90 m
+        g[80:93, 78] = OCCUPIED
+        g[93, 57:79] = OCCUPIED               # closet back, 0.6 m behind the door
+        g[80, 63:73] = UNKNOWN                # the 0.50 m door, x 3.15 .. 3.65 m
+    if bay:
+        g[38:40, 40:60] = UNKNOWN             # the opening and the unknown strip, y 1.90 .. 2.00 m
+        g[33:38, 40:60] = FREE                # seen floor beyond it, y 1.65 .. 1.90 m
+        g[18:39, 39] = OCCUPIED               # bay sides, x 1.95 and 3.00 m
+        g[18:39, 60] = OCCUPIED
+        g[18, 39:61] = OCCUPIED               # its back wall, y 0.90 m
+    return g
+
+
+def flat(**kw):
+    return Tuning(forward_bonus=0.0, **kw)
+
+
+hall_cm = Grid(hall())
+start = pose(w_of(50), w_of(60), 0.0)          # (2.53, 3.03): 1.2 m from the closet's
+                                               # viewpoint, 4.5 m from the far end's
+
+linear = next_target(hall_cm, start, ExploreState(), now=100.0,
+                     tuning=flat(distance_exponent=1.0, max_goal_path_m=0.0))
+squared = next_target(hall_cm, start, ExploreState(), now=100.0,
+                      tuning=flat(distance_exponent=2.0, max_goal_path_m=0.0))
+assert linear is not None and squared is not None
+far_end = (linear.info_gain, linear.path_cost_m)
+closet = (squared.info_gain, squared.path_cost_m)
+for exp in (1.0, 2.0):
+    print(f"     exponent {exp:g}: far end gain {far_end[0]:.4f} / (1 + {far_end[1]:.2f} m)^{exp:g} "
+          f"= {far_end[0] / (1 + far_end[1]) ** exp:.5f}, "
+          f"closet gain {closet[0]:.4f} / (1 + {closet[1]:.2f} m)^{exp:g} "
+          f"= {closet[0] / (1 + closet[1]) ** exp:.5f}")
+check("(setup) two clusters, both on seen floor, the far one the bigger",
+      linear.n_clusters == 2 and not linear.probe and not squared.probe
+      and linear.info_cells > squared.info_cells and far_end[0] > closet[0],
+      f"{linear.info_cells} vs {squared.info_cells} cells, gain {far_end[0]:.4f} vs {closet[0]:.4f}")
+check("(setup) the far end is 4.5 m of path away, the closet 1.2 m",
+      abs(far_end[1] - 4.5) < 0.1 and abs(closet[1] - 1.2) < 0.1,
+      f"{far_end[1]:.2f} m, {closet[1]:.2f} m")
+check("exponent 1 (PR #2830's shape): the big far end wins",
+      linear.position.x > w_of(130), f"x = {linear.position.x:.2f} m")
+check("exponent 2: the small closet beside the rover wins",
+      w_of(57) < squared.position.x < w_of(78) and squared.position.y > w_of(70),
+      f"({squared.position.x:.2f}, {squared.position.y:.2f})")
+check("the score handed back is gain / (1 + path) ** exponent, exactly",
+      abs(linear.score - far_end[0] / (1 + far_end[1])) < 1e-12
+      and abs(squared.score - closet[0] / (1 + closet[1]) ** 2) < 1e-12,
+      f"{linear.score:.6f}, {squared.score:.6f}")
+default = next_target(hall_cm, start, ExploreState(), now=100.0)
+check("the defaults (exponent 2, cap 3 m) send the rover to the closet",
+      default is not None and abs(default.path_cost_m - closet[1]) < 1e-9
+      and DEFAULT_TUNING.distance_exponent == 2.0 and DEFAULT_TUNING.max_goal_path_m == 3.0,
+      f"{default.path_cost_m:.2f} m" if default else "None")
+
+capped = next_target(hall_cm, start, ExploreState(), now=100.0,
+                     tuning=flat(distance_exponent=1.0, max_goal_path_m=3.0))
+check("cap 3 m, exponent 1: the 4.5 m far end is not a candidate, the closet goes out",
+      capped is not None and abs(capped.path_cost_m - closet[1]) < 1e-9
+      and capped.n_beyond_cap == 1 and capped.beyond_cap is False,
+      f"{capped.path_cost_m:.2f} m, {capped.n_beyond_cap} beyond" if capped else "None")
+roomy = next_target(hall_cm, start, ExploreState(), now=100.0,
+                    tuning=flat(distance_exponent=1.0, max_goal_path_m=5.0))
+check("cap 5 m: the 4.5 m far end is a candidate again and wins",
+      roomy is not None and abs(roomy.path_cost_m - far_end[1]) < 1e-9 and roomy.n_beyond_cap == 0)
+
+# The closet mapped, the far end the only frontier left: the cap must not end
+# the run (only None does, and only when nothing is left).
+bare_hall = Grid(hall(closet=False))
+only_far = next_target(bare_hall, start, ExploreState(), now=100.0)
+check("nothing within the cap: the far end still goes out, flagged, the run goes on",
+      only_far is not None and only_far.directive == DIRECTIVE_FRONTIER
+      and only_far.beyond_cap is True and only_far.path_cost_m > 3.0,
+      f"{only_far.path_cost_m:.2f} m, beyond_cap {only_far.beyond_cap}" if only_far else "None")
+nearer = next_target(bare_hall, pose(w_of(90), w_of(60), 0.0), ExploreState(), now=100.0)
+check("and once the rover is within 3 m of it, it is a plain candidate again",
+      nearer is not None and nearer.path_cost_m <= 3.0 and nearer.beyond_cap is False,
+      f"{nearer.path_cost_m:.2f} m" if nearer else "None")
+
+# The cap against the probe penalty. In the hall with the bay and no closet,
+# only the bay's probe lies within 3 m; the far end, safe, lies beyond. The
+# rover faces the bay, so the heading bonus goes to the probe. The defaults
+# throughout, except where probe_penalty is named.
+bay_hall = Grid(hall(closet=False, bay=True))
+facing_bay = pose(w_of(50), w_of(60), -math.pi / 2)
+safe_far = next_target(bay_hall, facing_bay, ExploreState(), now=100.0)
+no_penalty = next_target(bay_hall, facing_bay, ExploreState(), now=100.0,
+                         tuning=Tuning(probe_penalty=1.0))
+assert safe_far is not None and no_penalty is not None
+penalised = no_penalty.score * DEFAULT_TUNING.probe_penalty
+print(f"     probe {no_penalty.path_cost_m:.2f} m away: {no_penalty.score:.5f}, "
+      f"x {DEFAULT_TUNING.probe_penalty:g} = {penalised:.5f}; "
+      f"safe far end {safe_far.path_cost_m:.2f} m away: {safe_far.score:.5f}")
+check("(setup) the bay's frontier is a probe within the cap, the far end safe beyond it",
+      no_penalty.probe and no_penalty.path_cost_m < 3.0
+      and not safe_far.probe and safe_far.path_cost_m > 3.0,
+      f"probe {no_penalty.probe} at {no_penalty.path_cost_m:.2f} m, "
+      f"far end probe {safe_far.probe} at {safe_far.path_cost_m:.2f} m")
+check("a probe within 3 m, a safe frontier at 4.5 m: under the defaults the safe one goes out",
+      safe_far.position.x > w_of(130) and safe_far.beyond_cap is True
+      and safe_far.n_beyond_cap == 1,
+      f"x = {safe_far.position.x:.2f} m, beyond_cap {safe_far.beyond_cap}, "
+      f"{safe_far.n_beyond_cap} beyond")
+check("the probe penalty decides it, not the cap: at probe_penalty 1 the probe wins",
+      w_of(40) < no_penalty.position.x < w_of(60) and no_penalty.position.y < w_of(38)
+      and penalised < safe_far.score < no_penalty.score,
+      f"({no_penalty.position.x:.2f}, {no_penalty.position.y:.2f})")
+
+# The closet back in: a safe frontier within the cap (1.2 m), the probe within
+# it (1.7 m), and the far end, safe, beyond it (4.5 m).
+both_hall = Grid(hall(closet=True, bay=True))
+near_safe = next_target(both_hall, start, ExploreState(), now=100.0)
+check("a safe frontier within 3 m, a safe one at 4.5 m: under the defaults the near one goes out",
+      near_safe is not None and not near_safe.probe
+      and w_of(57) < near_safe.position.x < w_of(78) and near_safe.position.y > w_of(70)
+      and near_safe.path_cost_m < 3.0 and near_safe.beyond_cap is False
+      and near_safe.n_beyond_cap == 1,
+      f"({near_safe.position.x:.2f}, {near_safe.position.y:.2f}) {near_safe.path_cost_m:.2f} m"
+      if near_safe else "None")
+open_far = next_target(both_hall, start, ExploreState(), now=100.0,
+                       tuning=flat(distance_exponent=1.0, max_goal_path_m=0.0))
+held = next_target(both_hall, start, ExploreState(), now=100.0,
+                   tuning=flat(distance_exponent=1.0, max_goal_path_m=3.0))
+check("exponent 1: the far end wins with no cap; cap 3 m holds it back for the near safe one",
+      open_far is not None and open_far.position.x > w_of(130)
+      and held is not None and not held.probe and held.beyond_cap is False
+      and w_of(57) < held.position.x < w_of(78) and held.position.y > w_of(70),
+      f"no cap x = {open_far.position.x:.2f} m, cap 3 m "
+      f"({held.position.x:.2f}, {held.position.y:.2f})" if open_far and held else "None")
+
+# The radius. The run starts at (4.03, 2.48): the closet's viewpoint is 1.5 m
+# from there, the far end's 3.0 m.
+anchor_pose = pose(w_of(80), w_of(49), 0.0)
+ax, ay = anchor_pose.position.x, anchor_pose.position.y
+st = ExploreState()
+wide = next_target(hall_cm, anchor_pose, ExploreState(), now=100.0,
+                   tuning=flat(max_goal_path_m=0.0))
+assert wide is not None
+d_far = math.hypot(wide.position.x - ax, wide.position.y - ay)
+inside = next_target(hall_cm, anchor_pose, st, now=100.0,
+                     tuning=flat(max_goal_path_m=0.0, explore_radius_m=2.0))
+d_near = (math.hypot(inside.position.x - ax, inside.position.y - ay)
+          if inside is not None else float("nan"))
+print(f"     from the anchor: far end's target {d_far:.2f} m, closet's {d_near:.2f} m")
+check("(setup) with no radius the far end wins from there, its target 3.0 m from the start",
+      wide.position.x > w_of(130) and abs(d_far - 3.0) < 0.05, f"{d_far:.2f} m")
+check("radius 2 m: the target 3.0 m from the anchor is dropped, the one 1.5 m away kept",
+      inside is not None and abs(d_near - 1.5) < 0.05 and inside.n_outside_radius == 1,
+      f"{d_near:.2f} m, {getattr(inside, 'n_outside_radius', None)} outside")
+check("the anchor is the first pose the run was given",
+      st.anchor == (ax, ay), f"{st.anchor}")
+
+# Later in the same run: the closet is mapped and the rover has driven up the
+# hall, 1.5 m from the far end's target. The radius is still centred where the
+# run began, so the far end stays out, and nothing is left inside it.
+up_hall = pose(w_of(110), w_of(60), 0.0)
+fresh = next_target(bare_hall, up_hall, ExploreState(), now=100.0,
+                    tuning=flat(max_goal_path_m=0.0, explore_radius_m=2.0))
+check("(setup) a run STARTING up the hall has the far end inside its 2 m",
+      fresh is not None and fresh.position.x > w_of(130),
+      f"x = {fresh.position.x:.2f} m" if fresh else "None")
+ended = next_target(bare_hall, up_hall, st, now=101.0,
+                    tuning=flat(max_goal_path_m=0.0, explore_radius_m=2.0))
+check("only out-of-radius frontiers left -> None: exploration complete",
+      ended is None, str(ended))
+check("an end, not a back-off or a wait, and the anchor did not move",
+      st.last_directive == "" and st.back_off_issued is False and st.anchor == (ax, ay),
+      f"{st.last_directive!r}, {st.back_off_issued}, {st.anchor}")
+unlimited = next_target(bare_hall, up_hall, st.copy(), now=102.0, tuning=flat(max_goal_path_m=0.0))
+check("radius 0 is no limit: the same run, same anchor, goes on to the far end",
+      unlimited is not None and unlimited.position.x > w_of(130),
+      f"x = {unlimited.position.x:.2f} m" if unlimited else "None")
+
+
+# ===========================================================================
 print("G. purity: nothing but the state's own fields changes")
 
 g = door(room(), "east", 70, 24)
@@ -579,9 +785,9 @@ check("back_off_issued untouched when nothing was cornered",
       st.back_off_issued == before.back_off_issued)
 check("heading was refreshed from the pose (0.3 rad)", abs(st.heading - 0.3) < 1e-6,
       f"{st.heading}")
-check("visited / observed / targets_issued / last_directive are the only other changes",
-      (len(st.visited), len(st.observed), st.targets_issued, st.last_directive)
-      == (1, 1, 1, DIRECTIVE_FRONTIER))
+check("visited / observed / targets_issued / last_directive / anchor are the only other changes",
+      (len(st.visited), len(st.observed), st.targets_issued, st.last_directive, st.anchor)
+      == (1, 1, 1, DIRECTIVE_FRONTIER, (here.position.x, here.position.y)))
 
 reopened = ExploreState()
 reopened.note_failed(1.0, 2.0, (here.position.x - 5.0, here.position.y), cm)   # failed 5 m from here
@@ -630,12 +836,14 @@ else:
     STEP_M = 0.4                # what the rover covers per goal: > GOAL_PROGRESS_M
 
     FRONTIER_LEFT = [True]      # flipped by `explored()`: next_target then returns None
+    STUB_BEYOND_CAP = [False]   # what the stub's target says about the goal cap
 
     def stub_target(costmap, odom, state, **kwargs):
         if not FRONTIER_LEFT[0]:
             return None         # "exploration complete: no reachable frontier left"
         t = PoseStamped(ts=0.0, frame_id="world")
         t.position.x, t.position.y = STUB_GOAL
+        t.beyond_cap = STUB_BEYOND_CAP[0]
         return t
 
     class DoneOut:
@@ -690,7 +898,7 @@ else:
     def acts(*fns):
         return lambda ex: [f(ex) for f in fns]
 
-    def run_loop(script, wired=True):
+    def run_loop(script, wired=True, tuning=DEFAULT_TUNING):
         FRONTIER_LEFT[0] = True
         ex = object.__new__(Explorer2)
         ex._state = ExploreState()
@@ -698,7 +906,7 @@ else:
         ex._last_goal_ok = None
         ex._late_answer_owed = False
         ex._goal_published_t = 0.0
-        ex._tuning = DEFAULT_TUNING
+        ex._tuning = tuning
         ex.goal_reached_event = threading.Event()
         ex.stop_event = threading.Event()
         ex.exploration_active = True
@@ -779,6 +987,110 @@ else:
     check("an unwired Out is never published to, and does not crash the loop",
           ex.explore_done.sent == [] and ex.exploration_active is False)
 
+    # -- exp, cap and radius: said once, when exploration starts ----------
+    class Said:
+        """Stands in for the module's logger and keeps every line."""
+
+        def __init__(self):
+            self.lines = []
+
+        def info(self, msg, *args, **kwargs):
+            self.lines.append(str(msg))
+
+        warning = error = debug = info
+
+    real_logger = _explorer2_module.logger
+    said = Said()
+    _explorer2_module.logger = said
+    try:
+        ex, planner, ended = run_loop({1: drove, 2: acts(drove, last)})
+        said_default = list(said.lines)
+        said.lines.clear()
+        ex, planner_r, ended = run_loop({1: acts(explored, gave_up)},
+                                        tuning=Tuning(explore_radius_m=4.0))
+        said_radius = list(said.lines)
+        said.lines.clear()
+        STUB_BEYOND_CAP[0] = True
+        ex, planner_c, ended = run_loop({1: acts(explored, gave_up)})
+        said_cap = list(said.lines)
+    finally:
+        STUB_BEYOND_CAP[0] = False
+        _explorer2_module.logger = real_logger
+    starts = [line for line in said_default if "exp 2, cap 3 m, radius 0 m" in line]
+    check("one line at the start says 'exp 2, cap 3 m, radius 0 m', and no goal line repeats it",
+          len(planner.goals) == 2 and len(starts) == 1 and said_default[0] == starts[0]
+          and sum("exp " in line for line in said_default) == 1,
+          f"{len(planner.goals)} goals; {said_default[:1]}")
+    check("a radius run says its radius, and its end says 'within 4 m of the start'",
+          any("radius 4 m" in line for line in said_radius[:1])
+          and any("no reachable frontier left within 4 m of the start" in line for line in said_radius),
+          f"{said_radius}")
+    cap_lines = [line for line in said_cap if line.startswith("goal ")]
+    check("a goal beyond the cap says so on its line, and a goal within it does not",
+          len(cap_lines) == 1 and "(beyond the cap: nothing safe within it)" in cap_lines[0]
+          and not any("beyond the cap" in line for line in said_default),
+          f"{cap_lines}")
+
+
+# ===========================================================================
+print("L. the blueprint: three env knobs -> the Explorer2 config")
+# ===========================================================================
+
+if Explorer2 is None:
+    print("  -- skipped: no dimOS here, the blueprint does not import")
+else:
+    import os
+
+    import moss_dimos.blueprints as mb
+    from moss_dimos.explorer2 import Explorer2Config
+
+    check("unset: nothing passed, the explorer keeps its defaults", mb.explorer_env({}) == {})
+    check("'1', '0', ' 4 ' -> exponent 1.0, cap 0.0 m (no limit), radius 4.0 m",
+          mb.explorer_env({"MOSS_EXPLORE_DISTANCE_EXP": "1", "MOSS_GOAL_MAX_M": "0",
+                           "MOSS_EXPLORE_RADIUS_M": " 4 "})
+          == {"distance_exponent": 1.0, "max_goal_path_m": 0.0, "explore_radius_m": 4.0})
+    refused = mb.explorer_env({"MOSS_EXPLORE_DISTANCE_EXP": "two", "MOSS_GOAL_MAX_M": "-1",
+                               "MOSS_EXPLORE_RADIUS_M": "inf"})
+    check("'two', '-1', 'inf' are refused (warned): the defaults stay", refused == {}, f"{refused}")
+    steep = [mb.explorer_env({"MOSS_EXPLORE_DISTANCE_EXP": raw}) for raw in ("250", "7", "6")]
+    check("an exponent of 250 or 7 is refused (warned), 6 is the largest taken",
+          steep == [{}, {}, {"distance_exponent": 6.0}], f"{steep}")
+    try:
+        overflow = repr(31.0 ** 250)
+    except OverflowError as exc:
+        overflow = f"OverflowError {exc}"
+    check("(why) a float power of 250 raises instead of giving inf, at 6 it is finite",
+          overflow.startswith("OverflowError") and math.isfinite(31.0 ** 6),
+          f"31.0 ** 250: {overflow}")
+    check("the config's defaults are the Tuning's: exponent 2, cap 3 m, radius 0",
+          (Explorer2Config.model_fields["distance_exponent"].default,
+           Explorer2Config.model_fields["max_goal_path_m"].default,
+           Explorer2Config.model_fields["explore_radius_m"].default)
+          == (DEFAULT_TUNING.distance_exponent, DEFAULT_TUNING.max_goal_path_m,
+              DEFAULT_TUNING.explore_radius_m) == (2.0, 3.0, 0.0))
+
+    knobs = {"MOSS_CAMERA": "0", "MOSS_RECORD": "0", "MOSS_WRIST": "0",
+             "MOSS_EXPLORE_DISTANCE_EXP": "1.5", "MOSS_GOAL_MAX_M": "2.5", "MOSS_EXPLORE_RADIUS_M": "4"}
+    saved = {k: os.environ.get(k) for k in knobs}
+    os.environ.update(knobs)
+    try:
+        built = mb.build_moss_explore()
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    kw = next(b for b in built.active_blueprints if b.module.__name__ == "Explorer2").kwargs
+    check("moss-explore built with the three set: Explorer2 gets 1.5, 2.5 m, 4 m",
+          (kw.get("distance_exponent"), kw.get("max_goal_path_m"), kw.get("explore_radius_m"))
+          == (1.5, 2.5, 4.0), f"{kw}")
+    cfg = Explorer2Config(**kw)
+    check("and its config holds them", (cfg.distance_exponent, cfg.max_goal_path_m,
+                                        cfg.explore_radius_m) == (1.5, 2.5, 4.0))
+
 
 print(f"{OK} OK, {KO} KO")
+if not KO:
+    print("TEST PASSED")
 sys.exit(1 if KO else 0)

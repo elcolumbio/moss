@@ -68,6 +68,11 @@ if [ "${MOSS_PULSE_MS:-0}" != "0" ]; then export MOSS_RAMP_MS="${MOSS_RAMP_MS:-1
 export MOSS_STATE_DIR="${MOSS_STATE_DIR:-$HOME/.local/state/moss}"
 export MOSS_RECORD="${MOSS_RECORD:-1}"
 export MOSS_CAMERA="${MOSS_CAMERA:-1}"
+# the explorer stays within this distance of where exploration started: 4 m = one room
+# (the rover does not go through a door it was not meant to take); 0 = no limit, for
+# open ground. The other explorer knobs (MOSS_GOAL_MAX_M, MOSS_EXPLORE_DISTANCE_EXP)
+# keep their code defaults: see docs/cockpit.md
+export MOSS_EXPLORE_RADIUS_M="${MOSS_EXPLORE_RADIUS_M:-4}"
 NERF_SPEED="${MOSS_NERF_SPEED:-0.5}"
 COCKPIT_PORT="${MOSS_COCKPIT_PORT:-8904}"
 PREFLIGHT_JSON="$MOSS_STATE_DIR/preflight.json"   # served by the cockpit as /preflight.json

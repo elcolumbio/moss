@@ -8,7 +8,9 @@ Every check feeds a value we know and reads back a value in physical units
                       pixel <-> metre formulas, even downsampling
   B. demo server    - /, /static, /state.json schema, /map.png (demo size, wall =
                       WHITE, floor = free colour), /map_meta roundtrip, /scan.json
-                      (<= 1500 points, every point on a wall, no depth-camera point),
+                      (<= 1500 points, every point on a wall, no depth-camera point,
+                      the pose on the loop's first leg, at most 0.2 m/s past the pose
+                      of a /state.json read right before it), base stalled/stall_count,
                       /camera.mjpg framing
                       and its 5 fps cap, POST /cmd/goal|stop|episode|stack, path
                       traversal refused, bad bodies refused
@@ -16,9 +18,11 @@ Every check feeds a value we know and reads back a value in physical units
                       cache: OccupancyGrid -> exact PNG pixels, PointCloud2 -> scan
                       points (and the /pointcloud fallback), the `lidar` cloud split
                       into lidar returns (z = the profile's lidar height, the stack's
-                      own override first) and depth-camera points, PoseStamped yaw 90 deg,
-                      telemetry String -> battery %, Path, explore/goal state, a JPEG
-                      image passed through byte for byte
+                      own override first) and depth-camera points, PoseStamped yaw 90 deg
+                      on /state.json and on /scan.json (read per request, never cached
+                      with the scan), telemetry String -> battery %, stalled/stall_count
+                      (None from telemetry before the stall guard), Path, explore/goal
+                      state, a JPEG image passed through byte for byte
   D. commands       - POST /cmd/* in live mode publish the known bytes on the known
                       channels (fake LCM handle); explore_ctl's generic publisher and
                       its start/stop; a run that is not on LCM is refused (503), the
@@ -34,7 +38,13 @@ Every check feeds a value we know and reads back a value in physical units
                       reading frees its camera slot
   H. the real page  - tools/moss_cockpit/ served as shipped: index.html, every asset it
                       and tokens.css reference, the run caption's namespace strip, the
-                      depth-camera legend element the map writes to
+                      depth-camera legend element the map writes to, the STALLED badge
+                      and the stalls row; the page's wiring (pose() through freshestPose
+                      with the scan's pose and answer time, pollScan stamping each answer,
+                      renderBase through the stall latch); node --check app.js, and the
+                      page's own pose choice (state vs scan, the younger wins), stall view
+                      and stall latch (a stall the 1 Hz read misses still holds the badge
+                      4 s) run in node
   F. hygiene        - no dimos/serial/torch import, no LAN address in the server
 
 C, D and the run-change checks of G need dimos_lcm (pure python, installed with
@@ -57,6 +67,7 @@ import threading
 import time
 import types
 import datetime as _dt
+import shutil
 import signal
 import socket
 import urllib.error
@@ -298,6 +309,8 @@ b = st["base"]
 check("base: battery_v / battery_pct consistent with the 3S gauge",
       b and abs(b["battery_pct"] - mc.battery_pct(b["battery_v"])) <= 1 and 10.9 <= b["battery_v"] <= 11.6,
       f"{b and b['battery_v']} V {b and b['battery_pct']} %")
+check("demo base: stalled false, stall_count 0 (the stall guard's keys, as the adapter sends them)",
+      b and b.get("stalled") is False and b.get("stall_count") == 0, f"{b and (b.get('stalled'), b.get('stall_count'))}")
 check("nav keys", {"exploring", "explore_done", "goal", "goal_reached", "last_cmd_vel"} <= set(st["nav"]))
 check("recording keys", {"db", "exists", "size_mb", "episode"} <= set(st["recording"]))
 sysm = st["system"]
@@ -333,7 +346,10 @@ check("outside the walls (-5.9, 5.9) -> unknown", pixel_at(-5.9, 5.9) == UNKNOWN
 check("next to the wall (-5.35, -4.25) -> a cost colour between free and #8FA6B5",
       pixel_at(-5.35, -4.25) not in (FREE, WHITE, UNKNOWN))
 
+t_before = time.time()
+_, st_fresh = cli.json("/state.json")     # right before /scan.json: the two poses are one request apart
 code, scan = cli.json("/scan.json")
+t_after = time.time()
 pts = scan["points"]
 truth = demo.cockpit.world.truth
 
@@ -346,6 +362,14 @@ def on_wall(x, y):
 
 check("/scan.json: world frame, 1..1500 points", scan["frame"] == "world" and 0 < len(pts) <= 1500,
       f"{len(pts)} pts")
+sp, pf = scan.get("pose"), st_fresh["pose"]
+reach = 0.2 * (t_after - t_before) + 0.002    # the demo drives 0.2 m/s; x is rounded to 1 mm on both
+check("demo /scan.json pose {x, y, yaw, age_s}: on the first leg (y -4.25, yaw 0), at or past the x of "
+      "the /state.json read right before it (the rover drives +x), by no more than 0.2 m/s covers "
+      "between the two requests",
+      isinstance(sp, dict) and isinstance(pf, dict) and set(sp) == {"x", "y", "yaw", "age_s"}
+      and abs(sp["y"] + 4.25) < 1e-3 and abs(sp["yaw"]) < 1e-3 and 0.0 <= sp["x"] - pf["x"] <= reach,
+      f"scan {sp} state {pf}, {reach:.3f} m allowed")
 check("every scan point lies on a wall cell of the demo map", all(on_wall(x, y) for x, y in pts))
 check("demo /scan.json: lidar only -> camera [], camera_n 0, n >= points",
       scan.get("camera") == [] and scan.get("camera_n") == 0 and scan.get("n", -1) >= len(pts),
@@ -427,6 +451,9 @@ check("demo: stack map while running -> refused", code == 200 and ans["ok"] is F
 cli.post("/cmd/stack", {"action": "stop"})
 _, st = cli.json("/state.json")
 check("demo: stack stop -> running false, pose null", st["stack"] == {"running": False} and st["pose"] is None)
+_, sc = cli.json("/scan.json")
+check("demo: stack stop -> /scan.json no points, pose null", sc["points"] == [] and sc["pose"] is None,
+      json.dumps(sc)[:120])
 code, ans = cli.post("/cmd/stack", {"action": "map"})
 _, st = cli.json("/state.json")
 check("demo: stack map -> moss-nav running", ans["ok"] and st["stack"]["blueprint"] == "moss-nav")
@@ -485,6 +512,9 @@ else:
     code, st = lcli.json("/state.json")
     check("live, empty bus: pose null, base null, topics never seen", code == 200 and st["mode"] == "live"
           and st["pose"] is None and st["base"] is None and st["topics"]["odom"]["age_s"] is None)
+    code, sc = lcli.json("/scan.json")
+    check("live, empty bus: /scan.json no points, pose null", code == 200 and sc["points"] == []
+          and sc["pose"] is None, json.dumps(sc))
     code, _, _ = lcli.get("/map.png")
     check("no costmap yet -> /map.png 404", code == 404)
 
@@ -587,6 +617,29 @@ else:
     check("String telemetry 11400 mV -> battery 11.4 V, 50 %, mode off, fw, driver null",
           (b["battery_v"], b["battery_pct"], b["mode_name"], b["fw"], b["driver"])
           == (11.4, 50, "off", "qtpy-mdd3a-v3", None), json.dumps(b)[:160])
+    check("telemetry without stalled/stall_count (before the stall guard) -> base stalled None, stall_count None",
+          "stalled" in b and "stall_count" in b and b["stalled"] is None and b["stall_count"] is None,
+          json.dumps({k: b.get(k) for k in ("stalled", "stall_count")}))
+    for stalled, count in ((True, 3), (False, 3)):
+        bus.ingest(mc.CHANNELS["base_telemetry"],
+                   String(data=json.dumps(dict(tele, ts=time.time(), stalled=stalled, stall_count=count))).lcm_encode())
+        code, st2 = lcli.json("/state.json")
+        b2 = st2["base"]
+        check(f"telemetry stalled {stalled}, stall_count {count} -> base stalled {stalled}, stall_count {count}",
+              (b2["stalled"], b2["stall_count"]) == (stalled, count), json.dumps({k: b2.get(k) for k in ("stalled", "stall_count")}))
+
+    code, sc = lcli.json("/scan.json")
+    sp = sc.get("pose") or {}
+    check("/scan.json pose after the odom messages: (1.25, -0.5), yaw 1.5708, 0 <= age_s < 1 s, keys as /state.json's",
+          set(sp) == set(st["pose"]) == {"x", "y", "yaw", "age_s"} and (sp["x"], sp["y"]) == (1.25, -0.5)
+          and abs(sp["yaw"] - 1.5708) < 1e-4 and 0.0 <= sp["age_s"] < 1.0, json.dumps(sp))
+    bus.ingest(mc.CHANNELS["odom"], PoseStamped(header=hdr("world"), pose=pose_of(2.0, 1.0)).lcm_encode())
+    code, sc2 = lcli.json("/scan.json")       # no new cloud: the scan itself comes from the cache
+    cached = live.cockpit._scan_cache[1]
+    check("a new odom message, no new cloud -> /scan.json pose (2.0, 1.0) yaw 0, same points; "
+          "the cached scan carries no pose",
+          (sc2["pose"]["x"], sc2["pose"]["y"], sc2["pose"]["yaw"]) == (2.0, 1.0, 0.0)
+          and sc2["points"] == sc["points"] and "pose" not in cached, json.dumps(sc2["pose"]))
 
     poses = [PoseStamped(header=hdr("world"), pose=pose_of(x, y))
              for x, y in ((0.0, 0.0), (0.5, 0.25), (1.0, 1.0))]
@@ -1172,6 +1225,136 @@ check("the run caption strips any dimOS namespace: moss-dimos.moss-explore -> mo
       "other-dimos.explore -> explore, moss-nav unchanged",
       got == {"moss-dimos.moss-explore": "moss-explore", "other-dimos.explore": "explore", "moss-nav": "moss-nav"},
       f"{pattern} {got}")
+check("the STALLED badge sits in the Mode row before #b-mode, hidden until a stall; a Stalls row #b-stalls",
+      bool(re.search(r'<dt>Mode</dt><dd><span class="badge" id="b-stall" hidden>STALLED</span><span id="b-mode">',
+                     page_html)) and '<dt>Stalls</dt><dd id="b-stalls">' in page_html)
+check("the badge wears the page's attention colour (--ui-attention, tokens.css)",
+      bool(re.search(r"\.badge \{[^}]*color: var\(--ui-attention\)", page_html))
+      and "--ui-attention:" in (real_page / "tokens.css").read_text())
+poll = re.search(r"var POLL = \{[^}]*\bscan: (\d+)", js)
+check("app.js shows the badge from base.stalled, the count in #b-stalls, and polls /scan.json (and its pose) "
+      "at >= 3 Hz", '$("b-stall").hidden' in js and 'setText("b-stalls"' in js and "stall_count" in js
+      and poll is not None and int(poll.group(1)) <= 334, poll.group(0) if poll else "no POLL.scan")
+
+
+def js_fn(name):
+    """The source of app.js's top-level `function name(...) {...}`, or ""."""
+    m = re.search(r"^function " + name + r"\([\s\S]*?^}$", js, re.M)
+    return m.group(0) if m else ""
+
+
+pose_call = re.search(r"\bfreshestPose\(([^;]*)\);", js_fn("pose"))
+pose_args = [a.strip() for a in pose_call.group(1).split(",")] if pose_call else []
+check("app.js pose() draws from freshestPose(state pose, S.stateAt, scan pose, S.scanAt, now): "
+      "the scan's 3 Hz pose reaches the marker",
+      len(pose_args) == 5 and "S.state.pose" in pose_args[0] and pose_args[1] == "S.stateAt"
+      and "S.scan.pose" in pose_args[2] and pose_args[3] == "S.scanAt" and pose_args[4] == "Date.now()",
+      str(pose_args))
+pose_reads = re.findall(r"S\.(?:state|scan)\.pose\b", js)
+check("app.js reads the state's and the scan's pose only inside pose(), and the map draws through pose()",
+      len(pose_reads) == 2 and len(re.findall(r"S\.(?:state|scan)\.pose\b", js_fn("pose"))) == 2
+      and "var p = pose();" in js_fn("draw"), f"{len(pose_reads)} reads")
+scan_store = re.search(r"\{[^{}]*\bS\.scan = d;[^{}]*\}", js_fn("pollScan"))
+check("app.js pollScan stamps each scan answer it keeps: S.scanAt = Date.now() beside S.scan = d",
+      bool(scan_store) and "S.scanAt = Date.now();" in scan_store.group(0),
+      scan_store.group(0) if scan_store else "no S.scan = d block in pollScan")
+render_base = js_fn("renderBase")
+hold = re.search(r"^var STALL_HOLD_S = (\d+(?:\.\d+)?);", js, re.M)
+check("app.js renderBase feeds the stall latch from base.stall_count and shows the badge through it; "
+      "STALL_HOLD_S >= 4 s",
+      "var now = Date.now();" in render_base
+      and "S.stallLatch = stallLatch(S.stallLatch, b ? b.stall_count : null, now);" in render_base
+      and "var stall = stallView(b, S.stallLatch.until, now);" in render_base
+      and '$("b-stall").hidden = !stall.badge;' in render_base
+      and hold is not None and float(hold.group(1)) >= 4, hold.group(0) if hold else "no STALL_HOLD_S")
+node = shutil.which("node")
+if node is None:
+    print("  -- skipped, no node here: node --check app.js, the page's pose choice and its stall latch")
+else:
+    r = subprocess.run([node, "--check", str(real_page / "app.js")], capture_output=True, text=True, timeout=30)
+    check("node --check app.js", r.returncode == 0, r.stderr.strip()[:200])
+
+    harness = (hold.group(0) if hold else "") + "\n" + js_fn("freshestPose") + "\n" + js_fn("stallLatch") \
+        + "\n" + js_fn("stallView") + "\n" + """
+var T = 100000;   // the page's clock, ms
+var P = function (x, age) { return { x: x, y: 1, yaw: 0.5, age_s: age }; };
+// A stall on the floor: telemetry says stalled only from 2.3 s to 2.7 s and stall_count goes
+// 0 -> 1 at 2.3 s; the page reads state at 0, 1, ..., 10 s, as renderBase does. floor = the
+// read times (s) that show the badge.
+var floor = [], latch = { count: null, until: 0 };
+for (var t = 0; t <= 10000; t += 1000) {
+  var base = { stalled: t >= 2300 && t < 2700, stall_count: t >= 2300 ? 1 : 0 };
+  latch = stallLatch(latch, base.stall_count, t);
+  if (stallView(base, latch.until, t).badge) floor.push(t / 1000);
+}
+console.log(JSON.stringify({
+  scanYounger: freshestPose(P(1, 0.2), T - 900, P(2, 0.1), T - 100, T),
+  stateYounger: freshestPose(P(1, 0.1), T - 100, P(2, 0.1), T - 300, T),
+  noScanYet: freshestPose(P(1, 0.3), T - 500, undefined, 0, T),
+  scanSaysNone: freshestPose(P(1, 0.1), T - 900, null, T - 100, T),
+  stateSaysNone: freshestPose(null, T - 100, P(2, 0.1), T - 300, T),
+  scanAfterNone: freshestPose(null, T - 900, P(2, 0.05), T - 100, T),
+  nothing: freshestPose(undefined, 0, undefined, 0, T),
+  stall: stallView({ stalled: true, stall_count: 3 }),
+  cleared: stallView({ stalled: false, stall_count: 3 }),
+  older: stallView({ stalled: null, stall_count: null }),
+  none: stallView(null),
+  floor: floor,
+  firstSeen: stallLatch({ count: null, until: 0 }, 5, T),
+  renewed: stallLatch(stallLatch({ count: 2, until: 0 }, 3, T), 3, T + 2000),
+  acrossGap: stallLatch(stallLatch({ count: 3, until: 0 }, null, T), 4, T + 1000),
+  newRun: stallLatch({ count: 3, until: 0 }, 0, T),
+  afterNewRun: stallLatch(stallLatch({ count: 3, until: 0 }, 0, T), 1, T + 1000),
+  holdEdge: [stallView({ stalled: false, stall_count: 3 }, T + 4000, T + 3999).badge,
+             stallView({ stalled: false, stall_count: 3 }, T + 4000, T + 4000).badge],
+  stalledNoHold: stallView({ stalled: true, stall_count: 3 }, 0, T).badge
+}));
+"""
+    r = subprocess.run([node, "-e", harness], capture_output=True, text=True, timeout=30)
+    try:
+        jr = json.loads(r.stdout)
+    except ValueError:
+        jr = {}
+
+    def at(key, x, age):
+        p = jr.get(key)
+        return isinstance(p, dict) and p.get("x") == x and abs(p.get("age_s", -1) - age) < 1e-9 and p.get("yaw") == 0.5
+
+    check("page pose: state 0.2 s old 0.9 s ago (1.1 s) vs scan 0.1 s old 0.1 s ago (0.2 s) -> the scan's, age 0.2 s",
+          at("scanYounger", 2, 0.2), json.dumps(jr.get("scanYounger")) + r.stderr[:200])
+    check("page pose: state 0.1 s old 0.1 s ago (0.2 s) vs scan 0.1 s old 0.3 s ago (0.4 s) -> the state's",
+          at("stateYounger", 1, 0.2), json.dumps(jr.get("stateYounger")))
+    check("page pose: no scan answer yet -> the state's, aged by its 0.5 s since the answer (0.8 s)",
+          at("noScanYet", 1, 0.8), json.dumps(jr.get("noScanYet")))
+    check("page pose: a later answer with pose null (stack stopped, new run) hides the marker, either source",
+          "scanSaysNone" in jr and jr["scanSaysNone"] is None and "stateSaysNone" in jr and jr["stateSaysNone"] is None
+          and "nothing" in jr and jr["nothing"] is None, json.dumps({k: jr.get(k) for k in ("scanSaysNone", "stateSaysNone", "nothing")}))
+    check("page pose: a scan pose after an older null state -> drawn (odometry is back), age 0.15 s",
+          at("scanAfterNone", 2, 0.15), json.dumps(jr.get("scanAfterNone")))
+    check("page stall view: stalled 3 -> badge + '3'; cleared 3 -> no badge, '3'; older telemetry / none -> no badge, '--'",
+          (jr.get("stall"), jr.get("cleared"), jr.get("older"), jr.get("none"))
+          == ({"badge": True, "count": "3"}, {"badge": False, "count": "3"},
+              {"badge": False, "count": "--"}, {"badge": False, "count": "--"}),
+          json.dumps({k: jr.get(k) for k in ("stall", "cleared", "older", "none")}))
+    check("page stall latch on the floor: stalled only 2.3-2.7 s (no 1 Hz read sees it), count 0 -> 1 "
+          "-> the badge shows at the reads of 3, 4, 5 and 6 s (4 s from the read that saw the count), "
+          "gone at 7 s",
+          jr.get("floor") == [3, 4, 5, 6], json.dumps(jr.get("floor")))
+    check("page stall latch: the first count the page sees (5) only sets the reference, no hold; "
+          "the same count again does not renew the hold (3 at T, still 3 at T+2 s -> ends at T+4 s)",
+          jr.get("firstSeen") == {"count": 5, "until": 0}
+          and jr.get("renewed") == {"count": 3, "until": 100000 + 4000},
+          json.dumps({k: jr.get(k) for k in ("firstSeen", "renewed")}))
+    check("page stall latch: a missing count keeps the reference (3, gap, 4 at T+1 s -> hold to T+5 s); "
+          "a count that went down (new run, 3 -> 0) holds nothing, and 0 -> 1 then holds to T+5 s",
+          jr.get("acrossGap") == {"count": 4, "until": 100000 + 5000}
+          and jr.get("newRun") == {"count": 0, "until": 0}
+          and jr.get("afterNewRun") == {"count": 1, "until": 100000 + 5000},
+          json.dumps({k: jr.get(k) for k in ("acrossGap", "newRun", "afterNewRun")}))
+    check("page stall view with a hold: stalled false, hold ends at T+4 s -> badge at T+3.999 s, none at "
+          "T+4 s; stalled true without a hold -> badge",
+          jr.get("holdEdge") == [True, False] and jr.get("stalledNoHold") is True,
+          json.dumps({k: jr.get(k) for k in ("holdEdge", "stalledNoHold")}))
 
 # ---------------------------------------------------------------------------
 print("F. hygiene")

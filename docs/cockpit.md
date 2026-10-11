@@ -71,7 +71,15 @@ firmware 300 ms after the last drive.
   the encoders give metres only once `MOSS_TICKS_PER_M` is set, and no IMU
   feeds the odometry;
 - the 2D scored costmap (`moss_dimos/costmap2d.py`), where the lidar writes obstacles
-  and the depth camera adds the ones below the scan plane;
+  and the depth camera adds the ones below the scan plane. An obstacle becomes a
+  wall once seen from two places 10 cm apart, never from one spot. The lidar's
+  rays clear the lidar layer within 4 m of the rover all around, and the camera
+  layer only inside the camera's own view (87 degrees ahead, up to 3 m): somebody
+  who walked past fades once gone (about 0.2 s of rays through a fresh wall, 1.8 s
+  through one seen from many places), what the camera keeps seeing stays, and a
+  table top the rover has turned away from keeps its wall until the camera looks
+  at that spot again and sees nothing. The knobs are `MOSS_HIT_CAP`,
+  `MOSS_FREE_FLOOR` and `MOSS_RAY_MAX_M` (below);
 - the RealSense colour stream at 640x480, 5 fps, carried as JPEG on the bus, and its
   depth aligned to colour at the same rate, which `lidar_odometry` turns into obstacle
   points from 12 cm (the camera's close-range depth) to 3 m, drawn in amber on the map
@@ -88,6 +96,20 @@ firmware 300 ms after the last drive.
 manager (pad input wins over navigation for one second) and Explorer2
 (`moss_dimos/explorer2.py`) with the MOSS clearances. The pad is still there,
 through the manager.
+
+Three variables decide how far the explorer sends the rover. They are read when
+`moss-explore` is built; unset keeps the default, and a value that is not a
+number of 0 or more (0 to 6 for the exponent) is refused with a warning (the default stays):
+
+| Env | Default | What it does |
+|---|---|---|
+| `MOSS_EXPLORE_DISTANCE_EXP` | 2 | how hard distance counts: a frontier scores its information over (1 + its path cost in metres) to this power; a metre of unmapped floor counts as 4, a metre hugging a wall up to 2. At 1 a frontier twice as far needs only twice the information to win, so a big frontier across the room beats a small one beside the rover; at 2 it needs four times as much |
+| `MOSS_GOAL_MAX_M` | 3 m | the longest path cost a goal is sent along (0 = no limit), in the same metres as above; a frontier beyond it only waits while a safe one lies within it. A farther frontier waits until the rover is nearer; when nothing nearer is left it goes out anyway, so the cap never ends a run |
+| `MOSS_EXPLORE_RADIUS_M` | 0 in the code; `tools/moss-fly.sh` exports 4 (one room) unless set | the run stays within this distance of where exploration started: a frontier whose goal lies farther is never a candidate, and once nothing is left inside, exploration is complete. Set 4 to keep the rover in one room. A doorway is a frontier like any other: a door the rover must not take has to lie outside the radius Each start of exploration (the start button, after STOP or after a tapped goal) re-centres the radius on where the rover stands then. |
+
+The explorer logs the three values in one line when exploration starts
+(`exploration start: distance exp 2, cap 3 m, radius 0 m`); each goal line
+gives its path cost.
 
 `moss-dimos.moss-gamepad` and `moss-dimos.moss-base` are the base alone, with
 or without the pad: [base.md](base.md).
@@ -159,6 +181,9 @@ Other variables:
 | `MOSS_STATE_DIR` | the state directory, `~/.local/state/moss` by default: recordings, the saved flight check |
 | `MOSS_BRAKE_S` | how long the pad sends zeros after the deadman is released, 0.5 s by default, 0 to 1.0 s |
 | `MOSS_TURN_GAIN` | turn authority against forward speed on the pad, 2 by default, 0.5 to 4 ([base.md](base.md)) |
+| `MOSS_HIT_CAP` | how certain a costmap cell can get, 10 by default, 2 to 127. A cell at the cap needs 2 x (cap - 1) lidar revolutions with rays through it to be forgotten (1.8 s at 10, 0.6 s at 4): lower it to forget passers-by faster, at the price of walls that fade sooner once nothing sees them |
+| `MOSS_FREE_FLOOR` | how free a costmap cell can get, -3 by default, -128 to 0. Nearer 0, something that appears on floor seen free for long becomes a wall after fewer viewpoints (for the lidar: 3 at -1, 5 at -3) |
+| `MOSS_RAY_MAX_M` | how far from the rover the lidar's rays clear the costmap, 4 m by default (0 = never). Anything farther than that from every place the rover stood is never forgotten: 6 forgets somebody who stood 4.5 m away, and longer rays cost more CPU per revolution |
 
 ## Recording
 
@@ -223,7 +248,13 @@ Endpoints, for anything else that wants the data: `/state.json`, `/map.png`,
 
 `/scan.json` splits the latest `lidar` cloud by height: `points` (and `n`) are the lidar returns, at
 the profile's lidar height; `camera` (and `camera_n`) are the depth camera's obstacle points, at
-their true height, which the page draws in amber. The raw `/pointcloud` fallback has no `camera` key.
+their true height, which the page draws in amber; `pose` is the rover's pose at the
+scan's time (x, y, yaw, age_s), so the page moves the rover marker at the scan's
+rate (3 Hz) rather than the state's (1 Hz). The raw `/pointcloud` fallback has no
+`camera` key. The base panel shows a STALLED badge for at least 4 s whenever the
+base adapter's stall guard fires (a commanded track whose encoder did not move for
+1 s: the tracks stop and the planner backs off), and a `stalls` row counts them
+over the run.
 `POST /cmd/{explore,goal,stop,episode,stack}`.
 `tools/moss_cockpit.py --demo` serves synthetic data for working on the page
 without a robot.

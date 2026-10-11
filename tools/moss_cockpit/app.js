@@ -4,6 +4,7 @@
  * field has no internet). Contract: tools/moss_cockpit.py.
  *
  *   GET  /state.json  1 Hz        GET /scan.json  3 Hz      GET /path.json 1 Hz
+ *   (both state and scan carry the pose: the robot marker takes the younger one, 3 Hz)
  *   GET  /map_meta    1 Hz, then /map.png only when map_meta.stamp changed
  *   GET  /log.json    0.5 Hz      GET /preflight.json on load and after a check
  *   GET  /launch.json while a stack command runs
@@ -23,15 +24,16 @@ var EP_FULL_S = 300;          // the bottom progress line is full after 5 min of
 var RUN_FULL_S = 1800;        // ... or after 30 min of run when no episode records
 var CAM_RETRY_MS = 3000;      // reconnect the MJPEG stream this long after it ended or failed, forever
 var CAM_GRACE_MS = 6000;      // a stream younger than this is not judged dead (first frame wait + a state poll)
+var STALL_HOLD_S = 4;         // the STALLED badge stays up at least this long after the stall count goes up
 var DEPTH_COLOR = "rgba(255,193,94,.95)";   // amber: depth-camera obstacles, apart from the mint lidar scan
 
 var S = {
   online: false, state: null,
-  meta: null, mapImg: null, mapStamp: null, scan: null, path: null,
+  meta: null, mapImg: null, mapStamp: null, scan: null, scanAt: 0, path: null,
   preflight: null, launchBusy: false, launchAction: null,
   view: { scale: 40, x: -3, y: 3 }, fitted: false,
   pendingGoal: null, camPaused: false, camOk: false, camAt: 0, camLost: null, pfAll: false,
-  stateAt: 0
+  stateAt: 0, stallLatch: { count: null, until: 0 }
 };
 
 function $(id) { return document.getElementById(id); }
@@ -190,9 +192,37 @@ function setTrack(barId, valId, v) {
   setText(valId, (typeof v === "number") ? String(Math.round(v)) : "--");
 }
 
+// The base's stall guard (a commanded track whose encoder did not move for 1 s stops it) sets
+// `stalled` and adds one to `stall_count`. The base clears `stalled` on its next accepted
+// command, which can come before the page's 1 Hz read of the 2 Hz telemetry, so the badge is
+// latched on the counter: when stall_count goes up, the badge holds STALL_HOLD_S from the
+// moment the page sees it, whatever `stalled` says. latch = {count, until}: the last count
+// seen and the page time (ms) the hold ends. The first count the page sees, and a count that
+// went down (a new run), only set the reference, with no hold. A missing count (no telemetry,
+// or telemetry from before the guard) keeps the last one, so a stall across a gap still holds.
+function stallLatch(latch, count, nowMs) {
+  var last = latch ? latch.count : null, until = latch ? latch.until : 0;
+  if (typeof count !== "number" || !isFinite(count)) return { count: last, until: until };
+  if (typeof last === "number" && count > last) until = nowMs + STALL_HOLD_S * 1000;
+  return { count: count, until: until };
+}
+
+// The STALLED badge shows while `stalled` is true or the latch holds (holdUntil, page ms);
+// the row counts the stalls of the run. Telemetry from before the guard carries neither key:
+// no badge, "--".
+function stallView(b, holdUntil, nowMs) {
+  return { badge: (!!b && b.stalled === true) || nowMs < holdUntil,
+           count: b && typeof b.stall_count === "number" && isFinite(b.stall_count) ? String(b.stall_count) : "--" };
+}
+
 function renderBase() {
   var b = S.state && S.state.base;
   var sec = $("mod-base");
+  var now = Date.now();
+  S.stallLatch = stallLatch(S.stallLatch, b ? b.stall_count : null, now);
+  var stall = stallView(b, S.stallLatch.until, now);
+  $("b-stall").hidden = !stall.badge;
+  setText("b-stalls", stall.count);
   if (!b) {
     setText("base-title", S.online ? "No telemetry." : "Cockpit offline.");
     setText("b-volt", "--"); setText("b-pct", "--"); meter("b-meter", 0);
@@ -490,7 +520,27 @@ function drawGrid() {
   ctx.stroke();
 }
 
-function pose() { return S.state && S.state.pose; }
+// The robot's pose comes with /state.json (1 Hz) and with /scan.json (3 Hz). Each age_s is
+// the server's at its answer; the time since that answer (ms in *At) is added, and the younger
+// pose (the more recent odometry message) is the one drawn. A pose of null says "no pose"
+// (a stopped stack, a new run): from the later answer it hides the marker, whatever the other
+// answer still holds; undefined is "no answer yet". Returns {x, y, yaw, age_s} or null.
+function freshestPose(statePose, stateAt, scanPose, scanAt, nowMs) {
+  function aged(p, at) {
+    if (!p || typeof p.x !== "number" || typeof p.y !== "number") return null;
+    var age = (typeof p.age_s === "number" ? p.age_s : 0) + Math.max(0, (nowMs - at) / 1000);
+    return { x: p.x, y: p.y, yaw: p.yaw, age_s: age };
+  }
+  if (statePose === null && stateAt >= scanAt) return null;
+  if (scanPose === null && scanAt > stateAt) return null;
+  var a = aged(statePose, stateAt), b = aged(scanPose, scanAt);
+  return b && (!a || b.age_s < a.age_s) ? b : a;
+}
+
+function pose() {
+  return freshestPose(S.state ? S.state.pose : undefined, S.stateAt,
+                      S.scan ? S.scan.pose : undefined, S.scanAt, Date.now());
+}
 
 // key: "points" (lidar returns, the default) or "camera" (depth-camera obstacle points)
 function scanWorld(key) {
@@ -566,7 +616,7 @@ function draw() {
   if (nav && nav.goal) ring(nav.goal.x, nav.goal.y, false);
   if (S.pendingGoal) ring(S.pendingGoal.x, S.pendingGoal.y, true);
 
-  // pose: white triangle pointing along yaw
+  // pose: white triangle pointing along yaw (the younger of the two poses, freshestPose)
   var p = pose();
   if (p && typeof p.x === "number") {
     var cx = sx(p.x), cy = sy(p.y), a = -(p.yaw || 0), L = 15, B = 8;
@@ -617,7 +667,7 @@ function pollMeta() {
 
 function pollScan() {
   return fetchJSON("/scan.json").then(function (d) {
-    if (d && !d.__missing && d.points) { S.scan = d; requestDraw(); }
+    if (d && !d.__missing && d.points) { S.scan = d; S.scanAt = Date.now(); requestDraw(); }
   }, function () {});
 }
 

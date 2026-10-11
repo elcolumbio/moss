@@ -252,6 +252,38 @@ LIDAR_BAUDRATE = 460800
 CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS = 640, 480, 5
 EXPLORER_MIN_FRONTIER_PERIMETER_M = 0.3   # doorway-sized frontiers stay visible
 EXPLORER_GOAL_TIMEOUT_S = 45.0
+# Where the explorer sends the rover, set for the room (docs/cockpit.md):
+# env -> Explorer2 config field, and the largest value accepted. Unset leaves
+# the explorer's own default. The exponent stops at 6: the score is
+# gain / (1 + path cost) ** exponent, and a large float power raises
+# OverflowError instead of giving inf (31.0 ** 250 does), which would end the
+# exploration loop.
+EXPLORER_ENV = (("MOSS_EXPLORE_DISTANCE_EXP", "distance_exponent", 6.0),  # 2: distance squared against gain
+                ("MOSS_GOAL_MAX_M", "max_goal_path_m", math.inf),         # 3 m of path cost at most, 0 = no limit
+                ("MOSS_EXPLORE_RADIUS_M", "explore_radius_m", math.inf))  # 0 = no limit, 4 for a room
+
+
+def explorer_env(env: dict | None = None) -> dict:
+    """The explorer knobs set in the environment, as Explorer2 config
+    fields. A value that is not a finite number from 0 to its largest
+    (EXPLORER_ENV) is refused with a warning and the explorer keeps its
+    default."""
+    env = os.environ if env is None else env
+    out = {}
+    for name, field_name, largest in EXPLORER_ENV:
+        raw = str(env.get(name, "")).strip()
+        if not raw:
+            continue
+        try:
+            value = float(raw)
+        except ValueError:
+            value = math.nan
+        if not math.isfinite(value) or not 0 <= value <= largest:
+            bound = f"from 0 to {largest:g}" if math.isfinite(largest) else ">= 0"
+            _logger.warning(f"{name}={raw!r} is not a number {bound}: the explorer keeps its default")
+            continue
+        out[field_name] = value
+    return out
 
 
 def moss_ports(env: dict | None = None) -> dict:
@@ -525,7 +557,8 @@ def build_moss_explore():
             tele_cmd_vel_scaling=Twist(Vector3(1.0, 1.0, 0.0), Vector3(0.0, 0.0, 1.0))),
         Explorer2.blueprint(min_frontier_perimeter=EXPLORER_MIN_FRONTIER_PERIMETER_M,
                             goal_timeout=EXPLORER_GOAL_TIMEOUT_S,
-                            lethal_clearance_m=lethal, pivot_clearance_m=pivot),
+                            lethal_clearance_m=lethal, pivot_clearance_m=pivot,
+                            **explorer_env()),
     ]
     return _jpeg_camera(autoconnect(*parts)).remappings([
         (MossControlCoordinator, "twist_command", "cmd_vel"),

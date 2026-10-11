@@ -27,7 +27,9 @@ Endpoints (all Cache-Control: no-store; a failing request never kills the server
     GET  /state.json            stack, pose, topic rates, base, nav, recording, system
     GET  /map.png  /map_meta    latest /global_costmap as a PNG + the pixel <-> metre contract
     GET  /scan.json             latest lidar points, world frame (fallback: lidar frame), and
-                                apart the depth camera's obstacle points the same cloud carries
+                                apart the depth camera's obstacle points the same cloud carries;
+                                plus the pose read at the request, as /state.json's (the page
+                                polls the scan at 3 Hz, so its robot marker moves at 3 Hz)
     GET  /path.json             planner path
     GET  /log.json?n=40         tail of the running stack's main.jsonl
     GET  /preflight.json        the last saved flight check
@@ -396,6 +398,7 @@ def base_view(t: dict, age_s: float | None) -> dict:
     mv = t.get("bus_mV")
     volts = round(mv / 1000.0, 2) if isinstance(mv, (int, float)) else None
     mode = t.get("mode")
+    stalled, stalls = t.get("stalled"), t.get("stall_count")
     return {
         "fw": t.get("fw"), "driver": t.get("driver"),
         "mode": mode, "mode_name": MODE_NAMES.get(mode, "unknown") if mode is not None else None,
@@ -406,6 +409,10 @@ def base_view(t: dict, age_s: float | None) -> dict:
         "ticks": t.get("ticks"), "target_pct": t.get("target_pct"), "output_pct": t.get("output_pct"),
         "ramp_ms": t.get("ramp_ms"),
         "firmware_age_s": t.get("firmware_age_s"), "mock": t.get("mock"),
+        # the base's stall guard (a commanded track whose encoder did not move for 1 s: stop,
+        # counted); telemetry published before the guard existed has neither key -> None
+        "stalled": None if stalled is None else bool(stalled),
+        "stall_count": stalls if isinstance(stalls, int) and not isinstance(stalls, bool) else None,
         "age_s": None if age_s is None else round(age_s, 2),
     }
 
@@ -983,6 +990,15 @@ class Cockpit:
     def launch(self) -> dict:
         return self.launcher.status()
 
+    def scan_doc(self) -> dict:
+        """/scan.json: the latest scan (an empty one without a cloud) plus the pose read now,
+        the same document /state.json gives under "pose". A copy: the cached scan never
+        carries a pose, so a scan served again from the cache still gets the newest pose."""
+        doc = self.scan()
+        doc = dict(doc) if doc is not None else {"frame": None, "stamp": None, "points": []}
+        doc["pose"] = self.pose()
+        return doc
+
 
 # --- live: the stack's bus ----------------------------------------------------------
 
@@ -1045,6 +1061,9 @@ class LiveCockpit(Cockpit):
             return None
         return {"x": round(pose["x"], 3), "y": round(pose["y"], 3), "yaw": round(pose["yaw"], 4),
                 "age_s": round(now - mono, 2)}
+
+    def pose(self) -> dict | None:
+        return self._pose(time.monotonic())
 
     def _base(self, now: float) -> dict | None:
         t, mono = self.bus.decoded("base_telemetry", lambda raw: json.loads(decode_string(raw)))
@@ -1601,11 +1620,10 @@ class DemoCockpit(Cockpit):
                      "reason": "drive" if drive else "boot", "bus_mV": int(volts * 1000), "ina_ok": True,
                      "ticks": [int(w.travelled * 1000), int(w.travelled * 1000)],
                      "target_pct": [pct, pct], "output_pct": [pct, pct], "ramp_ms": [5, 5],
-                     "firmware_age_s": 0.1, "mock": True}
+                     "firmware_age_s": 0.1, "mock": True, "stalled": False, "stall_count": 0}
         return {
             "ts": now, "mode": self.mode, "stack": stack,
-            "pose": ({"x": round(w.x, 3), "y": round(w.y, 3), "yaw": round(w.yaw, 4), "age_s": 0.05}
-                     if running else None),
+            "pose": self._pose_doc(),
             "topics": topics,
             "base": base_view(telemetry, 0.3) if running else None,
             "nav": {"exploring": self.exploring and running, "explore_done": self.explore_done,
@@ -1619,6 +1637,17 @@ class DemoCockpit(Cockpit):
             "camera": self.camera_state(),
             "launch": {"running": False, "action": self._launch_action},
         }
+
+    def _pose_doc(self) -> dict | None:
+        w = self.world
+        return ({"x": round(w.x, 3), "y": round(w.y, 3), "yaw": round(w.yaw, 4), "age_s": 0.05}
+                if self.stack["running"] else None)
+
+    def pose(self) -> dict | None:
+        """The pose as of the last tick: scan_doc ticks through scan(), so the scan's
+        points and this pose come from the same instant."""
+        with self._lock:
+            return self._pose_doc()
 
     def map(self):
         self._tick()
@@ -1809,8 +1838,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self._json(200, got[1])
             elif path == "/scan.json":
-                doc = self.cockpit.scan()
-                self._json(200, doc if doc is not None else {"frame": None, "stamp": None, "points": []})
+                self._json(200, self.cockpit.scan_doc())
             elif path == "/path.json":
                 self._json(200, self.cockpit.path())
             elif path == "/log.json":

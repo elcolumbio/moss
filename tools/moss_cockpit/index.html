@@ -133,6 +133,10 @@
   .tbar > i.rev { background: var(--moss-white); }
   .tracks .mid { text-align: center; }
   .tracks .mid .kicker { font-size: 11.5px; }
+  /* STALLED, next to the mode: the attention colour, outlined (the base stopped itself) */
+  .badge { display: inline-block; margin-right: 8px; padding: 1px 6px; border-radius: 4px; font-weight: 600;
+           font-size: 11.5px; letter-spacing: .1em; line-height: 1.3; vertical-align: 1px;
+           color: var(--ui-attention); box-shadow: inset 0 0 0 1.5px currentColor; }
 
   /* ---- map pane ---- */
   #map-wrap { position: relative; flex: 1 1 auto; min-height: 320px; overflow: hidden; }
@@ -318,7 +322,8 @@
           <div class="track r"><div class="tbar"><i id="t-r"></i></div><div class="lbl"><b id="t-rv" class="num">0</b><span>RIGHT %</span></div></div>
         </div>
         <dl class="kv">
-          <dt>Mode</dt><dd id="b-mode">--</dd>
+          <dt>Mode</dt><dd><span class="badge" id="b-stall" hidden>STALLED</span><span id="b-mode">--</span></dd>
+          <dt>Stalls</dt><dd id="b-stalls">--</dd>
           <dt>Ticks L / R</dt><dd id="b-ticks">--</dd>
           <dt>Firmware</dt><dd id="b-fw">--</dd>
           <dt>Telemetry age</dt><dd id="b-age">--</dd>
