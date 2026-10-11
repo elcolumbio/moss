@@ -473,6 +473,9 @@ check("...and the demo log says the map was cleared",
       any("map cleared" in str(l) for l in (st_mc.get("log") or [])) or True, "no log in state; the sent channel is the proof")
 code_mx, ans_mx = cli.post("/cmd/map", {"action": "wipe"})
 check("demo /cmd/map with another action -> refused 400", code_mx == 400, f"{code_mx} {ans_mx}")
+js_src = open(os.path.join(str(ROOT), "tools", "moss_cockpit", "app.js")).read()
+check("the page reloads itself when the cockpit server comes back after a restart (offlineSince + location.reload in pollState)",
+      "location.reload()" in js_src and "RELOAD_AFTER_AWAY_MS" in js_src and "S.offlineSince = Date.now()" in js_src, "reload-on-return missing in app.js")
 check("the page has the Clear map button", 'id="b-map-clear"' in open(os.path.join(str(ROOT), "tools", "moss_cockpit", "index.html")).read(), "b-map-clear missing in tools/moss_cockpit/index.html")
 demo.shutdown()
 

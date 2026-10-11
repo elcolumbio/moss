@@ -20,6 +20,7 @@ var FETCH_TIMEOUT_MS = 2500;
 var TAP_SLOP_PX = 6;          // a pointer that moved less than this is a tap, not a drag
 var STALE_S = 3;              // a topic older than this is shown as stale
 var LIVE_S = 2;               // telemetry, scan and path older than this are not drawn or read as live
+var RELOAD_AFTER_AWAY_MS = 3000;   // the server gone this long = restarted: reload the page when it is back
 var EP_FULL_S = 300;          // the bottom progress line is full after 5 min of episode
 var RUN_FULL_S = 1800;        // ... or after 30 min of run when no episode records
 var CAM_RETRY_MS = 3000;      // reconnect the MJPEG stream this long after it ended or failed, forever
@@ -143,10 +144,15 @@ function pollState() {
   return fetchJSON("/state.json").then(function (d) {
     if (!d || d.__missing) throw new Error("no state");
     var wasOffline = !S.online && S.stateAt > 0;
-    S.state = d; S.online = true; S.stateAt = Date.now();
+    // the cockpit server was away long enough to have been restarted (a deploy): the page
+    // reloads itself, so a window left open never shows a stale or blank page; a short blip
+    // only reconnects the camera stream
+    if (wasOffline && S.offlineSince && Date.now() - S.offlineSince > RELOAD_AFTER_AWAY_MS) { location.reload(); return; }
+    S.state = d; S.online = true; S.stateAt = Date.now(); S.offlineSince = 0;
     if (wasOffline) camRestart("Cockpit back. Reconnecting the stream.");   // its stream died with it
     render();
   }, function () {
+    if (S.online || !S.offlineSince) S.offlineSince = Date.now();
     S.online = false;
     render();
   });
