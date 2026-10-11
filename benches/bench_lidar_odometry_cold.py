@@ -361,6 +361,10 @@ for m in REAL:
         sink = getattr(m, name)
         if isinstance(sink, Sink):
             sink.msgs.clear()
+    m._pending_cam_pts = None
+# the module-level views of section E (cloud_xyz output and its tag) keep Open3D buffers alive too
+for _name in ("xyz", "tag", "cam_pt", "depth"):
+    globals().pop(_name, None)
 gc.collect()
 
 print()
@@ -395,4 +399,16 @@ finally:
 
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")
+# section F built its own module after the clean-up above: drop its clouds too, or
+# Open3D reports them as leaked at interpreter exit and the exit status turns to 1
+for _m in list(REAL) + [v for k, v in list(globals().items()) if k.startswith("o") and hasattr(v, "camera_floor")]:
+    for _name in ("odom", "lidar", "tf", "camera_floor"):
+        _sink = getattr(_m, _name, None)
+        if isinstance(_sink, Sink):
+            _sink.msgs.clear()
+    if hasattr(_m, "_pending_cam_pts"):
+        _m._pending_cam_pts = None
+for _name in ("ring6", "o6", "kiss6"):
+    globals().pop(_name, None)
+gc.collect()
 sys.exit(1 if KO else 0)

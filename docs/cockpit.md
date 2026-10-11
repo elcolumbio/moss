@@ -220,6 +220,10 @@ always allowed. Commands that publish on the bus need the stack on LCM
 Endpoints, for anything else that wants the data: `/state.json`, `/map.png`,
 `/map_meta`, `/scan.json`, `/path.json`, `/log.json`, `/preflight.json`,
 `/launch.json`, `/camera.mjpg` (`?cam=nose`, the default, or `?cam=wrist`), and
+
+`/scan.json` splits the latest `lidar` cloud by height: `points` (and `n`) are the lidar returns, at
+the profile's lidar height; `camera` (and `camera_n`) are the depth camera's obstacle points, at
+their true height, which the page draws in amber. The raw `/pointcloud` fallback has no `camera` key.
 `POST /cmd/{explore,goal,stop,episode,stack}`.
 `tools/moss_cockpit.py --demo` serves synthetic data for working on the page
 without a robot.
