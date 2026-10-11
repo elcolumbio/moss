@@ -152,6 +152,8 @@ def main(argv=None) -> int:
         print("a dimOS stack is running: stop it first (tools/moss-fly.sh stop), this tool opens the motor board itself")
         return 2
     os.environ["MOSS_PIVOT_PCT"] = "0"        # the percent printed is the percent sent, pivots included
+    os.environ["MOSS_BUS_REF_MV"] = "0"       # ...and not scaled for the battery: this tool measures the raw percent
+    os.environ["MOSS_ONE_TRACK_PIVOT"] = "0"  # a pivot with one frozen track is reported as such, never rewritten
     kw = {"geometry": MossGeometry(mps_at_limit=1.0, max_pct=100, min_pct=0)}
     if a.mock:
         os.environ["MOSS_MOCK_BUS"] = "1"

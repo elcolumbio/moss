@@ -156,28 +156,31 @@ everywhere. The values are PLACEHOLDERS until measured on the robot:
 | track centre distance | 0.266 m (CAD) | `MOSS_TRACK_M` |
 | nose camera position on the base | 0.156, 0, 0.075 m (CAD) | `MOSS_CAMERA_XYZ_M="0.156 0 0.075"` |
 | nose camera pitch | 0 deg | `MOSS_CAMERA_PITCH_DEG` |
-| full-duty pulse period of the base adapter (ms, 0 = off) | 500 | `MOSS_PULSE_MS` |
-| static-friction floor of the base adapter when pulsing is off (percent) | 100 | `MOSS_MIN_PCT` |
+| full-duty pulse period of the base adapter (ms, 0 = off) | 0 | `MOSS_PULSE_MS` |
+| static-friction floor of the base adapter when pulsing is off (percent) | 50 | `MOSS_MIN_PCT` |
+| percent every pivot is sent at, both tracks (0 = as asked) | 100 | `MOSS_PIVOT_PCT` |
+| bus voltage the floor was measured at, for the battery compensation (mV, 0 = off) | 12400 | `MOSS_BUS_REF_MV` |
+| a pivot with one frozen track turns on the other track instead of counting as a contact | on | `MOSS_ONE_TRACK_PIVOT` |
 
 The speed knobs are `MOSS_MAX_PCT` (the PWM cap of the base adapter, 100 by
 default) and `MOSS_NERF_SPEED` (the launcher's `--nerf-speed` for the planner,
-0.5 by default).
+0.7 by default).
 
-The tracks of MOSS only turn at full duty on the floor (the geared motors
-behind the MDD3A), so the base adapter delivers every non-zero command as
-full-duty PULSES: a percent becomes a duty over a period of `MOSS_PULSE_MS`
-(500 by default, five slices of 100 ms): 40 % = two slices at full power then
-three off, 100 % = always on, any non-zero command = at least one slice. The
-planner's slowest commands move the rover, and a turn is still a turn. The
-firmware ramp follows: while pulsing the launcher defaults `MOSS_RAMP_MS` to
-`1 1` (a slice reaches full duty in 100 ms); a slower fall (`"1 5"`) releases
-instead of braking between slices, a longer period (`1000`) makes one cycle per
-second. `tools/moss-pulse-test.sh sec|moyen|doux` drives three bursts with a
-preset so the profile can be seen on the floor, and prints the two variables to
-put on the launch line. `MOSS_PULSE_MS=0` turns pulsing off; then
-`MOSS_MIN_PCT` (100 by default) raises every non-zero command to the floor
-instead, and `tools/moss_floor_probe.py --go` measures a floor for a base whose
-tracks turn below full duty.
+The base runs on continuous power: the tracks turn from 40 % on a full pack,
+so `MOSS_MIN_PCT` (50 by default, 10 of margin for the sag under load) raises
+every non-zero command to the floor, an arc scaled up whole so its curvature
+survives, and every pivot goes out at `MOSS_PIVOT_PCT` (100) on both tracks.
+A percent is a duty of the bus voltage, so a pack at 10.5 V under load puts
+15 % less on the motors than the 12.4 V the floor was measured at: the adapter
+scales every command by `MOSS_BUS_REF_MV` / bus (never below 1, at most 1.5,
+capped at 100). A pivot whose one track freezes while the other turns is that
+track not turning in that direction under the pivot's load, not a contact:
+the adapter brakes it and turns on the other track for the rest of the run
+(`MOSS_ONE_TRACK_PIVOT`, said once in the log). `tools/moss_floor_probe.py
+--go` measures the floor (raw percents: it turns the compensation and the
+rewrite off), `tools/moss-pulse-test.sh` and `MOSS_PULSE_MS` keep the
+full-duty pulse mode for a base whose tracks only turn at full power
+([base.md](base.md)).
 
 The lidar's floor projection is `base_link`, the rover's rotation centre: mount
 the C1 there, or the footprint and the pivot clearance are off by its offset.

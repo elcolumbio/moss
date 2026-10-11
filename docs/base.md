@@ -79,14 +79,17 @@ env override, so a run can be re-scaled without a code change:
 | `MOSS_TRACK_M` | distance between the two track centrelines (0.266 m from the CAD) | tape measure, sprocket centre to sprocket centre |
 | `MOSS_MPS_AT_LIMIT` | floor speed at `MOSS_MAX_PCT` (0.45 m/s placeholder) | full stick (or `drive 100 100`) for 3 s on the floor, tape measure, divide |
 | `MOSS_TICKS_PER_M` | encoder ticks per metre of track travel (unset) | `zero`, push or drive the rover exactly 1 m, read `ticks` in a `status` line, average the two sides |
-| `MOSS_MIN_PCT` | static-friction floor: the lowest percent that turns both tracks (100 on MOSS, 0 = off) | `tools/moss_floor_probe.py --go` with the stack down, the rover on blocks or with a clear metre ahead: it steps the percent up, reads the encoders around each step and prints the value to export |
+| `MOSS_MIN_PCT` | static-friction floor: the lowest percent that turns both tracks (50 on MOSS: 40 measured on a full pack, 10 of margin; 0 = off). An arc whose inner track sits under the floor is scaled up whole, so the curvature the planner asked for survives; raising only the inner track would straighten it | `tools/moss_floor_probe.py --go` with the stack down, the rover on blocks or with a clear metre ahead: it steps the percent up, reads the encoders around each step and prints the value to export |
+
+| `MOSS_BUS_REF_MV` | the bus voltage the floor and the speeds were measured at (12400 = a full 3S pack; 0 = off). A percent is a duty of the bus, so a pack at 10.5 V under load puts 15 % less voltage on the motors for the same command and the tracks creep or freeze: every command is scaled by reference/bus (never below 1, at most 1.5, capped at the limit) | read `bus_mV` in the telemetry while the probe measures the floor |
+| `MOSS_ONE_TRACK_PIVOT` | a pivot whose one track freezes while the other turns is not a contact: that track did not turn in that direction under the pivot's load. It is braked (0) and the pivot turns on the other track for the rest of the run, said once in the log; both tracks frozen in that turn is a contact. On by default, 0 = such a pivot is a stall | the stack log: `pivot ... did not turn` |
 
 Until `MOSS_TICKS_PER_M` is set, `read_odometry()` returns `None` and
 `read_velocities()` returns the commanded twist: an honest "no measurement"
 rather than a pose made of guesses. Set it and both come from the encoders.
 
 The other base knobs: `MOSS_MAX_PCT` (percent ceiling, 100 by default, never
-above the firmware's 100), `MOSS_PULSE_MS` (full-duty pulse period, 500 by default, 0 = off), `MOSS_MIN_PCT` (static-friction floor when pulsing is off, 100 by default),
+above the firmware's 100), `MOSS_PULSE_MS` (full-duty pulse period, 0 = off, the default: continuous power), `MOSS_MIN_PCT` (static-friction floor when pulsing is off, 50 by default), `MOSS_PIVOT_PCT` (every pivot sent at this percent on both tracks, 100 by default),
 `MOSS_RAMP_MS` (`"UP DOWN"`, sent as `ramp UP DOWN` at connect), `MOSS_PORT`
 (the serial port; by default the QT Py's `/dev/serial/by-id` path; only a
 `dimos run` by hand reads it from the shell, `tools/moss-teleop.sh` and

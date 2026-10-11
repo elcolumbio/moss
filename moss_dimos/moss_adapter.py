@@ -60,7 +60,9 @@ Calibration (env, all optional):
                         (default robot_profile.MOSS.track_m, 0.266 CAD, placeholder)
     MOSS_MPS_AT_LIMIT   floor speed in m/s at MOSS_MAX_PCT, measured
     MOSS_MAX_PCT        percent ceiling, <= the firmware's 100
-    MOSS_MIN_PCT        static-friction floor in percent (0 = off, default 50: measured 40 on a full battery, 10 of margin for the sag): a non-zero track command below it is raised to it, sign kept
+    MOSS_MIN_PCT        static-friction floor in percent (0 = off, default 50: measured 40 on a full battery, 10 of margin for the sag): a non-zero track command below it is raised to it, sign kept; an arc is scaled up whole so its curvature survives (floor_tracks)
+    MOSS_BUS_REF_MV     the bus voltage the floor and the speeds were measured at (default 12400): every command is scaled by ref/bus so a sagging pack puts the same voltage on the motors (never below 1, at most x1.5, capped at the limit); 0 = off
+    MOSS_ONE_TRACK_PIVOT a pivot whose one track freezes while the other turns is not a contact: that track is braked and the pivot turns on the other, for the rest of the run (default on; 0 = off, such a pivot is a stall)
     MOSS_TICKS_PER_M    encoder ticks per metre of track travel, measured
     MOSS_TURN_GAIN      turn authority vs forward speed (teleop_speeds), 0.5..4, default 2
     MOSS_RAMP_MS        "UP DOWN" sent as 'ramp UP DOWN' after connect (while pulsing, unset = "1 1")
@@ -117,6 +119,14 @@ PULSE_RAMP = "1 1"             # firmware ramp while pulsing: 1 ms per %, so a 1
 PIVOT_PCT_DEFAULT = 100        # MOSS_PIVOT_PCT: a pivot (tracks in opposite directions) is sent at this percent on both
                                # tracks whatever the planner asked, 0 = off. The pad pivots at 100 % continuous and the
                                # tracks turn without jolts there; the planner's slow pivots (8 %) can only be jolts
+BUS_REF_MV_DEFAULT = 12400     # MOSS_BUS_REF_MV: the bus voltage the floor and the speeds were measured at (a full 3S pack).
+                               # A percent is a duty of the bus: at 10.5 V under load the same 50 % puts 15 % less voltage on
+                               # the motor and the tracks creep or freeze, so every command is scaled by ref/bus (capped at
+                               # BUS_GAIN_MAX, never below 1, never above the limit). 0 = off.
+BUS_GAIN_MAX = 1.5             # the scale never goes past this (a 3S pack at 8.3 V is a pack to stop on, not to compensate)
+BUS_SANE_MV = (6000, 20000)    # a bus reading outside this is a broken sensor: no compensation
+ONE_TRACK_PIVOT_DEFAULT = True # MOSS_ONE_TRACK_PIVOT: a pivot whose one track does not turn (the other does) is not a contact:
+                               # the frozen track is braked (0) and the pivot turns on the other track, for the rest of the run
 PULSE_MIN_PCT_DEFAULT = 40     # MOSS_PULSE_MIN_PCT: the lowest duty of a non-zero track while pulsing; a planner pivot at
                                # 8 % would be one 100 ms slice per second (seen on the floor: jerky and slow), 40 % moves the rover
 
@@ -134,6 +144,68 @@ def pulse_min_pct() -> int:
 def pivot_pct() -> int:
     """MOSS_PIVOT_PCT clamped to 0..100: the percent every pivot is sent at (0 = as asked)."""
     return max(0, min(100, int(_env_float("MOSS_PIVOT_PCT", PIVOT_PCT_DEFAULT))))
+
+
+def bus_ref_mv() -> int:
+    """MOSS_BUS_REF_MV clamped to 0..20000 (0 = no compensation)."""
+    return max(0, min(20000, int(_env_float("MOSS_BUS_REF_MV", BUS_REF_MV_DEFAULT))))
+
+
+def bus_gain(bus_mv, ref_mv: int) -> float:
+    """The scale that puts the reference voltage back on the motors: ref/bus,
+    never below 1 (a full pack is never slowed down), never above BUS_GAIN_MAX;
+    1 without a reference, without a reading, or with a reading outside BUS_SANE_MV."""
+    try:
+        bus = int(bus_mv)
+    except (TypeError, ValueError):
+        return 1.0
+    if ref_mv <= 0 or not BUS_SANE_MV[0] <= bus <= BUS_SANE_MV[1]:
+        return 1.0
+    return max(1.0, min(BUS_GAIN_MAX, ref_mv / bus))
+
+
+def bus_scaled(want: tuple[int, int], gain: float, lim: int) -> tuple[int, int]:
+    """Each track scaled by the gain, sign kept, capped at the limit; a 0 stays 0."""
+    def one(p: int) -> int:
+        if p == 0 or gain == 1.0:
+            return p
+        return int(min(lim, round(abs(p) * gain))) * (1 if p > 0 else -1)
+    return one(want[0]), one(want[1])
+
+
+def one_track_pivot_on() -> bool:
+    """MOSS_ONE_TRACK_PIVOT: on unless 0 / false / no / off."""
+    return robot_profile.env_on("MOSS_ONE_TRACK_PIVOT", ONE_TRACK_PIVOT_DEFAULT)
+
+
+def floor_tracks(want: tuple[int, int], floor: int, lim: int) -> tuple[int, int]:
+    """The static-friction floor, the curvature kept. A non-zero track below
+    the floor does not turn, so a lone track (the other at 0) and a pivot
+    (opposite signs) are raised to the floor, sign kept. An arc (same signs)
+    is scaled up until its inner track reaches the floor, so the ratio the
+    commander asked for survives: raising only the inner track straightens
+    the arc (57/32 asked, 56/50 sent: the rover goes nearly straight and the
+    planner insists on the turn for twenty seconds). When the outer track
+    would pass the limit it is capped there, and the inner track, below the
+    floor again, goes to 0: a one-track turn, tighter than asked but in the
+    asked direction, which the planner corrects at its next tick."""
+    left, right = want
+    if floor <= 0 or (left == 0 and right == 0):
+        return want
+    if left == 0 or right == 0 or (left > 0) != (right > 0):
+        def raise_(p: int) -> int:
+            return p if p == 0 or abs(p) >= floor else (floor if p > 0 else -floor)
+        return raise_(left), raise_(right)
+    inner, outer = min(abs(left), abs(right)), max(abs(left), abs(right))
+    if inner >= floor:
+        return want
+    sign = 1 if left > 0 else -1
+    k = floor / inner
+    if outer * k > lim + 0.5:
+        inner_capped = int(round(lim * inner / outer))
+        inner_out = inner_capped if inner_capped >= floor else 0
+        return (sign * lim, sign * inner_out) if abs(left) >= abs(right) else (sign * inner_out, sign * lim)
+    return sign * int(round(abs(left) * k)), sign * int(round(abs(right) * k))
 
 
 def pivot_tracks(want: tuple[int, int], pct: int) -> tuple[int, int]:
@@ -236,8 +308,9 @@ def twist_to_tracks(vx: float, wz: float, g: MossGeometry) -> tuple[int, int]:
     Differential drive: v_left = vx - wz*track/2, v_right = vx + wz*track/2.
     Percent is proportional to speed with g.mps_at_limit <-> g.max_pct.
     A twist too small to round to 1 % IS a stop (0, 0). A non-zero percent
-    below g.min_pct is raised to g.min_pct with its sign (static-friction
-    floor: the tracks do not turn below it, so the alternative is a stall)."""
+    below g.min_pct is raised by floor_tracks (static-friction floor: the
+    tracks do not turn below it, so the alternative is a stall), which keeps
+    the curvature of an arc instead of straightening it."""
     half = g.track_m / 2.0
     v_l = vx - wz * half
     v_r = vx + wz * half
@@ -246,13 +319,9 @@ def twist_to_tracks(vx: float, wz: float, g: MossGeometry) -> tuple[int, int]:
     floor = max(0, min(lim, int(g.min_pct)))
 
     def pct(v: float) -> int:
-        p = int(round(v * scale))
-        p = max(-lim, min(lim, p))
-        if p and abs(p) < floor:
-            p = floor if p > 0 else -floor
-        return p
+        return max(-lim, min(lim, int(round(v * scale))))
 
-    return pct(v_l), pct(v_r)
+    return floor_tracks((pct(v_l), pct(v_r)), floor, lim)
 
 
 TURN_GAIN_DEFAULT = 2.0   # MOSS_TURN_GAIN: turn authority vs forward speed, see teleop_speeds
@@ -342,6 +411,9 @@ class MossBaseAdapter:
         self._stall_count = 0                                # stalls since connect (telemetry_payload, the coordinator's bump)
         self._pushing: tuple[int, int] | None = None         # the command being pushed harder before a contact is declared
         self._push_origin: tuple[int, int] | None = None     # the commander's own pair while the push runs (its repeats keep the push)
+        self._bus_ref_mv = bus_ref_mv()                      # the voltage the percents were measured at (0 = no compensation)
+        self._one_track = one_track_pivot_on()               # a pivot with one frozen track turns on the other track
+        self._dead_pivots: set[tuple[str, int]] = set()      # (side, sign) that did not turn in a pivot: braked in such pivots from then on
         # the mapping geometry: when pulsing, the static-friction floor becomes the duty floor of the pulses
         self._map_geometry = replace(self._geometry, min_pct=pulse_min_pct()) if self._pulse_n else self._geometry
         self._last_logged = None
@@ -577,7 +649,7 @@ class MossBaseAdapter:
                 vx, vy, wz = float(vx), float(vy), float(wz)
             except Exception:
                 return False
-            want = pivot_tracks(twist_to_tracks(vx, wz, self._map_geometry), self._pivot_pct)
+            want = self._pivot_fallback(pivot_tracks(twist_to_tracks(vx, wz, self._map_geometry), self._pivot_pct))
             if want != (0, 0) and not self._enabled:
                 return False
             if self._pushing is not None:
@@ -585,7 +657,7 @@ class MossBaseAdapter:
                     want = self._pushing            # the commander repeats itself: the push goes on, and is what is sent
                 else:
                     self._pushing = self._push_origin = None   # a new order: the push is over
-            left, right = self._slice(want)
+            left, right = self._to_wire(want)
             ok = self._drive(left, right)
             if ok:
                 if want == (0, 0):
@@ -607,6 +679,30 @@ class MossBaseAdapter:
         if not self._pulse_n:
             return want
         return pulse_tracks(want, self._tick, self._pulse_n, int(self._geometry.max_pct))
+
+    def _gain(self) -> float:
+        """The bus compensation of the moment, from the last telemetry line."""
+        return bus_gain((self._telemetry or {}).get("bus_mV"), self._bus_ref_mv)
+
+    def _to_wire(self, want: tuple[int, int]) -> tuple[int, int]:
+        """What goes on the wire for the commander's pair: the bus compensation,
+        then the pulse slice of this tick when pulsing. The commander's pair
+        itself (`_want`) stays as asked: the stall guard and the push compare
+        percents between themselves, which the gain does not change."""
+        return self._slice(bus_scaled(want, self._gain(), int(self._geometry.max_pct)))
+
+    def _pivot_fallback(self, want: tuple[int, int]) -> tuple[int, int]:
+        """A pivot whose one track is known not to turn in that direction (it froze
+        while the other turned, see _stall_check) turns on the other track: the
+        dead side is sent 0 (braked). Anything else passes unchanged."""
+        left, right = want
+        if not self._dead_pivots or left == 0 or right == 0 or (left > 0) == (right > 0):
+            return want
+        if ("L", 1 if left > 0 else -1) in self._dead_pivots:
+            return 0, right
+        if ("R", 1 if right > 0 else -1) in self._dead_pivots:
+            return left, 0
+        return want
 
     def _drive(self, left: int, right: int) -> bool:
         """Send 'drive L R'; on 'ERR not_armed' (arm expiry, invalid line,
@@ -668,7 +764,7 @@ class MossBaseAdapter:
                         continue
                     # pulsing: the slice of this tick, 'drive 0 0' included (an OFF slice
                     # keeps the firmware armed and its 300 ms deadman fed)
-                    self._target = self._slice(self._want)
+                    self._target = self._to_wire(self._want)
                     self._send(f"drive {self._target[0]} {self._target[1]}")
                     # what the firmware actually applies, and the battery
                     # voltage under load: one line per 2 s
@@ -713,6 +809,29 @@ class MossBaseAdapter:
         if not (stalled_l or stalled_r):
             self._pushing = self._push_origin = None
             return False
+        # A pivot (opposite signs) with ONE frozen track while the other turns is not a
+        # contact: a track that does not turn in that direction under the pivot's load (the
+        # right track in reverse on a sagging pack, every pivot to the right became a stall,
+        # a back-off and an abandoned goal). From now on such a pivot turns on the other
+        # track, the dead one braked at 0; both tracks frozen in that turn is a contact.
+        pivot = want_l != 0 and want_r != 0 and (want_l > 0) != (want_r > 0)
+        if pivot and stalled_l != stalled_r and self._one_track:
+            side = "R" if stalled_r else "L"
+            sign = 1 if (want_r if stalled_r else want_l) > 0 else -1
+            if (side, sign) not in self._dead_pivots:
+                self._dead_pivots.add((side, sign))
+                _log().warning(f"MOSS base: pivot L={want_l:+d}% R={want_r:+d}%: the {'right' if stalled_r else 'left'} track "
+                               f"did not turn (encoders L={l_new - l_old:+d} R={r_new - r_old:+d} ticks in {t_new - t_old:.1f} s) "
+                               f"- not a contact: from now on this pivot turns on the {'left' if stalled_r else 'right'} track "
+                               f"only, the {'right' if stalled_r else 'left'} track braked")
+            new_want = (want_l, 0) if stalled_r else (0, want_r)
+            self._pushing = self._push_origin = None
+            self._want = new_want
+            self._drive_since = now
+            self._tick_hist = self._tick_hist[-1:]
+            self._target = self._to_wire(new_want)
+            self._send(f"drive {self._target[0]} {self._target[1]}")
+            return True
         # Both commanded tracks frozen = the rover pushes against something. One track frozen
         # while the other turns is a contact only when the frozen track was commanded at least
         # as hard as the moving one (it should have turned at least as much: something holds
@@ -766,8 +885,11 @@ class MossBaseAdapter:
         self._last_logged = pct
         head = "MOSS base MOCK:" if self._mock else "MOSS base:"
         vx, vy, wz = twist
+        gain = self._gain()
+        wire = bus_scaled(pct, gain, int(self._geometry.max_pct))
+        comp = "" if gain == 1.0 else f" x{gain:.2f} for the bus at {int((self._telemetry or {}).get('bus_mV') or 0) / 1000:.1f} V = L={wire[0]:+d}% R={wire[1]:+d}%"
         _log().info(f"{head} twist vx={vx:+.3f} vy={vy:+.3f}(ignored) wz={wz:+.3f} "
-                    f"-> tracks L={pct[0]:+d}% R={pct[1]:+d}% (limit {self._geometry.max_pct}%)")
+                    f"-> tracks L={pct[0]:+d}% R={pct[1]:+d}%{comp} (limit {self._geometry.max_pct}%)")
 
     # ── feedback ───────────────────────────────────────────────────────
     def _ingest_ticks(self, tel: dict) -> None:

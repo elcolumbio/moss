@@ -97,6 +97,10 @@ try:
 finally:
     moss_mock.FakeMossFirmware = stock
     os.environ.pop("MOSS_MOCK_BUS", None)
+check(os.environ.get("MOSS_PIVOT_PCT") == "0" and os.environ.get("MOSS_BUS_REF_MV") == "0" and os.environ.get("MOSS_ONE_TRACK_PIVOT") == "0",
+      "a --go run measures the raw percent: pivots as asked, no bus compensation, no one-track pivot rewrite")
+for _v in ("MOSS_PIVOT_PCT", "MOSS_BUS_REF_MV", "MOSS_ONE_TRACK_PIVOT"):
+    os.environ.pop(_v, None)
 check(re.search(fp.STACK_RE, "/home/x/moss/.venv/bin/dimos --rerun-open none run moss-dimos.moss-nav --daemon") is not None,
       "the running-stack pattern matches a real launch line")
 check(re.search(fp.STACK_RE, "pgrep -f [b]in/dimos( [^ ]+)* run( |$)") is None, "...and not its own pgrep")

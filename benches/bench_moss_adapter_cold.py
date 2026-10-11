@@ -49,6 +49,7 @@ def settle(s=0.06):
 
 # ── 0. gamepad scale: full stick = the base's limit, not the generic 0.6 m/s ──
 os.environ["MOSS_PULSE_MS"] = "0"   # sections 0-12: the plain mapping and keepalive; pulsing has its own section
+os.environ["MOSS_BUS_REF_MV"] = "0"   # the fake reports 11.6 V: sections 0-14 compare raw percents; the bus compensation has its own section (15)
 print("0. teleop_speeds / teleop_envelope (track 0.30 m, 0.45 m/s at 100 %, turn gain 2)")
 os.environ.pop("MOSS_TURN_GAIN", None)
 G100 = MossGeometry(track_m=0.30, mps_at_limit=0.45, max_pct=100, min_pct=0)   # floor off: the mapping itself
@@ -547,6 +548,79 @@ while time.monotonic() - t_start < STALL_S + 0.6:
 check(not sb.stalled and sb.stall_count == 0 and fw10.mode == DRIVE, f"no stall while the encoders move: count {sb.stall_count}, mode {fw10.mode}")
 sb.write_stop(); sb.disconnect()
 os.environ.pop("MOSS_PULSE_MS", None)
+
+# ── 15. the floor keeps the curvature, the bus compensation, the one-track pivot ─────
+print("15. floor_tracks keeps the curvature; bus_gain / bus_scaled; a pivot with one frozen track turns on the other")
+from moss_dimos.moss_adapter import (floor_tracks, bus_gain, bus_scaled, bus_ref_mv, one_track_pivot_on,  # noqa: E402
+                                     BUS_GAIN_MAX, BUS_REF_MV_DEFAULT)
+check(floor_tracks((57, 32), 50, 100) == (89, 50), f"arc 57/32 under a floor of 50 -> 89/50 (scaled up whole, ratio kept): {floor_tracks((57, 32), 50, 100)}")
+check(floor_tracks((32, 57), 50, 100) == (50, 89), "...and mirrored 32/57 -> 50/89")
+check(floor_tracks((-57, -32), 50, 100) == (-89, -50), "...in reverse -89/-50 (signs kept)")
+check(floor_tracks((57, 10), 50, 100) == (100, 0), f"arc 57/10: the outer track would pass 100 -> 100/0, a one-track turn in the asked direction: {floor_tracks((57, 10), 50, 100)}")
+check(floor_tracks((4, 4), 50, 100) == (50, 50), "a slow straight 4/4 -> 50/50")
+check(floor_tracks((0, 30), 50, 100) == (0, 50) and floor_tracks((-30, 30), 50, 100) == (-50, 50), "a lone track and a pivot are raised to the floor as before")
+check(floor_tracks((60, 55), 50, 100) == (60, 55) and floor_tracks((57, 32), 0, 100) == (57, 32) and floor_tracks((0, 0), 50, 100) == (0, 0),
+      "above the floor, floor off, or a stop: unchanged")
+G50 = MossGeometry(track_m=0.30, mps_at_limit=0.45, max_pct=100, min_pct=50)
+check(twist_to_tracks(0.2, -0.385, G50) == (89, 50), f"the planner's slow right arc vx=0.2 wz=-0.385 (57/32 raw) -> 89/50: {twist_to_tracks(0.2, -0.385, G50)}")
+check(twist_to_tracks(0.15, -0.5, G50) == (100, 0), f"a tighter one vx=0.15 wz=-0.5 (50/17 raw) -> 100/0: {twist_to_tracks(0.15, -0.5, G50)}")
+check(abs(bus_gain(10500, 12400) - 12400 / 10500) < 1e-9 and bus_gain(12600, 12400) == 1.0 and bus_gain(7000, 12400) == BUS_GAIN_MAX,
+      f"bus_gain: 10.5 V -> x{bus_gain(10500, 12400):.3f}, a full pack -> x1, 7 V -> capped x{BUS_GAIN_MAX}")
+check(bus_gain(None, 12400) == 1.0 and bus_gain("n/a", 12400) == 1.0 and bus_gain(10500, 0) == 1.0 and bus_gain(30000, 12400) == 1.0 and bus_gain(0, 12400) == 1.0,
+      "bus_gain: no reading, text, no reference, or an insane reading -> x1")
+check(bus_scaled((56, 50), 12400 / 10500, 100) == (66, 59) and bus_scaled((100, -100), 1.2, 100) == (100, -100) and bus_scaled((0, 50), 1.5, 100) == (0, 75),
+      f"bus_scaled: 56/50 at 10.5 V -> {bus_scaled((56, 50), 12400 / 10500, 100)}, a pivot stays at the limit, a 0 stays 0")
+check(bus_ref_mv() == 0, "MOSS_BUS_REF_MV=0 (this bench's prelude) -> 0")
+os.environ["MOSS_BUS_REF_MV"] = "12400"
+check(bus_ref_mv() == 12400 and one_track_pivot_on() is True, "MOSS_BUS_REF_MV=12400 -> 12400; MOSS_ONE_TRACK_PIVOT unset -> on")
+os.environ.pop("MOSS_BUS_REF_MV", None)
+check(bus_ref_mv() == BUS_REF_MV_DEFAULT == 12400, "MOSS_BUS_REF_MV unset -> 12400 (a full 3S pack, where the floor was measured)")
+os.environ["MOSS_BUS_REF_MV"] = "12400"
+fw15 = Turning(auto_time=True)
+f15 = lambda: fw15  # noqa: E731
+f15.is_mock = True
+se = MossBaseAdapter(dof=3, port_factory=f15, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.45, max_pct=100, min_pct=0))
+check(se.connect() and se.write_enable(True) and se.telemetry.get("bus_mV") == 11600, "adapter on the fake (11.6 V on the bus), armed")
+check(se.write_velocities([0.252, 0.0, 0.0]) and se._want == (56, 56) and se.target_pct == (60, 60) and fw15.commands[-1] == "drive 60 60",
+      f"vx=0.252 (56 %) at 11.6 V with a 12.4 V reference -> drive 60 60 on the wire, the commander's 56/56 kept: want {se._want}, wire {se.target_pct}, {fw15.commands[-1]}")
+check(se.write_velocities([0.45, 0.0, 0.0]) and se.target_pct == (100, 100), "100 % stays 100 % (capped)")
+se.write_stop(); se.disconnect()
+os.environ["MOSS_BUS_REF_MV"] = "0"
+
+# a fake whose LEFT track turns and whose right track never does: a pivot to the right (right in reverse)
+class LeftOnly(FakeMossFirmware):
+    def _telemetry_line(self):
+        if self.mode == DRIVE:
+            self.ticks[0] += 80
+        return super()._telemetry_line()
+
+
+for env_on, label in (("1", "MOSS_ONE_TRACK_PIVOT on"), ("0", "MOSS_ONE_TRACK_PIVOT=0")):
+    os.environ["MOSS_ONE_TRACK_PIVOT"] = env_on
+    fw16 = LeftOnly(auto_time=True)
+    f16 = lambda fw=fw16: fw  # noqa: E731
+    f16.is_mock = True
+    sf = MossBaseAdapter(dof=3, port_factory=f16, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.45, max_pct=100, min_pct=0))
+    sf.connect(); sf.write_enable(True)
+    t_start = time.monotonic()
+    while time.monotonic() - t_start < 2 * STALL_S + 1.0 and not sf.stalled and not sf._dead_pivots:
+        sf.write_velocities([0.0, 0.0, -2.0]); settle(0.1)      # a pivot to the right: L=+100 R=-100
+    if env_on == "1":
+        check(sf._dead_pivots == {("R", -1)} and sf.stall_count == 0 and not sf.stalled,
+              f"{label}: the right track frozen in reverse while the left turns -> remembered as dead (R, reverse), no stall (count {sf.stall_count}, dead {sf._dead_pivots})")
+        check(sf._want == (100, 0) and fw16.commands[-1] == "drive 100 0",
+              f"...the pivot goes on on the left track, the right braked: want {sf._want}, wire {fw16.commands[-1]}")
+        check(sf.write_velocities([0.0, 0.0, -2.0]) and sf._want == (100, 0) and sf.target_pct == (100, 0),
+              f"...the planner's next pivot to the right is rewritten at once: {sf._want}")
+        check(sf.write_velocities([0.0, 0.0, 2.0]) and sf._want == (-100, 100),
+              f"...a pivot to the LEFT (right track forward) is untouched: {sf._want}")
+        check(sf.write_velocities([0.2, 0.0, 0.0]) and sf._want == (44, 44), f"...a straight drive is untouched: {sf._want}")
+    else:
+        check(sf.stalled and sf.stall_count == 1 and not sf._dead_pivots,
+              f"{label}: the same pivot is a stall, as before (count {sf.stall_count})")
+    sf.write_stop(); sf.disconnect()
+os.environ.pop("MOSS_ONE_TRACK_PIVOT", None)
+os.environ.pop("MOSS_BUS_REF_MV", None)
 
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")
