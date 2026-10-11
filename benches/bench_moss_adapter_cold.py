@@ -512,24 +512,27 @@ class Turning(FakeMossFirmware):
         return super()._telemetry_line()
 
 
-# one track frozen while the other turns: an arc's inner track under its floor, not a stall
+# one track frozen while the other turns: an arc's inner track under its floor is not a stall,
+# a track frozen at the HIGHER command (something holds it) is
 class OneSided(FakeMossFirmware):
     def _telemetry_line(self):
         if self.mode == DRIVE:
-            self.ticks[1] += 80
+            self.ticks[1] += 80            # only the right track turns
         return super()._telemetry_line()
 
 
-fw11 = OneSided(auto_time=True)
-f11 = lambda: fw11  # noqa: E731
-f11.is_mock = True
-sc = MossBaseAdapter(dof=3, port_factory=f11, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100, min_pct=0))
-check(sc.connect() and sc.write_enable(True), "a fake with only the right encoder turning")
-t_start = time.monotonic()
-while time.monotonic() - t_start < STALL_S + 0.6:
-    sc.write_velocities([0.06, 0.0, 0.1]); settle(0.1)
-check(not sc.stalled and sc.stall_count == 0 and fw11.mode == DRIVE, f"one track frozen, the other turning: not a stall (count {sc.stall_count}, mode {fw11.mode})")
-sc.write_stop(); sc.disconnect()
+for twist, label, want_stall in (([0.06, 0.0, 0.1], "left frozen at the lower command (an arc turning left): not a stall", False),
+                                 ([0.06, 0.0, -0.1], "left frozen at the HIGHER command (something holds it): a stall", True)):
+    fw11 = OneSided(auto_time=True)
+    f11 = lambda fw=fw11: fw  # noqa: E731
+    f11.is_mock = True
+    sc = MossBaseAdapter(dof=3, port_factory=f11, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100, min_pct=0))
+    sc.connect(); sc.write_enable(True)
+    t_start = time.monotonic()
+    while time.monotonic() - t_start < STALL_S + 0.6 and not sc.stalled:
+        sc.write_velocities(twist); settle(0.1)
+    check((sc.stall_count == 1) == want_stall, f"{label} (count {sc.stall_count}, L/R {sc._want})")
+    sc.write_stop(); sc.disconnect()
 fw10 = Turning(auto_time=True)
 f10 = lambda: fw10  # noqa: E731
 f10.is_mock = True

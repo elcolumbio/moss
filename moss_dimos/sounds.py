@@ -50,9 +50,10 @@ logger = setup_logger()
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "sounds"
 BACKENDS = ("paplay", "pw-play")    # PulseAudio first: on the Jetson the Bluetooth speaker is a PulseAudio sink (module-bluez5),
                                     # PipeWire there has no Bluetooth; MOSS_SOUND_BACKEND forces one of the two
-BATTERY_LOW_MV = 11000          # 3S pack: low below this at rest...
-BATTERY_LOW_CLEAR_MV = 11300    # ...and back to normal above this (hysteresis: a sag under load does not toggle it)
-BATTERY_CRITICAL_MV = 10600     # the flight check refuses below 10.8 V; critical is lower still
+BATTERY_LOW_MV = 10800          # 3S pack, read UNDER LOAD (the telemetry comes while the tracks turn: a half-full
+                                # pack sags to about 11.0 V): low below this...
+BATTERY_LOW_CLEAR_MV = 11200    # ...and back to normal above this (hysteresis: one sag does not toggle it)
+BATTERY_CRITICAL_MV = 10400     # the flight check refuses to launch below 10.8 V at rest; critical under load is lower
 BATTERY_SAMPLES = 6             # consecutive telemetry lines (3 s at 2 Hz) below a threshold before it counts
 RECOVERY_WINDOW_S = 20.0        # a stall followed by motion inside this window = a recovery
 RECOVERY_MIN_TICKS = 100        # encoder ticks that count as "moving again" after a stall

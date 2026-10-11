@@ -701,13 +701,17 @@ class MossBaseAdapter:
         want_l, want_r = self._want
         stalled_l = want_l != 0 and abs(l_new - l_old) < STALL_MIN_TICKS
         stalled_r = want_r != 0 and abs(r_new - r_old) < STALL_MIN_TICKS
-        commanded = [stalled for want, stalled in ((want_l, stalled_l), (want_r, stalled_r)) if want != 0]
-        # a stall is the rover pushing against something: EVERY commanded track frozen. One
-        # track frozen while the other turns is an arc whose inner track sits under its
-        # friction floor, or a tread dragging on a step: the rover still moves, the planner's
-        # own stuck detection owns that case, and a false bump would back it off for nothing.
-        if not commanded or not all(commanded):
+        if not (stalled_l or stalled_r):
             return False
+        # Both commanded tracks frozen = the rover pushes against something. One track frozen
+        # while the other turns is a contact only when the frozen track was commanded at least
+        # as hard as the moving one (it should have turned at least as much: something holds
+        # it); frozen at the LOWER command it is an arc's inner track under its friction floor,
+        # which still moves the rover and is the planner's stuck detection's case, not a bump.
+        if stalled_l != stalled_r:
+            frozen_cmd, moving_cmd = (abs(want_l), abs(want_r)) if stalled_l else (abs(want_r), abs(want_l))
+            if frozen_cmd < moving_cmd:
+                return False
         self._send("stop")
         self._stall_count += 1
         self._stalled = True

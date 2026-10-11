@@ -34,6 +34,8 @@ Switches (env, read when moss-nav / moss-explore is built; robot_profile.env_on
 parses them: 0, false, no or off = off, any other value = on, unset = the default):
     MOSS_CAMERA=0     no RealSense (default on: colour 640x480 @ 5 fps, JPEG on the bus, plus depth aligned
                       to colour at the same rate, turned into map obstacles by lidar_odometry)
+    MOSS_GYRO=0       no gyro prior for the lidar odometry (default on, with the camera: the RealSense's IMU
+                      feeds the odometry's rotation prior; without a camera there is no gyro)
     MOSS_SOUNDS=0     no sound module (default on when pw-play or paplay is on the PATH: the sound pack
                       in assets/sounds plays boot_ready, bump_surprise, recovery_success, resume,
                       mission_complete, battery_low / battery_critical on the stack's events;
@@ -426,12 +428,16 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
     from moss_dimos.lidar_odometry import LidarOdometry
     from moss_dimos.rplidar_c1 import RPLidarC1
 
+    gyro = robot_profile.env_on("MOSS_GYRO", True) and robot_profile.env_on("MOSS_CAMERA", True)
     parts = [
         _coordinator_blueprint(_moss_base(address=ports["base"])),
         _gamepad_part(),
         RPLidarC1.blueprint(port=ports["lidar"], baudrate=LIDAR_BAUDRATE, frame_id="lidar_link"),
         # no IMU wired: kiss-icp on its constant-velocity prior
-        LidarOdometry.blueprint(use_gyro_prior=False),
+        # the rotation prior: the RealSense's gyro when MOSS_GYRO is on (default), which holds the
+        # registration through a full-power pivot (254 deg/s measured on the floor: 25 deg between
+        # two scans, where the constant-velocity prior let the map drift); constant velocity otherwise
+        LidarOdometry.blueprint(use_gyro_prior=gyro),
         MossCostMap.blueprint(),
     ]
     if robot_profile.env_on("MOSS_CAMERA", True):
@@ -444,7 +450,7 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         cam_kwargs = dict(width=CAMERA_WIDTH, height=CAMERA_HEIGHT, fps=CAMERA_FPS,
                           # depth on, aligned to colour: lidar_odometry turns it into the obstacles the
                           # 2D lidar cannot see (below its scan plane); the point cloud stays off (not used)
-                          enable_depth=True, enable_pointcloud=False, enable_imu=False,
+                          enable_depth=True, enable_pointcloud=False, enable_imu=gyro,
                           base_transform=Transform(translation=Vector3(x, y, z),
                                                    rotation=Quaternion(qx, qy, qz, qw)))
         serial = os.environ.get("MOSS_RS_SERIAL", "").strip()

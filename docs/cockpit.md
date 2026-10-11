@@ -80,6 +80,9 @@ firmware 300 ms after the last drive.
   table top the rover has turned away from keeps its wall until the camera looks
   at that spot again and sees nothing. The knobs are `MOSS_HIT_CAP`,
   `MOSS_FREE_FLOOR` and `MOSS_RAY_MAX_M` (below);
+- the lidar odometry's rotation prior from the RealSense's gyro (`MOSS_GYRO=0` turns it
+  off): a full-power pivot turns the rover 25 degrees between two scans, more than the
+  constant-velocity prior follows, and the map drifts; the gyro says where the rover turned;
 - the sound module (`moss_dimos/sounds.py`): a pack of short synthesized cues in
   `assets/sounds` played through the robot user's PulseAudio session (a Bluetooth
   speaker once connected, the default sink otherwise) on confirmed events only: the
