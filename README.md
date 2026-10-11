@@ -50,6 +50,10 @@ I pick up litter by hand on my walks. MOSS is the robot I want next to me doing 
 
 OpenAI (Codex Physical Builds), [Dimensional](https://x.com/dimensionalos) (dimOS), [NormaCore](https://x.com/norma_core_dev) (gripper), [Tnkr](https://x.com/tnkrdotai) (kits and guide), [Dirac Robotics](https://x.com/diracrobotics) (calibrated simulation), [microduck-lab](https://github.com/jonathanhawkins/microduck-lab) (reinforcement learning). We help each other.
 
+## Supporters
+
+People who put a spool of filament in the rover every month: [Richard Burton](https://github.com/ricburton). It goes into parts the same week. You can join them on [GitHub Sponsors](https://github.com/sponsors/metrox-eth).
+
 ## Simulation and autonomy, work in progress
 
 The MOSS body runs in MuJoCo with three recorded pickup missions, in the [moss-jev](https://github.com/metrox-eth/moss-jev) repository. It is a basic model. Dirac Robotics is helping build a calibrated URDF, so the robot in MuJoCo behaves like the real one, to experiment with Dimensional's Dimcode; Dimensional is working on a navigation arena; microduck-lab is trying reinforcement learning on it. Accurate simulation, sim-to-real transfer, a modular stack, autonomy: all of it is part of the journey, none of it is here on day one.
