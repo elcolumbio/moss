@@ -1,7 +1,7 @@
 # MOSS cockpit server: the bus tap and the page on :8904 (docs/cockpit.md).
-# A template: MOSS_USER is the account that runs the rover's stack, MOSS_DIR the
+# A template: MOSS_USER is the account that runs the rover's stack, MOSS_UID its uid, MOSS_DIR the
 # absolute path of this checkout (with its .venv). Install from the checkout:
-#   sed -e "s|MOSS_USER|$USER|g" -e "s|MOSS_DIR|$PWD|g" tools/moss-cockpit.service \
+#   sed -e "s|MOSS_USER|$USER|g" -e "s|MOSS_DIR|$PWD|g" -e "s|MOSS_UID|$(id -u)|g" tools/moss-cockpit.service \
 #     | sudo tee /etc/systemd/system/moss-cockpit.service >/dev/null
 #   sudo systemctl daemon-reload && sudo systemctl enable moss-cockpit && sudo systemctl restart moss-cockpit
 # `restart`, not `enable --now`: a cockpit already running (an older install, or
@@ -24,6 +24,9 @@ User=MOSS_USER
 WorkingDirectory=MOSS_DIR
 Environment=GLIBC_TUNABLES=glibc.rtld.optional_static_tls=4194304
 Environment=MOSS_COCKPIT_PORT=8904
+# the robot user's audio session (PulseAudio / PipeWire sockets): a stack launched from this
+# service plays the sound pack through it; without it the rover stays silent from the cockpit
+Environment=XDG_RUNTIME_DIR=/run/user/MOSS_UID
 ExecStart=MOSS_DIR/.venv/bin/python tools/moss_cockpit.py
 Restart=always
 RestartSec=3

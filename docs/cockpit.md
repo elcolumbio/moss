@@ -282,7 +282,7 @@ absolute path of this checkout (with its `.venv`). From the root of the
 checkout:
 
 ```
-$ sed -e "s|MOSS_USER|$USER|g" -e "s|MOSS_DIR|$PWD|g" tools/moss-cockpit.service \
+$ sed -e "s|MOSS_USER|$USER|g" -e "s|MOSS_DIR|$PWD|g" -e "s|MOSS_UID|$(id -u)|g" tools/moss-cockpit.service \
     | sudo tee /etc/systemd/system/moss-cockpit.service >/dev/null
 $ sudo systemctl daemon-reload && sudo systemctl enable moss-cockpit && sudo systemctl restart moss-cockpit
 ```

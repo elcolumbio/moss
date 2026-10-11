@@ -20,7 +20,8 @@ twice in a row within an event's cooldown, and nothing plays while muted.
 Environment: MOSS_SOUNDS (on by default; 0 = the blueprint leaves the module
 out), MOSS_SOUND_VOLUME (0..1, default from assets/sounds/config.json),
 MOSS_SOUND_SINK (a PulseAudio sink name or index; default = the session's
-default sink, which is the Bluetooth speaker once it is connected).
+default sink, which is the Bluetooth speaker once it is connected),
+MOSS_SOUND_BACKEND (paplay or pw-play; default: paplay when present).
 
 The player needs the user's audio session: a stack launched from a login
 shell or over ssh as the robot's user finds it (XDG_RUNTIME_DIR); a system
@@ -47,7 +48,8 @@ from moss_dimos import robot_profile
 logger = setup_logger()
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets" / "sounds"
-BACKENDS = ("pw-play", "paplay")
+BACKENDS = ("paplay", "pw-play")    # PulseAudio first: on the Jetson the Bluetooth speaker is a PulseAudio sink (module-bluez5),
+                                    # PipeWire there has no Bluetooth; MOSS_SOUND_BACKEND forces one of the two
 BATTERY_LOW_MV = 11000          # 3S pack: low below this at rest...
 BATTERY_LOW_CLEAR_MV = 11300    # ...and back to normal above this (hysteresis: a sag under load does not toggle it)
 BATTERY_CRITICAL_MV = 10600     # the flight check refuses below 10.8 V; critical is lower still
@@ -68,8 +70,12 @@ def sound_volume(default: float, env: dict | None = None) -> float:
     return max(0.0, min(1.0, v))
 
 
-def playback_backend() -> str | None:
-    """The first playback command on the PATH, None when there is none."""
+def playback_backend(env: dict | None = None) -> str | None:
+    """The playback command: MOSS_SOUND_BACKEND when set and on the PATH, else the
+    first of BACKENDS on the PATH, None when there is none."""
+    forced = (env if env is not None else os.environ).get("MOSS_SOUND_BACKEND", "").strip()
+    if forced:
+        return forced if forced in BACKENDS and shutil.which(forced) else None
     for name in BACKENDS:
         if shutil.which(name):
             return name
