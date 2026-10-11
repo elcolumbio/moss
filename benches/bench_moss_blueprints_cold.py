@@ -308,6 +308,14 @@ check("KD-USB by-id video-index0 -> /dev/video6 -> 6 (index1 ignored)", mb.wrist
 check("MOSS_WRIST_DEV=3 -> 3", mb.wrist_camera_index({"MOSS_WRIST_DEV": "3"}, v4l) == 3)
 check("MOSS_WRIST_DEV=/dev/video9 -> 9", mb.wrist_camera_index({"MOSS_WRIST_DEV": "/dev/video9"}, v4l) == 9)
 check("MOSS_WRIST_DEV=/dev/ttyUSB0 (not a video device) -> None", mb.wrist_camera_index({"MOSS_WRIST_DEV": "/dev/ttyUSB0"}, v4l) is None)
+v4l2 = tempfile.mkdtemp(prefix="v4l_other_")
+os.symlink("/dev/video2", os.path.join(v4l2, "usb-Intel_R_RealSense_TM_Depth_Camera_455f_Intel_R_RealSense_TM_Depth_Camera_455f_000000000000-video-index0"))
+check("only the RealSense under by-id -> None (the nose camera is never the wrist)", mb.wrist_camera_index({}, v4l2) is None)
+os.symlink("/dev/video8", os.path.join(v4l2, "usb-Generic_Vendor_USB_Camera_XYZ-video-index0"))
+os.symlink("/dev/video9", os.path.join(v4l2, "usb-Generic_Vendor_USB_Camera_XYZ-video-index1"))
+check("an unknown UVC camera next to the RealSense -> it is the wrist (/dev/video8), index1 ignored", mb.wrist_camera_index({}, v4l2) == 8)
+os.symlink("/dev/video6", os.path.join(v4l2, "usb-Sonix_Technology_Co.__Ltd._KD-USB_Cameras_KD-USB_Cameras-video-index0"))
+check("a known name wins over the unknown one", mb.wrist_camera_index({}, v4l2) == 6)
 mb.V4L_BY_ID = v4l          # F and G build the blueprints against this fake by-id
 print()
 

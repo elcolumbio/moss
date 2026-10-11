@@ -454,6 +454,14 @@ check("MOSS_CAMERA unset, no pyrealsense2 -> KO RealSense with the install / MOS
       f"rc {rc} {last_line(out)}")
 rc, out, res, w = run(realsense_exc=NO_RS, env={"MOSS_CAMERA": "1"})
 check("MOSS_CAMERA=1 -> the same KO", rc == 1 and line_of(out, "RealSense").startswith("KO"))
+RS_V4L = "/dev/v4l/by-id/usb-Intel_R_RealSense_TM_Depth_Camera_455f_000000000000-video-index0"
+OTHER_CAM = "/dev/v4l/by-id/usb-Generic_Vendor_USB_Camera_XYZ-video-index0"
+rc, out, res, w = run(files={QTPY, C1, "/dev/input/js0", RS_V4L, OTHER_CAM})
+check("an unknown UVC camera next to the RealSense is reported as the wrist camera",
+      any(r["label"] == "wrist camera" and r["ok"] and OTHER_CAM in r["detail"] for r in res), str([r for r in res if r["label"] == "wrist camera"]))
+rc, out, res, w = run(files={QTPY, C1, "/dev/input/js0", RS_V4L})
+check("only the RealSense under by-id -> wrist camera WARN (never the nose camera)",
+      any(r["label"] == "wrist camera" and r["ok"] and "WARN" in r["detail"] for r in res), str([r for r in res if r["label"] == "wrist camera"]))
 rc, out, res, w = run(files={QTPY, C1, "/dev/input/js0"}, env={"MOSS_WRIST": "false"})
 wr = find(res, "wrist camera")
 check("MOSS_WRIST=false -> wrist camera skipped (the stack builds none)",

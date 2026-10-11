@@ -265,16 +265,19 @@ def moss_ports(env: dict | None = None) -> dict:
 
 
 WRIST_WIDTH, WRIST_HEIGHT, WRIST_FPS = 640, 480, 5
-WRIST_BY_ID_GLOBS = ("*KD-USB*-video-index0", "*Sonix*-video-index0")   # the arm's UVC camera, as moss_preflight
+WRIST_BY_ID_GLOBS = ("*KD-USB*-video-index0", "*Sonix*-video-index0")   # known arm cameras, tried first (as moss_preflight)
+WRIST_ANY_GLOB = "*-video-index0"                # then any other UVC camera on the robot...
+WRIST_NOT = ("realsense",)                       # ...except the nose camera (lower-cased by-id name)
 V4L_BY_ID = "/dev/v4l/by-id"
 
 
 def wrist_camera_index(env: dict | None = None, by_id_dir: str | None = None) -> int | None:
     """/dev/videoN index of the wrist camera, or None when it is not there.
     MOSS_WRIST_DEV wins (an index or a /dev/videoN path); otherwise the first
-    by-id match of the known names. The kernel numbers video devices in plug
-    order, so the by-id name is the stable handle and the index is resolved
-    when the blueprint is built."""
+    by-id match of the known names; otherwise the first other UVC camera under
+    by-id that is not the RealSense (MOSS carries two cameras: the nose and the
+    arm). The kernel numbers video devices in plug order, so the by-id name is
+    the stable handle and the index is resolved when the blueprint is built."""
     import glob
     import re
     env = os.environ if env is None else env
@@ -291,6 +294,11 @@ def wrist_camera_index(env: dict | None = None, by_id_dir: str | None = None) ->
             if hits:
                 target = os.path.realpath(hits[0])
                 break
+        if target is None:
+            others = [h for h in sorted(glob.glob(os.path.join(by_id_dir, WRIST_ANY_GLOB)))
+                      if not any(x in os.path.basename(h).lower() for x in WRIST_NOT)]
+            if others:
+                target = os.path.realpath(others[0])
         if target is None:
             return None
     m = re.fullmatch(r"/dev/video(\d+)", target)
@@ -400,7 +408,7 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         idx = wrist_camera_index()
         if idx is None:
             _logger.warning("MOSS blueprint: no wrist camera (%s under %s, or MOSS_WRIST_DEV): "
-                            "wrist_image will not be published", " / ".join(WRIST_BY_ID_GLOBS), V4L_BY_ID)
+                            "wrist_image will not be published", " / ".join(WRIST_BY_ID_GLOBS + (WRIST_ANY_GLOB,)), V4L_BY_ID)
         else:
             _logger.info(f"MOSS blueprint: wrist camera /dev/video{idx}, {WRIST_WIDTH}x{WRIST_HEIGHT} @ {WRIST_FPS} fps")
             parts.append(_wrist_part(idx))

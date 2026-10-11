@@ -64,7 +64,9 @@ V4L_DIR = "/dev/v4l/by-id"
 JS_PATH = "/dev/input/js0"
 QTPY_GLOB = "*QT_Py*"
 C1_GLOB = "*CP2102N*"
-WRIST_GLOBS = ("*KD-USB*-video-index0", "*Sonix*-video-index0")
+WRIST_GLOBS = ("*KD-USB*-video-index0", "*Sonix*-video-index0")   # known arm cameras first
+WRIST_ANY_GLOB = "*-video-index0"                                   # then any other UVC camera...
+WRIST_NOT = ("realsense",)                                          # ...except the nose camera
 FIRMWARE_BAUD = 115200
 LISTEN_S = 1.5              # five telemetry lines at the firmware's 200 ms period
 LIDAR_TURNS = 3
@@ -612,10 +614,14 @@ def check_wrist(ctx: dict) -> None:
         skipped("wrist camera", f"MOSS_WRIST={_raw('MOSS_WRIST')}: this flight builds no wrist camera")
         return
     path = _first(os.path.join(V4L_DIR, g) for g in WRIST_GLOBS)
+    if path is None:
+        others = [h for h in _ls(os.path.join(V4L_DIR, WRIST_ANY_GLOB))
+                  if not any(x in os.path.basename(h).lower() for x in WRIST_NOT)]
+        path = others[0] if others else None
     # The stack skips a missing wrist camera with a warning (no wrist_image):
     # its absence is a warning here too, not a refusal.
-    verdict(True, "wrist camera", path or f"WARN not seen (no {' or '.join(WRIST_GLOBS)} under {V4L_DIR}); "
-            "the stack runs without wrist_image")
+    verdict(True, "wrist camera", path or f"WARN not seen (no {' or '.join(WRIST_GLOBS)} and no other "
+            f"{WRIST_ANY_GLOB} besides the RealSense under {V4L_DIR}); the stack runs without wrist_image")
 
 
 def check_gamepad(ctx: dict) -> None:
