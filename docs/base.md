@@ -78,6 +78,7 @@ env override, so a run can be re-scaled without a code change:
 | `MOSS_TRACK_M` | distance between the two track centrelines (0.266 m from the CAD) | tape measure, sprocket centre to sprocket centre |
 | `MOSS_MPS_AT_LIMIT` | floor speed at `MOSS_MAX_PCT` (0.45 m/s placeholder) | full stick (or `drive 100 100`) for 3 s on the floor, tape measure, divide |
 | `MOSS_TICKS_PER_M` | encoder ticks per metre of track travel (unset) | `zero`, push or drive the rover exactly 1 m, read `ticks` in a `status` line, average the two sides |
+| `MOSS_MIN_PCT` | static-friction floor: the lowest percent that turns both tracks (0 = off) | `tools/moss_floor_probe.py --go` with the stack down, the rover on blocks or with a clear metre ahead: it steps the percent up, reads the encoders around each step and prints the value to export |
 
 Until `MOSS_TICKS_PER_M` is set, `read_odometry()` returns `None` and
 `read_velocities()` returns the commanded twist: an honest "no measurement"
