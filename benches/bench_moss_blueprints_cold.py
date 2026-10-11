@@ -453,6 +453,7 @@ hw = atom(nav, "MossControlCoordinator").kwargs["hardware"][0]
 check("base: adapter 'moss' on the QT Py by-id", hw.adapter_type == "moss" and hw.address == os.path.join(byid, QTPY))
 check("pad: the same MOSS envelope as moss-gamepad", atom(nav, "GamepadTeleop").kwargs.get("envelope") == teleop_envelope(g))
 check("odometry without the gyro prior (MOSS_GYRO unset = off)", atom(nav, "LidarOdometry").kwargs.get("use_gyro_prior") is False)
+check("odometry without deskew (MOSS_DESKEW unset = off: on the rover the deskew thread fails)", atom(nav, "LidarOdometry").kwargs.get("deskew") is False)
 cam = atom(nav, "RealSenseCamera").kwargs
 check("RealSense 640x480 @ 5 fps, colour + depth (aligned), no point cloud, no IMU (MOSS_GYRO off by default)",
       (cam.get("width"), cam.get("height"), cam.get("fps"), cam.get("enable_depth"),

@@ -36,6 +36,8 @@ parses them: 0, false, no or off = off, any other value = on, unset = the defaul
                       to colour at the same rate, turned into map obstacles by lidar_odometry)
     MOSS_GYRO=1       gyro prior for the lidar odometry from the RealSense's IMU (default OFF: the IMU
                       pipeline fails to open on the rover and takes the camera down with it; an experiment)
+    MOSS_DESKEW=1     kiss-icp straightens each lidar revolution by the motion prior (default OFF: on the
+                      rover its first thread fails and the odometry stops; an experiment)
     MOSS_SOUNDS=0     no sound module (default on when pw-play or paplay is on the PATH: the sound pack
                       in assets/sounds plays boot_ready, bump_surprise, recovery_success, resume,
                       mission_complete, battery_low / battery_critical on the stack's events;
@@ -432,6 +434,9 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
     # which fails with 'No device connected' on the rover (the colour and depth streams then never
     # start either), so the gyro prior is OFF unless asked for
     gyro = robot_profile.env_on("MOSS_GYRO", False) and robot_profile.env_on("MOSS_CAMERA", True)
+    # MOSS_DESKEW=1 is an experiment too: kiss-icp's deskew (each point moved by its share of the motion
+    # prior) dies on the rover at its first thread, and the odometry loop with it
+    deskew = robot_profile.env_on("MOSS_DESKEW", False)
     parts = [
         _coordinator_blueprint(_moss_base(address=ports["base"])),
         _gamepad_part(),
@@ -440,7 +445,7 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         # the rotation prior: the RealSense's gyro when MOSS_GYRO is on (default), which holds the
         # registration through a full-power pivot (254 deg/s measured on the floor: 25 deg between
         # two scans, where the constant-velocity prior let the map drift); constant velocity otherwise
-        LidarOdometry.blueprint(use_gyro_prior=gyro),
+        LidarOdometry.blueprint(use_gyro_prior=gyro, deskew=deskew),
         MossCostMap.blueprint(),
     ]
     if robot_profile.env_on("MOSS_CAMERA", True):

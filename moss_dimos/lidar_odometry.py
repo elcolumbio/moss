@@ -147,7 +147,7 @@ class LidarOdometry(Module):
 
     def __init__(self, max_range_m: float = 12.0, min_range_m: float = 0.35,
                  voxel_size_m: float = 0.05, initial_threshold_m: float = 0.3,
-                 gyro_axis: str = "-y", use_gyro_prior: bool = True, deskew: bool = True,
+                 gyro_axis: str = "-y", use_gyro_prior: bool = True, deskew: bool = False,
                  world_frame: str = "world",
                  base_frame: str = "base_link", lidar_frame: str = "lidar_link",
                  log_every_s: float = 2.0, **kwargs: Any) -> None:
@@ -160,7 +160,9 @@ class LidarOdometry(Module):
         # yaw_rate = -gyro.y. A camera mounted upside down flips the sign.
         self.gyro_axis = gyro_axis
         self.use_gyro_prior = use_gyro_prior
-        self.deskew = deskew          # kiss-icp straightens each revolution by the motion prior (sweep_times): a full-power pivot bends a 10 Hz scan by 25 degrees
+        self.deskew = deskew          # kiss-icp straightens each revolution by the motion prior (sweep_times): a full-power pivot bends a 10 Hz
+                                      # scan by 25 degrees. OFF by default: on the rover kiss-icp's deskew dies at its first thread
+                                      # (pthread_create: Invalid argument) and the odometry with it; MOSS_DESKEW=1 is the experiment
         self.world_frame, self.base_frame, self.lidar_frame = world_frame, base_frame, lidar_frame
         self.log_every_s = log_every_s
         # dimOS pickles module instances into their worker: no lock, no native

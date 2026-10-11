@@ -230,10 +230,12 @@ finally:
     LO.Module.start = real_module_start
     LO.logger = real_logger
 cfg = getattr(o._kiss, "cfg", None)
-check("start() builds kiss-icp: max 12 m, min 0.35 m, deskew on, voxel 0.05 m, 30 points/voxel, threshold 0.3 m, min motion 0.02 m",
+check("start() builds kiss-icp: max 12 m, min 0.35 m, deskew OFF by default, voxel 0.05 m, 30 points/voxel, threshold 0.3 m, min motion 0.02 m",
       cfg is not None and (cfg.data.max_range, cfg.data.min_range, cfg.data.deskew, cfg.mapping.voxel_size,
                            cfg.mapping.max_points_per_voxel, cfg.adaptive_threshold.initial_threshold,
-                           cfg.adaptive_threshold.min_motion_th) == (12.0, 0.35, True, 0.05, 30, 0.3, 0.02))
+                           cfg.adaptive_threshold.min_motion_th) == (12.0, 0.35, False, 0.05, 30, 0.3, 0.02))
+check("deskew=True reaches the kiss-icp config (MOSS_DESKEW=1 in the blueprint)",
+      LO.LidarOdometry(deskew=True).deskew is True and LO.LidarOdometry().deskew is False)
 up = [line for line in spy.lines if line.startswith("lidar odometry up")]
 check("start() logs 'lidar odometry up (kiss-icp, ...' once (the launcher greps this prefix)",
       len(up) == 1 and up[0].startswith("lidar odometry up (kiss-icp,") and up[0].endswith("-> world"),
