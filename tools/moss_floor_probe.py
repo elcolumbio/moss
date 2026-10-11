@@ -85,7 +85,7 @@ def _fresh_ticks(adapter: MossBaseAdapter, timeout: float) -> list[int] | None:
 
 
 def run(adapter: MossBaseAdapter, pcts: list[int], hold: float, settle: float,
-        min_ticks: int, stop_at_first: bool, say=print) -> list[dict]:
+        min_ticks: int, stop_at_first: bool, say=print, pivot: bool = False) -> list[dict]:
     """Drive each step and read the ticks around it. Returns the rows; the
     adapter is stopped before returning, whatever happens."""
     rows: list[dict] = []
@@ -102,8 +102,10 @@ def run(adapter: MossBaseAdapter, pcts: list[int], hold: float, settle: float,
             t_end = time.monotonic() + hold
             ok = True
             while time.monotonic() < t_end:
-                # geometry: mps_at_limit 1.0 and max_pct 100, so vx 0.35 m/s = 35 %
-                ok = adapter.write_velocities([pct / 100.0, 0.0, 0.0]) and ok
+                # geometry: mps_at_limit 1.0 and max_pct 100, so vx 0.35 m/s = 35 %; a pivot
+                # at p % is wz = p/100 / (track/2) (left -p, right +p)
+                twist = [0.0, 0.0, pct / 100.0 / (adapter._geometry.track_m / 2.0)] if pivot else [pct / 100.0, 0.0, 0.0]
+                ok = adapter.write_velocities(twist) and ok
                 time.sleep(0.2)
             adapter.write_stop()
             time.sleep(settle)
@@ -137,10 +139,11 @@ def main(argv=None) -> int:
     ap.add_argument("--min-ticks", type=int, default=20)
     ap.add_argument("--port", default=None)
     ap.add_argument("--mock", action="store_true", help="the fake firmware, no motor")
+    ap.add_argument("--pivot", action="store_true", help="turn on the spot (left back, right forward) instead of driving straight")
     a = ap.parse_args(argv)
 
     pcts = plan(a.start, a.stop, a.step)
-    print(f"floor probe: {len(pcts)} steps {pcts[0] if pcts else '-'}..{pcts[-1] if pcts else '-'} % "
+    print(f"floor probe ({'pivot on the spot' if a.pivot else 'straight'}): {len(pcts)} steps {pcts[0] if pcts else '-'}..{pcts[-1] if pcts else '-'} % "
           f"(hold {a.hold:.1f} s, settle {a.settle:.1f} s, motion = {a.min_ticks} ticks)")
     if not a.go:
         print("nothing moves without --go. Put the rover on blocks or give it a clear metre ahead.")
@@ -148,6 +151,7 @@ def main(argv=None) -> int:
     if not a.mock and stack_running():
         print("a dimOS stack is running: stop it first (tools/moss-fly.sh stop), this tool opens the motor board itself")
         return 2
+    os.environ["MOSS_PIVOT_PCT"] = "0"        # the percent printed is the percent sent, pivots included
     kw = {"geometry": MossGeometry(mps_at_limit=1.0, max_pct=100, min_pct=0)}
     if a.mock:
         os.environ["MOSS_MOCK_BUS"] = "1"
@@ -158,7 +162,7 @@ def main(argv=None) -> int:
         print("cannot connect to the firmware (see the lines above)")
         return 2
     try:
-        rows = run(adapter, pcts, a.hold, a.settle, a.min_ticks, stop_at_first=not a.all)
+        rows = run(adapter, pcts, a.hold, a.settle, a.min_ticks, stop_at_first=not a.all, pivot=a.pivot)
     finally:
         adapter.disconnect()
     if getattr(adapter, "_pulse_n", 0):

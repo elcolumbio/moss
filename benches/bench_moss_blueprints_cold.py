@@ -453,9 +453,9 @@ check("base: adapter 'moss' on the QT Py by-id", hw.adapter_type == "moss" and h
 check("pad: the same MOSS envelope as moss-gamepad", atom(nav, "GamepadTeleop").kwargs.get("envelope") == teleop_envelope(g))
 check("odometry without the gyro prior", atom(nav, "LidarOdometry").kwargs.get("use_gyro_prior") is False)
 cam = atom(nav, "RealSenseCamera").kwargs
-check("RealSense 640x480 @ 5 fps, colour only",
+check("RealSense 640x480 @ 5 fps, colour + depth (aligned), no point cloud, no IMU",
       (cam.get("width"), cam.get("height"), cam.get("fps"), cam.get("enable_depth"),
-       cam.get("enable_pointcloud"), cam.get("enable_imu")) == (640, 480, 5, False, False, False))
+       cam.get("enable_pointcloud"), cam.get("enable_imu")) == (640, 480, 5, True, False, False))
 t = cam["base_transform"]
 check("camera mount from the profile: (0.156, 0, 0.075) m",
       close(t.translation.x, 0.156) and close(t.translation.z, 0.075))

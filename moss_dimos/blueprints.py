@@ -32,7 +32,8 @@ module that fails to open it - never to another device.
 
 Switches (env, read when moss-nav / moss-explore is built; robot_profile.env_on
 parses them: 0, false, no or off = off, any other value = on, unset = the default):
-    MOSS_CAMERA=0     no RealSense (default on: colour 640x480 @ 5 fps, JPEG on the bus)
+    MOSS_CAMERA=0     no RealSense (default on: colour 640x480 @ 5 fps, JPEG on the bus, plus depth aligned
+                      to colour at the same rate, turned into map obstacles by lidar_odometry)
     MOSS_WRIST=0      no wrist camera (default on: the UVC camera on the arm, 640x480 @ 5 fps,
                       JPEG on the bus as wrist_image; absent device = warning, module skipped)
     MOSS_WRIST_DEV    wrist camera: a /dev/videoN path or an index, instead of the by-id lookup
@@ -397,7 +398,9 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
 
         x, y, z, qx, qy, qz, qw = camera_mount_xyzq(profile)
         cam_kwargs = dict(width=CAMERA_WIDTH, height=CAMERA_HEIGHT, fps=CAMERA_FPS,
-                          enable_depth=False, enable_pointcloud=False, enable_imu=False,
+                          # depth on, aligned to colour: lidar_odometry turns it into the obstacles the
+                          # 2D lidar cannot see (below its scan plane); the point cloud stays off (not used)
+                          enable_depth=True, enable_pointcloud=False, enable_imu=False,
                           base_transform=Transform(translation=Vector3(x, y, z),
                                                    rotation=Quaternion(qx, qy, qz, qw)))
         serial = os.environ.get("MOSS_RS_SERIAL", "").strip()

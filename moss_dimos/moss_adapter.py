@@ -66,6 +66,8 @@ Calibration (env, all optional):
     MOSS_RAMP_MS        "UP DOWN" sent as 'ramp UP DOWN' after connect (while pulsing, unset = "1 1")
     MOSS_PULSE_MS       period of the full-duty time slicing (default 500, 0 = off): a percent becomes a duty of
                         full-power slices over the period (pulse_tracks), the way MOSS's tracks can be steered
+    MOSS_PULSE_MIN_PCT  duty floor of a non-zero track while pulsing (default 40)
+    MOSS_PIVOT_PCT      every pivot (tracks in opposite directions) is sent at this percent, both tracks (default 100, 0 = as asked)
     MOSS_MOCK_BUS       any value but 0/false/no/off: drive the fake firmware (no motors)
 """
 from __future__ import annotations
@@ -103,11 +105,35 @@ MOCK_BUS_ENV = "MOSS_MOCK_BUS"
 PULSE_MS_DEFAULT = 500         # MOSS_PULSE_MS: period of the full-duty time slicing, 0 = off (then MOSS_MIN_PCT applies)
 PULSE_MS_MAX = 2000
 PULSE_RAMP = "1 1"             # firmware ramp while pulsing: 1 ms per %, so a 100 ms slice reaches full duty
+PIVOT_PCT_DEFAULT = 100        # MOSS_PIVOT_PCT: a pivot (tracks in opposite directions) is sent at this percent on both
+                               # tracks whatever the planner asked, 0 = off. The pad pivots at 100 % continuous and the
+                               # tracks turn without jolts there; the planner's slow pivots (8 %) can only be jolts
+PULSE_MIN_PCT_DEFAULT = 40     # MOSS_PULSE_MIN_PCT: the lowest duty of a non-zero track while pulsing; a planner pivot at
+                               # 8 % would be one 100 ms slice per second (seen on the floor: jerky and slow), 40 % moves the rover
 
 
 def pulse_ms() -> int:
     """MOSS_PULSE_MS clamped to 0..PULSE_MS_MAX; 0 = no pulsing."""
     return max(0, min(PULSE_MS_MAX, int(_env_float("MOSS_PULSE_MS", PULSE_MS_DEFAULT))))
+
+
+def pulse_min_pct() -> int:
+    """MOSS_PULSE_MIN_PCT clamped to 0..100: the duty floor of the pulses."""
+    return max(0, min(100, int(_env_float("MOSS_PULSE_MIN_PCT", PULSE_MIN_PCT_DEFAULT))))
+
+
+def pivot_pct() -> int:
+    """MOSS_PIVOT_PCT clamped to 0..100: the percent every pivot is sent at (0 = as asked)."""
+    return max(0, min(100, int(_env_float("MOSS_PIVOT_PCT", PIVOT_PCT_DEFAULT))))
+
+
+def pivot_tracks(want: tuple[int, int], pct: int) -> tuple[int, int]:
+    """A pivot (left and right non-zero, opposite signs) is sent at +-pct on both
+    tracks, the sign of each kept; anything else passes unchanged."""
+    left, right = want
+    if pct <= 0 or left == 0 or right == 0 or (left > 0) == (right > 0):
+        return want
+    return (pct if left > 0 else -pct, pct if right > 0 else -pct)
 
 
 def pulse_tracks(want: tuple[int, int], tick: int, n_ticks: int, full: int = 100) -> tuple[int, int]:
@@ -300,8 +326,9 @@ class MossBaseAdapter:
         self._pulse_n = int(round(pulse_ms() / 1000.0 / KEEPALIVE_S)) if pulse_ms() > 0 else 0
         self._ramp = ""                    # the ramp sent at connect ("" = the firmware default)
         self._tick = 0
-        # the mapping geometry: when pulsing, the static-friction floor is the pulse itself
-        self._map_geometry = replace(self._geometry, min_pct=0) if self._pulse_n else self._geometry
+        self._pivot_pct = pivot_pct()      # pivots sent at this percent on both tracks (0 = as asked)
+        # the mapping geometry: when pulsing, the static-friction floor becomes the duty floor of the pulses
+        self._map_geometry = replace(self._geometry, min_pct=pulse_min_pct()) if self._pulse_n else self._geometry
         self._last_logged = None
         self._reader = None
         self._keepalive = None
@@ -535,7 +562,7 @@ class MossBaseAdapter:
                 vx, vy, wz = float(vx), float(vy), float(wz)
             except Exception:
                 return False
-            want = twist_to_tracks(vx, wz, self._map_geometry)
+            want = pivot_tracks(twist_to_tracks(vx, wz, self._map_geometry), self._pivot_pct)
             if want != (0, 0) and not self._enabled:
                 return False
             left, right = self._slice(want)

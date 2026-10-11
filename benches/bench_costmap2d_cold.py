@@ -235,7 +235,8 @@ def test_body_clear_is_the_moss_footprint() -> None:
 def test_the_lidar_tag_is_one_exact_height() -> None:
     """lidar_odometry lifts every return to exactly lidar_height_m; anything
     else on the cloud (a depth camera's points, at their true height) is not
-    a lidar return, even millimetres away from the scan plane."""
+    a lidar return, even millimetres away from the scan plane - it is a camera
+    obstacle, hit without a ray."""
     cloud = np.array([[1.0, 0.0, np.float32(0.20)], [2.0, 0.0, 0.2005], [3.0, 0.0, 0.37],
                       [4.0, 0.0, 0.0]], dtype=np.float32).astype(np.float64)
     assert list(lidar_returns(cloud)) == [True, False, False, False], list(lidar_returns(cloud))
@@ -255,12 +256,34 @@ def test_the_lidar_tag_is_one_exact_height() -> None:
         asyncio.run(m.handle_odom(_odom(0.0, y)))
         asyncio.run(m.handle_lidar(_cloud(np.vstack([_lidar_cloud(ROOM), stray]))))
     assert m._grid.value_at(2.5, 0.0) == 100, "the wall is mapped"
-    assert m._grid.value_at(1.0, 0.5) != 100, "the stray point is not"
+    assert m._grid.value_at(1.0, 0.5) == 100, "the off-plane point is a camera obstacle: mapped after two viewpoints"
     n = m._revolutions
     asyncio.run(m.handle_lidar(_cloud(stray)))
     assert m._revolutions == n, "a cloud with no lidar return is not a revolution"
-    print("  float32 0.20 m -> lidar; 0.2005 / 0.37 / 0.0 -> not; MOSS_LIDAR_HEIGHT_M=0.37 moves the tag; "
-          "a point 2 mm off the plane never reaches the map")
+    # a camera obstacle from ONE viewpoint stays below OCCUPIED_AT, like a lidar hit
+    m2 = costmap()
+    asyncio.run(m2.handle_odom(_odom(0.0, 0.0)))
+    asyncio.run(m2.handle_explore_cmd(Bool(data=True)))
+    low = np.array([[1.5, -0.4, 0.05]])          # a shoe: 5 cm high, invisible to the scan plane
+    for _ in range(3):
+        asyncio.run(m2.handle_lidar(_cloud(np.vstack([_lidar_cloud(ROOM), low]))))
+    assert m2._grid.value_at(1.5, -0.4) != 100, "one parked viewpoint never makes a camera obstacle a wall"
+    asyncio.run(m2.handle_odom(_odom(0.0, 0.15)))
+    asyncio.run(m2.handle_lidar(_cloud(np.vstack([_lidar_cloud(ROOM), low]))))
+    assert m2._grid.value_at(1.5, -0.4) == 100, "the second viewpoint makes the shoe a wall"
+    # the lidar sees the wall behind the shoe: its rays cross the shoe's cell every other
+    # revolution, and the shoe survives (camera layer, never carved by a lidar ray)
+    for _ in range(6):
+        asyncio.run(m2.handle_lidar(_cloud(_lidar_cloud(ROOM))))
+    assert m2._grid.value_at(1.5, -0.4) == 100, "lidar rays through the shoe's cell do not erase it"
+    # the shoe is taken away: the camera sees bare floor there -> freed after two floor samples
+    floor = np.array([[1.5, -0.4, 0.0], [1.52, -0.42, 0.0]])
+    for _ in range(2):
+        asyncio.run(m2.handle_camera_floor(_cloud(floor)))
+    assert m2._grid.value_at(1.5, -0.4) != 100, "bare floor seen by the camera frees the shoe's cell"
+    # the camera point carves no ray: the floor between the rover and the shoe is not marked free by it
+    print("  float32 0.20 m -> lidar; 0.2005 / 0.37 / 0.0 -> camera; MOSS_LIDAR_HEIGHT_M=0.37 moves the tag; "
+          "a camera obstacle maps after two viewpoints (a 5 cm shoe), never from one parked spot")
 
 
 def test_the_map_writes_only_during_the_mission() -> None:
@@ -402,7 +425,7 @@ def test_the_mission_signals_cross_the_process_boundary() -> None:
     from dimos.protocol.pubsub.impl.lcmpubsub import Topic as LCMTopic
 
     cm = {(s.name, s.type): s.direction for s in BlueprintAtom.create(MossCostMap, {}).streams}
-    want = {("lidar", PointCloud2): "in", ("odom", PoseStamped): "in", ("explore_cmd", Bool): "in",
+    want = {("lidar", PointCloud2): "in", ("camera_floor", PointCloud2): "in", ("odom", PoseStamped): "in", ("explore_cmd", Bool): "in",
             ("explore_done", Bool): "in", ("stop_explore_cmd", Bool): "in",
             ("global_costmap", OccupancyGrid): "out"}
     assert cm == want, f"stream table: extra {set(cm) - set(want)}, missing {set(want) - set(cm)}"

@@ -423,7 +423,14 @@ print()
 
 # ── 13. full-duty pulses: a percent becomes a duty of 100 % slices ─────
 print("13. pulse_tracks + the adapter pulsing on the fake (MOSS_PULSE_MS=500 -> 5 slices of 100 ms)")
-from moss_dimos.moss_adapter import pulse_tracks, pulse_ms, PULSE_RAMP  # noqa: E402
+from moss_dimos.moss_adapter import pulse_tracks, pulse_ms, pulse_min_pct, pivot_tracks, pivot_pct, PULSE_RAMP  # noqa: E402
+check(pivot_tracks((-8, 8), 100) == (-100, 100), "a planner pivot at 8 % -> -100/+100 (as the pad does it)")
+check(pivot_tracks((8, -8), 100) == (100, -100), "...the other way round")
+check(pivot_tracks((52, 40), 100) == (52, 40), "an arc (same signs) passes unchanged")
+check(pivot_tracks((0, 40), 100) == (0, 40), "one track stopped: not a pivot, unchanged")
+check(pivot_tracks((-8, 8), 0) == (-8, 8), "MOSS_PIVOT_PCT=0 -> as asked")
+os.environ.pop("MOSS_PIVOT_PCT", None)
+check(pivot_pct() == 100, "MOSS_PIVOT_PCT unset -> 100")
 check([pulse_tracks((100, 100), k, 5) for k in range(5)] == [(100, 100)] * 5, "100 % -> on every slice")
 check([pulse_tracks((20, 20), k, 5) for k in range(5)] == [(100, 100), (0, 0), (0, 0), (0, 0), (0, 0)], "20 % -> one slice of 100 % then four off")
 check([pulse_tracks((50, -50), k, 5) for k in range(5)] == [(100, -100)] * 3 + [(0, 0)] * 2, "50 % -> three slices on (ceil of 2.5), sign kept per track")
@@ -440,6 +447,11 @@ os.environ.pop("MOSS_PULSE_MS", None)
 check(pulse_ms() == 500, "MOSS_PULSE_MS unset -> 500 (the MOSS default: pulsing on)")
 os.environ["MOSS_PULSE_MS"] = "500"
 os.environ.pop("MOSS_RAMP_MS", None)
+os.environ.pop("MOSS_PULSE_MIN_PCT", None)
+check(pulse_min_pct() == 40, "MOSS_PULSE_MIN_PCT unset -> 40 (a planner pivot at 8 % is raised to 40 % of the period)")
+pd = MossBaseAdapter(dof=3, port_factory=(lambda: FakeMossFirmware()), geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100))
+check(pd._map_geometry.min_pct == 40, f"adapter: the mapping floor is the duty floor 40 while pulsing ({pd._map_geometry.min_pct})")
+os.environ["MOSS_PULSE_MIN_PCT"] = "0"   # the wire test below counts the slices of a bare 20 %
 fw7 = FakeMossFirmware()
 f7 = lambda: fw7  # noqa: E731
 f7.is_mock = True
@@ -469,6 +481,7 @@ check(pb._pulse_n == 0 and pb._map_geometry.min_pct == 100, "MOSS_PULSE_MS=0 -> 
 check(pb.connect() and not any(c.startswith("ramp") for c in fw8.commands), "...and no ramp line without MOSS_RAMP_MS")
 pb.disconnect()
 os.environ.pop("MOSS_PULSE_MS", None)
+os.environ.pop("MOSS_PULSE_MIN_PCT", None)
 
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")

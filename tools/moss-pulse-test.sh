@@ -6,7 +6,9 @@
 #     tools/moss-pulse-test.sh sec      # 100 ms slices at full duty, hard brake between (period 500 ms)
 #     tools/moss-pulse-test.sh moyen    # same period, release over 300 ms instead of a hard brake
 #     tools/moss-pulse-test.sh doux     # one cycle per second, release over 500 ms
+#     tools/moss-pulse-test.sh fondu    # 300 ms period, release over 600 ms: the slices blend into a near-continuous run
 #     tools/moss-pulse-test.sh doux --from 20 --to 100 --step 20   # any floor-probe option after the preset
+#     tools/moss-pulse-test.sh doux --pivot                         # the same steps turning on the spot
 #
 # The preset is two variables; the same two on the launcher give the stack the
 # same profile:  MOSS_PULSE_MS=<ms> MOSS_RAMP_MS="<rise> <fall>" EXPLORE=1 tools/moss-fly.sh explore
@@ -16,7 +18,8 @@ case "${1:-}" in
   sec)   export MOSS_PULSE_MS=500  MOSS_RAMP_MS="1 1" ;;
   moyen) export MOSS_PULSE_MS=500  MOSS_RAMP_MS="1 3" ;;
   doux)  export MOSS_PULSE_MS=1000 MOSS_RAMP_MS="1 5" ;;
-  *) echo "usage: tools/moss-pulse-test.sh sec|moyen|doux [floor-probe options]"; exit 2 ;;
+  fondu) export MOSS_PULSE_MS=300  MOSS_RAMP_MS="1 6" ;;   # slices blend: the release outlasts the period, turns run faster and smoother
+  *) echo "usage: tools/moss-pulse-test.sh sec|moyen|doux|fondu [floor-probe options]"; exit 2 ;;
 esac
 shift
 echo "preset $MOSS_PULSE_MS ms period, ramp $MOSS_RAMP_MS ms per % (rise fall) -> for the stack: MOSS_PULSE_MS=$MOSS_PULSE_MS MOSS_RAMP_MS=\"$MOSS_RAMP_MS\" EXPLORE=1 tools/moss-fly.sh explore"

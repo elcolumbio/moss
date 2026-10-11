@@ -27,8 +27,8 @@ RealSense built with depth on), obstacles seen by the camera are added to the
 next `lidar` clouds at their true height, and the bare floor it sees goes out
 on `camera_floor` (z = 0). The camera mount comes from the profile
 (camera_xyz_base_m, camera_pitch_deg). The MOSS blueprints build the RealSense
-without depth, so this path is idle there, and costmap2d maps lidar returns
-only.
+with depth on (aligned to colour, CAMERA_FPS), so this path is live there and
+costmap2d maps the camera obstacles next to the lidar returns.
 
 Streams
   pointcloud              : In[PointCloud2]  one revolution, lidar_link (rplidar_c1.py)
@@ -71,7 +71,8 @@ logger = setup_logger()
 
 PLANE_THICKNESS_M = 0.05
 DEPTH_STRIDE = 8               # 640x480 -> 80x60 samples per frame: what the map needs, not more
-DEPTH_EVERY = 2                # one depth frame in two (15 fps -> 7.5 Hz)
+DEPTH_EVERY = 1                # every depth frame: the camera runs at 5 fps on MOSS, nothing to skip
+CAMERA_MIN_RANGE_M = 0.12      # the D455's close-range depth (Min-Z update): nearer than this is noise or the rover's own nose
 DEPTH_MAX_M = 3.0              # beyond that the floor noise (1-2 % of range) leaks into the obstacle band
 OBSTACLE_MAX_M = 3.0           # camera obstacles are trusted up to this range; past it, depth reflections
                                # on a glossy floor arm phantom obstacles. Floor samples keep the full
@@ -270,7 +271,7 @@ class LidarOdometry(Module):
         h, w = d.shape
         vs, us = np.mgrid[0:h:DEPTH_STRIDE, 0:w:DEPTH_STRIDE]
         z = d[vs, us].astype(np.float64) / 1000.0
-        ok = (z > 0.30) & (z < DEPTH_MAX_M)          # < 0.30 m = the rover's own front, not the world
+        ok = (z > CAMERA_MIN_RANGE_M) & (z < DEPTH_MAX_M)
         if not ok.any():
             return
         z, us, vs = z[ok], us[ok], vs[ok]

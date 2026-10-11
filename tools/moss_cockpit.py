@@ -8,8 +8,8 @@
 Why a separate process instead of a dimOS web module: dimOS's own viewers either
 need a secure context, git LFS (the command center) or cost a core with no
 client connected (inflate + distance transform on every costmap). This server
-imports lcm, dimos_lcm and numpy only - never dimos, torch or open3d - and does
-nothing until a page asks: LCM callbacks keep the latest bytes and a timestamp,
+imports lcm, dimos_lcm, numpy and moss_dimos.robot_profile (pure python) only -
+never dimos, torch or open3d - and does nothing until a page asks: LCM callbacks keep the latest bytes and a timestamp,
 decoding happens on request and is cached by that timestamp (map at most 2 Hz,
 scan at most 4 Hz). A camera channel is subscribed only while an MJPEG client
 is watching it.
@@ -26,7 +26,8 @@ Endpoints (all Cache-Control: no-store; a failing request never kills the server
     GET  /  /static/<file>      the page and its assets (tools/moss_cockpit/)
     GET  /state.json            stack, pose, topic rates, base, nav, recording, system
     GET  /map.png  /map_meta    latest /global_costmap as a PNG + the pixel <-> metre contract
-    GET  /scan.json             latest lidar points, world frame (fallback: lidar frame)
+    GET  /scan.json             latest lidar points, world frame (fallback: lidar frame), and
+                                apart the depth camera's obstacle points the same cloud carries
     GET  /path.json             planner path
     GET  /log.json?n=40         tail of the running stack's main.jsonl
     GET  /preflight.json        the last saved flight check
@@ -72,6 +73,13 @@ TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(TOOLS_DIR)
 if TOOLS_DIR not in sys.path:
     sys.path.insert(0, TOOLS_DIR)      # explore_ctl, the shared out-of-stack publisher
+if REPO_DIR not in sys.path:
+    sys.path.append(REPO_DIR)          # moss_dimos, when the venv does not install it already
+
+try:
+    from moss_dimos import robot_profile   # pure: the geometry the stack flies (lidar tag height)
+except Exception:  # noqa: BLE001 - tools/ copied without the package: no lidar/camera split
+    robot_profile = None
 
 try:
     import lcm  # the bus; absent on a laptop: live mode says so, --demo does not need it
@@ -132,7 +140,8 @@ STATE_TOPICS = ("odom", "global_costmap", "lidar", "pointcloud", "path", "cmd_ve
 MAP_MIN_INTERVAL_S = 0.5      # decode + PNG the costmap at most 2 Hz, whoever asks
 SCAN_MIN_INTERVAL_S = 0.25    # scan at most 4 Hz
 SCAN_FALLBACK_S = 5.0         # /lidar silent this long -> show /pointcloud (lidar frame)
-MAX_SCAN_POINTS = 1500
+MAX_SCAN_POINTS = 1500        # per list: the lidar returns, and apart the depth camera's points
+LIDAR_Z_TOL_M = 1e-6          # costmap2d's rule: a lidar return sits at EXACTLY the profile's lidar_height_m
 HZ_WINDOW_S = 5.0
 MJPEG_PERIOD_S = 0.2          # 5 fps: enough to see where the nose points, cheap on a small board
 MAX_CAMERA_CLIENTS = 4
@@ -271,23 +280,61 @@ def decode_pose(raw: bytes) -> dict:
             "frame": m.header.frame_id}
 
 
-def cloud_xy(raw: bytes) -> tuple[str, float, np.ndarray]:
-    """(frame, stamp, Nx2 float32 x/y) of a PointCloud2, NaN/inf rows dropped.
-    Field offsets read from the message (dimOS writes x,y,z float32 at 0/4/8 with a
-    16-byte step, more when per-point extras are attached)."""
+def cloud_xyz(raw: bytes) -> tuple[str, float, np.ndarray]:
+    """(frame, stamp, Nx3 float32 x/y/z) of a PointCloud2, rows with a NaN/inf
+    coordinate dropped. Field offsets read from the message (dimOS writes x,y,z
+    float32 at 0/4/8 with a 16-byte step, more when per-point extras are attached);
+    a cloud without a z field reads z = 0."""
     m = LcmPointCloud2.lcm_decode(raw)
     n = int(m.width) * int(m.height)
     step = int(m.point_step)
     offs = {f.name: int(f.offset) for f in m.fields}
     if n == 0 or step < 8:
-        return m.header.frame_id, _stamp(m.header), np.zeros((0, 2), np.float32)
+        return m.header.frame_id, _stamp(m.header), np.zeros((0, 3), np.float32)
     end = ">" if m.is_bigendian else "<"
-    dt = np.dtype({"names": ["x", "y"], "formats": [end + "f4", end + "f4"],
-                   "offsets": [offs.get("x", 0), offs.get("y", 4)], "itemsize": step})
+    zoff = offs.get("z", None if offs else 8)
+    names, where = ["x", "y"], [offs.get("x", 0), offs.get("y", 4)]
+    if zoff is not None and zoff + 4 <= step:
+        names.append("z")
+        where.append(zoff)
+    dt = np.dtype({"names": names, "formats": [end + "f4"] * len(names), "offsets": where, "itemsize": step})
     data = m.data if isinstance(m.data, (bytes, bytearray)) else bytes(m.data)
     arr = np.frombuffer(data, dtype=dt, count=min(n, len(data) // step))
-    xy = np.column_stack((arr["x"], arr["y"])).astype(np.float32)
-    return m.header.frame_id, _stamp(m.header), xy[np.isfinite(xy).all(axis=1)]
+    z = arr["z"] if "z" in names else np.zeros(len(arr), np.float32)
+    xyz = np.column_stack((arr["x"], arr["y"], z)).astype(np.float32)
+    return m.header.frame_id, _stamp(m.header), xyz[np.isfinite(xyz).all(axis=1)]
+
+
+def lidar_tag_height(pid=None) -> float | None:
+    """The z every lidar return carries in the `lidar` cloud: the profile's
+    lidar_height_m as the running stack reads it, with the MOSS_* overrides of
+    its own environment (/proc/<pid>/environ, as bus_env reads the bus); with no
+    stack, or one whose environment cannot be read, the cockpit's own. None
+    when moss_dimos does not import here."""
+    if robot_profile is None:
+        return None
+    env = proc_environ(pid) if pid else None
+    return float(robot_profile.current(os.environ if env is None else env).lidar_height_m)
+
+
+def scan_points(xyz: np.ndarray, tag_z: float | None) -> dict:
+    """The point lists of /scan.json for one cloud (Nx3). With tag_z (a `lidar`
+    cloud), the lidar returns - z within LIDAR_Z_TOL_M of tag_z, the rule of
+    costmap2d.lidar_returns - go to `points` and every other point (a depth-camera
+    obstacle, at its true height) to `camera`. Without tag_z (the C1 driver's
+    flat cloud, or no profile) every point is a lidar return and `camera` is left
+    out: this cloud says nothing about the depth camera. n and camera_n count the
+    points in the cloud, before each list is capped at MAX_SCAN_POINTS."""
+    if tag_z is None:
+        lidar, camera = xyz[:, :2], None
+    else:
+        is_lidar = np.abs(xyz[:, 2].astype(np.float64) - tag_z) < LIDAR_Z_TOL_M
+        lidar, camera = xyz[is_lidar, :2], xyz[~is_lidar, :2]
+    doc = {"points": np.round(downsample(lidar).astype(float), 3).tolist(), "n": int(len(lidar))}
+    if camera is not None:
+        doc["camera"] = np.round(downsample(camera).astype(float), 3).tolist()
+        doc["camera_n"] = int(len(camera))
+    return doc
 
 
 def downsample(points: np.ndarray, limit: int = MAX_SCAN_POINTS) -> np.ndarray:
@@ -1123,7 +1170,8 @@ class LiveCockpit(Cockpit):
         return result
 
     def scan(self) -> dict | None:
-        self._sync_run(stack_status())
+        stack = stack_status()
+        self._sync_run(stack)
         now = time.monotonic()
         raw, mono = self.bus.latest("lidar")
         name = "lidar"
@@ -1136,10 +1184,14 @@ class LiveCockpit(Cockpit):
         cached_key, cached, at = self._scan_cache
         if cached is not None and (cached_key == (name, mono) or now - at < SCAN_MIN_INTERVAL_S):
             return cached
-        frame, stamp, xy = cloud_xy(raw)
-        pts = np.round(downsample(xy).astype(float), 3).tolist()
+        frame, stamp, xyz = cloud_xyz(raw)
+        # only the `lidar` cloud carries depth-camera points; /pointcloud is the C1's own scan
+        tag = None
+        if name == "lidar":
+            tag = lidar_tag_height(stack.get("pid") if stack.get("running") else _dimos_run_pid())
         doc = {"frame": frame or ("world" if name == "lidar" else "lidar_link"), "stamp": stamp,
-               "source": name, "age_s": round(now - mono, 2), "points": pts}
+               "source": name, "age_s": round(now - mono, 2)}
+        doc.update(scan_points(xyz, tag))
         self._scan_cache = ((name, mono), doc, now)
         return doc
 
@@ -1582,9 +1634,11 @@ class DemoCockpit(Cockpit):
         if not self.stack["running"]:
             return None
         with self._lock:
-            pts = downsample(self.world.scan())
+            xy = self.world.scan()
+        # the demo world is lidar only: its depth camera sees no obstacle
         return {"frame": "world", "stamp": now, "source": "demo", "age_s": 0.05,
-                "points": np.round(pts.astype(float), 3).tolist()}
+                "points": np.round(downsample(xy).astype(float), 3).tolist(), "n": int(len(xy)),
+                "camera": [], "camera_n": 0}
 
     def path(self) -> dict:
         self._tick()

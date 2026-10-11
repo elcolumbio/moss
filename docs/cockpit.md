@@ -70,8 +70,11 @@ firmware 300 ms after the last drive.
 - lidar odometry (kiss-icp, `moss_dimos/lidar_odometry.py`), the pose source:
   the encoders give metres only once `MOSS_TICKS_PER_M` is set, and no IMU
   feeds the odometry;
-- the 2D scored costmap (`moss_dimos/costmap2d.py`), where the lidar writes obstacles;
-- the RealSense colour stream at 640x480, 5 fps, carried as JPEG on the bus
+- the 2D scored costmap (`moss_dimos/costmap2d.py`), where the lidar writes obstacles
+  and the depth camera adds the ones below the scan plane;
+- the RealSense colour stream at 640x480, 5 fps, carried as JPEG on the bus, and its
+  depth aligned to colour at the same rate, which `lidar_odometry` turns into obstacle
+  points from 12 cm (the camera's close-range depth) to 3 m, drawn in amber on the map
   (`MOSS_CAMERA=0` leaves it out; `MOSS_RS_SERIAL=<serial>` picks one camera
   when several are plugged in, and the flight check looks for the same one);
 - the wrist camera (the UVC camera on the arm, found by its `/dev/v4l/by-id`

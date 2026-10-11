@@ -17,10 +17,14 @@ table legs. This module replaces it for a rover with a single-plane lidar:
   * what the body drove over (body_clear) is cleared: that one is a physical
     certainty, not a sensor reading.
 
-The lidar is the only sensor that writes here. lidar_odometry publishes each
+Two sensors write here, through one cloud. lidar_odometry publishes each
 revolution in `world` with every lidar return at exactly the profile's
-lidar_height_m; `lidar_returns` keeps those points and drops anything else
-the cloud may carry.
+lidar_height_m, plus the depth camera's obstacle points at their true height
+(the things below the scan plane: a shoe, a step, a chair base). `lidar_returns`
+tells them apart. Lidar returns carve their rays free and hit their cell; the
+camera points only hit their cell (a camera obstacle proves nothing about the
+floor in front of it) under the same two-viewpoint rule, so a camera obstacle
+becomes a wall on approach like a leg does.
 
 Mission gate: the map writes only once the mission has started. A rover parked
 with a spinning lidar thickens the obstacles around its one viewpoint and
@@ -84,6 +88,7 @@ class ScoredGrid:
         self.ox = centre[0] - span_m / 2.0
         self.oy = centre[1] - span_m / 2.0
         self.lidar = np.zeros((self.n, self.n), dtype=np.int8)     # what the lidar saw in its scan plane
+        self.camera = np.zeros((self.n, self.n), dtype=np.int8)    # what the depth camera saw below that plane: hit by it, freed by its floor samples, never carved by a lidar ray
         self.seen = np.zeros((self.n, self.n), dtype=bool)
         self._last_hit_xy = np.full((self.n, self.n, 2), np.nan, dtype=np.float32)
 
@@ -144,6 +149,25 @@ class ScoredGrid:
                 self._miss(self.lidar, cells[0], cells[1])
         self._hit(self.lidar, hits_xy[:, 0], hits_xy[:, 1], from_xy)
 
+    def camera_hits(self, hits_xy: np.ndarray, from_xy: tuple[float, float]) -> int:
+        """World-frame obstacle points from the depth camera, seen from `from_xy`:
+        a hit on their cells (two-viewpoint rule as for lidar hits), no ray carved.
+        Returns the number of cells that took a hit."""
+        if len(hits_xy) == 0:
+            return 0
+        return self._hit(self.camera, hits_xy[:, 0], hits_xy[:, 1], from_xy)
+
+    def camera_floor(self, floor_xy: np.ndarray) -> None:
+        """World-frame bare-floor samples from the depth camera: a miss on the
+        camera layer (a shoe that was taken away stops being an obstacle once
+        the camera sees the floor where it stood). The lidar layer is untouched."""
+        if len(floor_xy) == 0:
+            return
+        gx, gy = self.cell(floor_xy[:, 0], floor_xy[:, 1])
+        if len(gx):
+            flat = np.unique(gy * self.n + gx)
+            self._miss(self.camera, flat % self.n, flat // self.n)
+
     def _ray_cells(self, from_xy: tuple[float, float], hits_xy: np.ndarray):
         """Cells crossed by the rays from `from_xy` to each hit (capped at
         RAY_MAX_M), stopping one cell short of the hit; one sample per cell."""
@@ -185,6 +209,7 @@ class ScoredGrid:
         gx, gy = self.cell((x + c * bx - s * by).ravel(), (y + s * bx + c * by).ravel())
         if len(gx):
             self.lidar[gy, gx] = FREE_FLOOR
+            self.camera[gy, gx] = FREE_FLOOR
             self.seen[gy, gx] = True
 
     # ---- output ------------------------------------------------------------
@@ -193,6 +218,7 @@ class ScoredGrid:
         out = np.full((self.n, self.n), -1, dtype=np.int8)
         out[self.seen] = 0
         out[self.lidar >= OCCUPIED_AT] = 100
+        out[self.camera >= OCCUPIED_AT] = 100
         return out
 
     def value_at(self, x: float, y: float) -> int:
@@ -233,6 +259,7 @@ class MossCostMap(Module):
     listen to)."""
 
     lidar: In[PointCloud2]
+    camera_floor: In[PointCloud2]   # bare floor the depth camera saw (lidar_odometry): frees camera obstacles
     odom: In[PoseStamped]
     explore_done: In[Bool]          # explorer2 found no reachable frontier left: logged, the map keeps writing
     stop_explore_cmd: In[Bool]      # exploration stopped on request (explore_ctl.py stop, the cockpit): logged, the map keeps writing
@@ -246,6 +273,8 @@ class MossCostMap(Module):
         self._pose_xy: tuple[float, float] | None = None
         self._pose_yaw = 0.0
         self._revolutions = 0
+        self._camera_pts = 0           # camera obstacle points since the last publish (log only)
+        self._camera_cells = 0         # ...and the cells they hit
         self._last_clear: tuple | None = None   # (x, y, yaw) of the last body_clear
         # The pre-mission gate, closed at construction: a rover parked with a
         # spinning lidar would write the room it waits in, from one spot. It
@@ -328,18 +357,34 @@ class MossCostMap(Module):
             self._mission_frozen = False
             logger.info("costmap: explore_cmd received - map writing OPEN for the mission")
 
+    async def handle_camera_floor(self, msg: PointCloud2) -> None:
+        if self._grid is None or self._pose_xy is None or self._write_frozen():
+            return
+        pts = np.asarray(msg.as_numpy()[0], dtype=np.float64)
+        if len(pts):
+            self._grid.camera_floor(pts[:, :2])
+
     async def handle_lidar(self, msg: PointCloud2) -> None:
         if self._grid is None or self._pose_xy is None or self._write_frozen():
             return
         pts = np.asarray(msg.as_numpy()[0], dtype=np.float64)
         if len(pts) == 0:
             return
-        hits = pts[lidar_returns(pts)]
+        tag = lidar_returns(pts)
+        hits = pts[tag]
         if len(hits) == 0:
             return                  # no lidar return on this cloud: not a revolution
         self._grid.lidar_revolution(hits[:, :2], self._pose_xy)
+        cam = pts[~tag]
+        if len(cam):
+            self._camera_cells += self._grid.camera_hits(cam[:, :2], self._pose_xy)
+            self._camera_pts += len(cam)
         self._revolutions += 1
         if self._revolutions % PUBLISH_EVERY == 0:
+            if self._camera_pts:
+                logger.info(f"costmap: camera obstacles: {self._camera_pts} points, {self._camera_cells} cell hits "
+                            f"over the last {PUBLISH_EVERY} revolutions")
+                self._camera_pts = self._camera_cells = 0
             self._publish()
 
     def _publish(self) -> None:

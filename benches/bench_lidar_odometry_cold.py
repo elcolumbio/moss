@@ -338,7 +338,7 @@ check("wheel odometry is read for the log only: the pose follows the motion mode
 
 
 # --- E. the optional depth path -------------------------------------------------
-print("E. depth camera (idle on MOSS): one pixel through the profile's mount")
+print("E. depth camera (live on MOSS): one pixel through the profile's mount")
 o = odometry(Kiss())
 o._K = (600.0, 600.0, 0.0, 0.0)
 o._depth_n = LO.DEPTH_EVERY - 1                       # the next frame is the one processed

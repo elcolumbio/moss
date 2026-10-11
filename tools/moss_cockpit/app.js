@@ -23,6 +23,7 @@ var EP_FULL_S = 300;          // the bottom progress line is full after 5 min of
 var RUN_FULL_S = 1800;        // ... or after 30 min of run when no episode records
 var CAM_RETRY_MS = 3000;      // reconnect the MJPEG stream this long after it ended or failed, forever
 var CAM_GRACE_MS = 6000;      // a stream younger than this is not judged dead (first frame wait + a state poll)
+var DEPTH_COLOR = "rgba(255,193,94,.95)";   // amber: depth-camera obstacles, apart from the mint lidar scan
 
 var S = {
   online: false, state: null,
@@ -491,12 +492,13 @@ function drawGrid() {
 
 function pose() { return S.state && S.state.pose; }
 
-function scanWorld() {
-  var sc = S.scan; if (!sc || !sc.points) return [];
-  if (sc.frame === "world") return sc.points;
+// key: "points" (lidar returns, the default) or "camera" (depth-camera obstacle points)
+function scanWorld(key) {
+  var sc = S.scan, pts = sc && sc[key || "points"]; if (!pts) return [];
+  if (sc.frame === "world") return pts;
   var p = pose();                    // lidar frame: place it at the robot
   var px = p ? p.x : 0, py = p ? p.y : 0, c = Math.cos(p ? p.yaw : 0), s = Math.sin(p ? p.yaw : 0);
-  return sc.points.map(function (q) { return [px + c * q[0] - s * q[1], py + s * q[0] + c * q[1]]; });
+  return pts.map(function (q) { return [px + c * q[0] - s * q[1], py + s * q[0] + c * q[1]]; });
 }
 
 // The server keeps the last scan and path however old they are: only fresh ones
@@ -537,13 +539,27 @@ function draw() {
   }
 
   // scan: mint dots, only while the lidar speaks (an old scan is not where the robot is)
-  var sc = scanLive() ? scanWorld() : [], r = Math.max(1.1, Math.min(2.4, S.view.scale / 40));
+  var live = scanLive(), sc = live ? scanWorld() : [], r = Math.max(1.1, Math.min(2.4, S.view.scale / 40));
   ctx.fillStyle = "rgba(108,248,199,.9)";
   for (var k = 0; k < sc.length; k++) {
     var X = sx(sc[k][0]), Y = sy(sc[k][1]);
     if (X < -4 || Y < -4 || X > w + 4 || Y > h + 4) continue;
     ctx.fillRect(X - r / 2, Y - r / 2, r, r);
   }
+  // depth camera: amber round dots over the scan, larger, so a single obstacle point shows
+  var cam = live ? scanWorld("camera") : [], rc = r / 2 + 1.6;
+  if (cam.length) {
+    ctx.fillStyle = DEPTH_COLOR;
+    ctx.beginPath();
+    for (var j = 0; j < cam.length; j++) {
+      var CX = sx(cam[j][0]), CY = sy(cam[j][1]);
+      if (CX < -6 || CY < -6 || CX > w + 6 || CY > h + 6) continue;
+      ctx.moveTo(CX + rc, CY); ctx.arc(CX, CY, rc, 0, 2 * Math.PI);
+    }
+    ctx.fill();
+  }
+  var cn = S.scan && S.scan.camera_n;
+  setText("hud-cam", "camera obstacles: " + (!live ? "--" : typeof cn === "number" ? String(cn) : "no depth"));
 
   // goal: salmon ring (dashed while it waits for confirmation)
   var nav = S.state && S.state.nav;
@@ -903,7 +919,7 @@ function pollLog() {
 if ("ResizeObserver" in window) new ResizeObserver(function () { resize(); if (!S.fitted) fitView(); }).observe(wrap);
 window.addEventListener("resize", resize);
 resize();
-camConnect();
+camConnectAll();
 renderCamera();
 loadPreflight();
 fetchJSON("/launch.json").then(function (d) { if (d && d.running) { S.launchBusy = true; watchLaunch(); } }, function () {});

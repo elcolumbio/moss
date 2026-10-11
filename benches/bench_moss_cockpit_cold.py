@@ -8,12 +8,15 @@ Every check feeds a value we know and reads back a value in physical units
                       pixel <-> metre formulas, even downsampling
   B. demo server    - /, /static, /state.json schema, /map.png (demo size, wall =
                       WHITE, floor = free colour), /map_meta roundtrip, /scan.json
-                      (<= 1500 points, every point on a wall), /camera.mjpg framing
+                      (<= 1500 points, every point on a wall, no depth-camera point),
+                      /camera.mjpg framing
                       and its 5 fps cap, POST /cmd/goal|stop|episode|stack, path
                       traversal refused, bad bodies refused
   C. decoding       - messages built with dimos_lcm and fed to a live cockpit's bus
                       cache: OccupancyGrid -> exact PNG pixels, PointCloud2 -> scan
-                      points (and the /pointcloud fallback), PoseStamped yaw 90 deg,
+                      points (and the /pointcloud fallback), the `lidar` cloud split
+                      into lidar returns (z = the profile's lidar height, the stack's
+                      own override first) and depth-camera points, PoseStamped yaw 90 deg,
                       telemetry String -> battery %, Path, explore/goal state, a JPEG
                       image passed through byte for byte
   D. commands       - POST /cmd/* in live mode publish the known bytes on the known
@@ -30,7 +33,8 @@ Every check feeds a value we know and reads back a value in physical units
                       cache, a camera frame after a run change, a viewer that stops
                       reading frees its camera slot
   H. the real page  - tools/moss_cockpit/ served as shipped: index.html, every asset it
-                      and tokens.css reference, the run caption's namespace strip
+                      and tokens.css reference, the run caption's namespace strip, the
+                      depth-camera legend element the map writes to
   F. hygiene        - no dimos/serial/torch import, no LAN address in the server
 
 C, D and the run-change checks of G need dimos_lcm (pure python, installed with
@@ -67,6 +71,9 @@ sys.path.insert(0, str(ROOT / "tools"))
 import numpy as np  # noqa: E402
 
 import moss_cockpit as mc  # noqa: E402
+from moss_dimos import robot_profile  # noqa: E402 - pure python, no dimOS
+
+TAG = robot_profile.current().lidar_height_m   # the z of every lidar return in the `lidar` cloud
 
 try:
     import dimos_lcm  # noqa: F401
@@ -340,6 +347,9 @@ def on_wall(x, y):
 check("/scan.json: world frame, 1..1500 points", scan["frame"] == "world" and 0 < len(pts) <= 1500,
       f"{len(pts)} pts")
 check("every scan point lies on a wall cell of the demo map", all(on_wall(x, y) for x, y in pts))
+check("demo /scan.json: lidar only -> camera [], camera_n 0, n >= points",
+      scan.get("camera") == [] and scan.get("camera_n") == 0 and scan.get("n", -1) >= len(pts),
+      f"camera_n {scan.get('camera_n')} n {scan.get('n')}")
 wall_below = [p for p in pts if abs(p[0] - p0["x"]) < 0.2 and p[1] < p0["y"]]
 check("the ray straight down from the pose hits the outer wall at y ~ -5.4",
       bool(wall_below) and abs(max(p[1] for p in wall_below) + 5.4) < 0.06,
@@ -512,18 +522,52 @@ else:
     check("/lidar never seen -> /pointcloud fallback, lidar frame, (0.5, 0.25)",
           scan["frame"] == "lidar_link" and scan["source"] == "pointcloud" and scan["points"] == [[0.5, 0.25]],
           json.dumps(scan)[:120])
-    bus.ingest(mc.CHANNELS["lidar"], cloud([(1.0, 2.0, 0.37), (3.0, -4.0, 0.37)], "world"))
+    check("/pointcloud fallback (the C1's flat scan, z = 0): every point lidar, no camera key",
+          scan.get("n") == 1 and "camera" not in scan and "camera_n" not in scan, json.dumps(scan)[:120])
+    bus.ingest(mc.CHANNELS["lidar"], cloud([(1.0, 2.0, TAG), (3.0, -4.0, TAG)], "world"))
     time.sleep(mc.SCAN_MIN_INTERVAL_S + 0.05)
     code, scan = lcli.json("/scan.json")
     check("PointCloud2 with 2 points on /lidar -> [[1, 2], [3, -4]] world",
           scan["frame"] == "world" and scan["points"] == [[1.0, 2.0], [3.0, -4.0]], json.dumps(scan)[:120])
-    big = [(math.cos(a), math.sin(a), 0.0) for a in np.linspace(0, 2 * math.pi, 3000)]
+    check(f"lidar returns only (z = {TAG} m) -> n 2, camera [], camera_n 0",
+          scan.get("n") == 2 and scan.get("camera") == [] and scan.get("camera_n") == 0, json.dumps(scan)[:160])
+    big = [(math.cos(a), math.sin(a), TAG) for a in np.linspace(0, 2 * math.pi, 3000)]
     bus.ingest(mc.CHANNELS["lidar"], cloud(big, "world"))
     time.sleep(mc.SCAN_MIN_INTERVAL_S + 0.05)
     code, scan = lcli.json("/scan.json")
     radii = [math.hypot(x, y) for x, y in scan["points"]]
     check("3000-point ring of radius 1 m -> 1500 points, all at 1 m",
           len(scan["points"]) == 1500 and max(abs(r - 1.0) for r in radii) < 2e-3, f"{len(scan['points'])}")
+    check("ring: n counts the cloud (3000), before the 1500-point cap; camera_n 0",
+          scan.get("n") == 3000 and scan.get("camera_n") == 0, f"n {scan.get('n')} camera_n {scan.get('camera_n')}")
+
+    # 3 lidar returns at the tag height + 2 depth-camera points at their true height (5 cm, 60 cm)
+    mixed = [(1.0, 0.0, TAG), (0.0, 1.5, TAG), (-2.0, -0.5, TAG), (0.4, 0.1, 0.05), (0.7, -0.2, 0.6)]
+    bus.ingest(mc.CHANNELS["lidar"], cloud(mixed, "world"))
+    time.sleep(mc.SCAN_MIN_INTERVAL_S + 0.05)
+    code, scan = lcli.json("/scan.json")
+    check("3 points at the lidar height + 2 at 0.05 / 0.6 m -> n 3, camera_n 2",
+          scan.get("n") == 3 and scan.get("camera_n") == 2, json.dumps(scan)[:200])
+    check("points = the 3 lidar returns' xy (the mint scan unchanged)",
+          scan["points"] == [[1.0, 0.0], [0.0, 1.5], [-2.0, -0.5]], json.dumps(scan["points"]))
+    check("camera = the 2 depth points' xy [[0.4, 0.1], [0.7, -0.2]]",
+          scan.get("camera") == [[0.4, 0.1], [0.7, -0.2]], json.dumps(scan.get("camera")))
+    near = [(1.0, 0.0, TAG), (0.5, 0.5, TAG + 0.002)]          # 2 mm above the scan plane: a camera point
+    bus.ingest(mc.CHANNELS["lidar"], cloud(near, "world"))
+    time.sleep(mc.SCAN_MIN_INTERVAL_S + 0.05)
+    code, scan = lcli.json("/scan.json")
+    check("a depth point 2 mm above the lidar plane is a camera point (exact tag, not a band)",
+          scan["points"] == [[1.0, 0.0]] and scan.get("camera") == [[0.5, 0.5]], json.dumps(scan)[:200])
+
+    # the stack decides the tag: its own MOSS_LIDAR_HEIGHT_M, not the cockpit's environment
+    STACK_TALL = stand_in(MOSS_LIDAR_HEIGHT_M=str(TAG + 0.05))
+    register("run-a", "moss-dimos.moss-explore", pid=STACK_TALL.pid)    # same run: the bus cache stays
+    bus.ingest(mc.CHANNELS["lidar"], cloud([(1.0, 0.0, TAG + 0.05), (2.0, 0.0, TAG)], "world"))
+    time.sleep(mc.SCAN_MIN_INTERVAL_S + 0.05)
+    code, scan = lcli.json("/scan.json")
+    check(f"stack started with MOSS_LIDAR_HEIGHT_M={TAG + 0.05:g}: z {TAG + 0.05:g} -> lidar, z {TAG:g} -> camera",
+          scan["points"] == [[1.0, 0.0]] and scan.get("camera") == [[2.0, 0.0]], json.dumps(scan)[:200])
+    register("run-a", "moss-dimos.moss-explore")
 
     pose = PoseStamped(header=hdr("world"), pose=pose_of(1.25, -0.5, qz=s45, qw=s45))
     for _ in range(3):
@@ -1121,6 +1165,9 @@ strip = re.search(r'\(st\.blueprint \|\| "none"\)\.replace\(/(.+?)/, ""\)', js)
 pattern = strip.group(1) if strip else None
 got = {bp: re.sub(pattern, "", bp, count=1) for bp in ("moss-dimos.moss-explore", "other-dimos.explore", "moss-nav")} \
     if pattern else {}
+page_html = (real_page / "index.html").read_text()
+check("the depth-camera legend: app.js writes camera_n to #hud-cam, and index.html carries it",
+      'setText("hud-cam"' in js and "camera_n" in js and 'id="hud-cam"' in page_html)
 check("the run caption strips any dimOS namespace: moss-dimos.moss-explore -> moss-explore, "
       "other-dimos.explore -> explore, moss-nav unchanged",
       got == {"moss-dimos.moss-explore": "moss-explore", "other-dimos.explore": "explore", "moss-nav": "moss-nav"},
