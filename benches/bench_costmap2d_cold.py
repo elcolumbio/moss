@@ -80,9 +80,10 @@ for _var in [v for v in os.environ if v.startswith("MOSS_")]:
 from dimos_lcm.std_msgs import Bool  # noqa: E402
 
 from moss_dimos import costmap2d as cmod  # noqa: E402
+from moss_dimos.robot_profile import current as _current_profile
 from moss_dimos.costmap2d import (  # noqa: E402
     FREE_FLOOR, HIT_CAP, MISSION_START_M, OCCUPIED_AT, PUBLISH_EVERY, RAY_EVERY, RESOLUTION_M,
-    MossCostMap, ScoredGrid, lidar_returns,
+    CONTACT_BAND_M, MossCostMap, ScoredGrid, lidar_returns,
 )
 from moss_dimos.robot_profile import MOSS  # noqa: E402
 
@@ -444,6 +445,36 @@ def test_clear_map_starts_a_fresh_grid_and_keeps_the_gate() -> None:
     print("  clear_map_cmd: fresh grid centred on the pose, open mission stays open, unstarted one stays shut, False ignored")
 
 
+def test_a_contact_marks_the_band_ahead_as_a_wall() -> None:
+    """The stall guard fired: the band just beyond the body's front becomes a wall
+    at once, in the heading direction, and the planner's occupancy shows it;
+    the body itself and the floor behind stay clear; a bump before any pose or
+    with the mission shut does nothing; the camera's bare floor frees it."""
+    m = costmap()
+    asyncio.run(m.handle_bump(Bool(data=True)))              # no pose yet
+    assert m._grid is None
+    asyncio.run(m.handle_odom(_odom(0.0, 0.0, yaw=0.0)))
+    asyncio.run(m.handle_bump(Bool(data=True)))              # mission not started: nothing written
+    assert m._grid.value_at(0.35, 0.0) != 100
+    asyncio.run(m.handle_explore_cmd(Bool(data=True)))
+    asyncio.run(m.handle_bump(Bool(data=True)))
+    hx, _ = _current_profile().body_clear_m
+    assert m._grid.value_at(hx + 0.10, 0.0) == 100, "the band ahead is a wall"
+    assert m._grid.value_at(hx + 0.10, 0.12) == 100 and m._grid.value_at(hx + 0.10, -0.12) == 100, "across the body's width"
+    assert m._grid.value_at(0.0, 0.0) != 100 and m._grid.value_at(-0.3, 0.0) != 100, "the body and the floor behind are not"
+    assert m._grid.value_at(hx + 0.40, 0.0) != 100, "the wall is a short band, not a ray"
+    # heading east, the band lies east; turned north, a new contact marks north
+    asyncio.run(m.handle_odom(_odom(0.0, 0.0, yaw=math.pi / 2)))
+    asyncio.run(m.handle_bump(Bool(data=True)))
+    assert m._grid.value_at(0.0, hx + 0.10) == 100, "a contact while heading north marks the band north"
+    floor = np.array([[hx + 0.10, 0.0, 0.0], [hx + 0.12, 0.02, 0.0]])
+    for _ in range(3):
+        asyncio.run(m.handle_camera_floor(_cloud(floor)))
+    assert m._grid.value_at(hx + 0.10, 0.0) != 100, "bare floor seen by the camera frees the contact mark"
+    asyncio.run(m.handle_bump(Bool(data=False)))
+    print(f"  contact: the band {CONTACT_BAND_M[0]:.2f}-{CONTACT_BAND_M[1]:.2f} m beyond the body is a wall at once, in the heading, freed by seen floor")
+
+
 def test_what_goes_out_on_global_costmap() -> None:
     """One cropped OccupancyGrid every PUBLISH_EVERY revolutions."""
     from dimos.msgs.nav_msgs.OccupancyGrid import OccupancyGrid
@@ -485,7 +516,7 @@ def test_the_mission_signals_cross_the_process_boundary() -> None:
 
     cm = {(s.name, s.type): s.direction for s in BlueprintAtom.create(MossCostMap, {}).streams}
     want = {("lidar", PointCloud2): "in", ("camera_floor", PointCloud2): "in", ("odom", PoseStamped): "in", ("explore_cmd", Bool): "in",
-            ("clear_map_cmd", Bool): "in",
+            ("clear_map_cmd", Bool): "in", ("bump", Bool): "in",
             ("explore_done", Bool): "in", ("stop_explore_cmd", Bool): "in",
             ("global_costmap", OccupancyGrid): "out"}
     assert cm == want, f"stream table: extra {set(cm) - set(want)}, missing {set(want) - set(cm)}"
@@ -892,6 +923,7 @@ TESTS = (test_leg_needs_two_viewpoints_and_ray_is_free, test_ramp_hit_from_one_s
          test_parked_rover_never_erases_an_established_wall, test_body_clear_is_the_moss_footprint,
          test_the_lidar_tag_is_one_exact_height, test_the_map_writes_only_during_the_mission,
          test_explore_order_opens_the_map_before_any_motion, test_clear_map_starts_a_fresh_grid_and_keeps_the_gate,
+         test_a_contact_marks_the_band_ahead_as_a_wall,
          test_what_goes_out_on_global_costmap,
          test_the_mission_signals_cross_the_process_boundary, test_revolution_cost,
          test_camera_one_viewpoint_never_becomes_a_wall, test_camera_wall_no_longer_seen_is_carved_free,

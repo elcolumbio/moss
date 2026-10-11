@@ -150,6 +150,7 @@ RAY_MAX_M = _env_float("MOSS_RAY_MAX_M", 4.0, 0.0, GRID_SPAN_M)   # rays are car
                              # 4.5 m away stays until the rover comes within RAY_MAX_M of where they stood. 0 = no carving.
 RAY_EVERY = 2                # carve on every other revolution; hits are taken on all
 CAMERA_HFOV_DEG = 87.0       # the D455's horizontal field of view: the rays carve the camera layer only inside it
+CONTACT_BAND_M = (0.02, 0.20)   # a contact marks the band this far beyond the body's front edge, across its width
 CAMERA_CARVE_MAX_M = 3.0     # ...and only this close to the rover. Coupled to lidar_odometry's DEPTH_MAX_M (depth
                              # range along the camera's axis) and OBSTACLE_MAX_M (camera obstacles, measured from
                              # base_link), both 3.0 m: measured from base_link, a cell within this range ahead of the
@@ -302,6 +303,29 @@ class ScoredGrid:
             return 0
         return self._hit(self.camera, hits_xy[:, 0], hits_xy[:, 1], from_xy)
 
+    def contact(self, pose: tuple) -> int:
+        """The rover pushed against something its sensors did not map (the stall
+        guard fired): the cells of a short band right ahead of the body become a
+        wall on the camera layer at once (no viewpoint rule: a contact is a
+        physical certainty, like body_clear). The planner then routes around the
+        spot instead of driving back into it. Freed like any camera wall: by the
+        camera seeing bare floor there, or by the body driving over it."""
+        x, y, yaw = pose
+        c, s = np.cos(yaw), np.sin(yaw)
+        hx, hy = _current_profile().body_clear_m
+        ax = np.arange(hx + CONTACT_BAND_M[0], hx + CONTACT_BAND_M[1] + 1e-9, self.res / 2)
+        ay = np.arange(-hy, hy + 1e-9, self.res / 2)
+        bx, by = np.meshgrid(ax, ay)
+        gx, gy = self.cell((x + c * bx - s * by).ravel(), (y + s * bx + c * by).ravel())
+        if len(gx) == 0:
+            return 0
+        flat = np.unique(gy * self.n + gx)
+        gx, gy = flat % self.n, flat // self.n
+        self.camera[gy, gx] = np.maximum(self.camera[gy, gx], np.int8(OCCUPIED_AT))
+        self.camera_wall[gy, gx] = True
+        self.seen[gy, gx] = True
+        return int(len(gx))
+
     def camera_floor(self, floor_xy: np.ndarray) -> None:
         """World-frame bare-floor samples from the depth camera: a miss on the
         camera layer (a shoe that was taken away stops being an obstacle once
@@ -411,6 +435,7 @@ class MossCostMap(Module):
     stop_explore_cmd: In[Bool]      # exploration stopped on request (explore_ctl.py stop, the cockpit): logged, the map keeps writing
     explore_cmd: In[Bool]           # the order to explore: opens the map before the first motion
     clear_map_cmd: In[Bool]         # the cockpit's Clear map (explore_ctl.py clear): a fresh grid, the mission gate as it is
+    bump: In[Bool]                  # a contact (the base's stall guard, the explorer's back-off): the band ahead becomes a wall
     global_costmap: Out[OccupancyGrid]
 
     def __init__(self, world_frame: str = "world", **kwargs: Any) -> None:
@@ -504,6 +529,19 @@ class MossCostMap(Module):
         if self._mission_frozen:
             self._mission_frozen = False
             logger.info("costmap: explore_cmd received - map writing OPEN for the mission")
+
+    async def handle_bump(self, msg: Bool) -> None:
+        """A contact: the cells just ahead of the body become a wall at once, so the
+        planner routes around what the sensors did not see (a cable, a step, a
+        bin edge below the camera's view) instead of driving into it again."""
+        if not bool(getattr(msg, "data", False)) or self._grid is None or self._pose_xy is None:
+            return
+        if self._write_frozen():
+            return
+        n = self._grid.contact((self._pose_xy[0], self._pose_xy[1], self._pose_yaw))
+        logger.info(f"costmap: contact at ({self._pose_xy[0]:+.2f}, {self._pose_xy[1]:+.2f}) heading "
+                    f"{np.degrees(self._pose_yaw):+.0f} deg: {n} cells ahead marked as a wall")
+        self._publish()
 
     async def handle_clear_map_cmd(self, msg: Bool) -> None:
         """A fresh grid on request (the cockpit's Clear map): everything the map
