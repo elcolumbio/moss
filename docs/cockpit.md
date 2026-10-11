@@ -117,21 +117,21 @@ everywhere. The values are PLACEHOLDERS until measured on the robot:
 | track centre distance | 0.266 m (CAD) | `MOSS_TRACK_M` |
 | nose camera position on the base | 0.156, 0, 0.075 m (CAD) | `MOSS_CAMERA_XYZ_M="0.156 0 0.075"` |
 | nose camera pitch | 0 deg | `MOSS_CAMERA_PITCH_DEG` |
-| static-friction floor of the base adapter (percent) | 0 (off) | `MOSS_MIN_PCT` |
+| static-friction floor of the base adapter (percent) | 100 (full duty only) | `MOSS_MIN_PCT` |
 
 The speed knobs are `MOSS_MAX_PCT` (the PWM cap of the base adapter, 100 by
 default) and `MOSS_NERF_SPEED` (the launcher's `--nerf-speed` for the planner,
 0.5 by default).
 
 `MOSS_MIN_PCT` is the static-friction floor: a non-zero track command below it
-is raised to it, sign kept (a command that rounds to zero stays a stop). It
-matters under the planner: its slowest pivot (0.2 rad/s) maps to about 6 % PWM
-with the default `MOSS_TRACK_M`, `MOSS_MPS_AT_LIMIT` and `MOSS_MAX_PCT`, which
-does not turn the tracks on the floor, so without a floor the rover sits
-still and the planner logs `Robot is stuck. Replanning.` until the goal times
-out. The floor is 0 (off) by default: find the lowest percent that turns both
-tracks on the floor, and launch with
-`MOSS_MIN_PCT=<that> EXPLORE=1 tools/moss-fly.sh explore`.
+is raised to it, sign kept (a command that rounds to zero stays a stop). On
+MOSS it is 100 by default: the geared motors behind the MDD3A only turn the
+tracks at full duty on the floor, so every non-zero command becomes a full-duty
+command (straight, pivot left, pivot right, stop) and the planner's slowest
+pivot (0.2 rad/s, about 6 % PWM on its own) moves the rover instead of leaving
+it to log `Robot is stuck. Replanning.` until the goal times out. A base whose
+tracks turn below full duty lowers it: `MOSS_MIN_PCT=<percent>` on the launch
+line, measured with `tools/moss_floor_probe.py --go` (stack down).
 
 The lidar's floor projection is `base_link`, the rover's rotation centre: mount
 the C1 there, or the footprint and the pivot clearance are off by its offset.

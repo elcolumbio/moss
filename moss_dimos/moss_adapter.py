@@ -60,7 +60,7 @@ Calibration (env, all optional):
                         (default robot_profile.MOSS.track_m, 0.266 CAD, placeholder)
     MOSS_MPS_AT_LIMIT   floor speed in m/s at MOSS_MAX_PCT, measured
     MOSS_MAX_PCT        percent ceiling, <= the firmware's 100
-    MOSS_MIN_PCT        static-friction floor in percent (0 = off): a non-zero track command below it is raised to it, sign kept
+    MOSS_MIN_PCT        static-friction floor in percent (0 = off, default 100: the tracks only turn at full duty): a non-zero track command below it is raised to it, sign kept
     MOSS_TICKS_PER_M    encoder ticks per metre of track travel, measured
     MOSS_TURN_GAIN      turn authority vs forward speed (teleop_speeds), 0.5..4, default 2
     MOSS_RAMP_MS        "UP DOWN" sent as 'ramp UP DOWN' after connect
@@ -148,7 +148,7 @@ class MossGeometry:
     mps_at_limit: float = 0.45     # PLACEHOLDER: floor speed at 100 % (JGB37-520 178 rpm on a ~60 mm sprocket ~ 0.5 m/s), to measure
     max_pct: int = FIRMWARE_MAX_PCT
     ticks_per_m: float | None = None   # None = no encoder calibration yet
-    min_pct: int = 0   # static-friction floor: a non-zero track command below this percent is raised to it (sign kept). 0 = off. MOSS_MIN_PCT, to measure on the floor (the planner's 0.2 rad/s pivots map to ~8 %, which does not move the tracks)
+    min_pct: int = 100   # static-friction floor: a non-zero track command below this percent is raised to it (sign kept). 0 = off. MOSS_MIN_PCT. 100 on MOSS: the geared motors behind the MDD3A only turn at full duty, so every non-zero command is a full-duty command (the planner's 0.2 rad/s pivots map to ~8 %, which does not move the tracks)
 
     @classmethod
     def from_env(cls) -> "MossGeometry":

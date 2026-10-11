@@ -24,7 +24,8 @@ limit), so the stick stays proportional across its travel. With the default
 `MOSS_TURN_GAIN` of 2, the inner track stops at half turn stick and reverses
 beyond it; a gain of 1 only ever stops it. Releasing R1 sends 0.5 s of zeros,
 then silence (`MOSS_BRAKE_S`, 0 to 1.0 s). Unloaded, the motors start between
-5 % and 15 % duty; on the floor they need more (see `MOSS_MIN_PCT` in
+5 % and 15 % duty; on the floor they only turn at full duty, so the base
+adapter raises every non-zero command to 100 % (`MOSS_MIN_PCT`, see
 [cockpit.md](cockpit.md)).
 
 This is the dimOS path. The bench tool in `moss_pi/` drives the same firmware
@@ -78,14 +79,14 @@ env override, so a run can be re-scaled without a code change:
 | `MOSS_TRACK_M` | distance between the two track centrelines (0.266 m from the CAD) | tape measure, sprocket centre to sprocket centre |
 | `MOSS_MPS_AT_LIMIT` | floor speed at `MOSS_MAX_PCT` (0.45 m/s placeholder) | full stick (or `drive 100 100`) for 3 s on the floor, tape measure, divide |
 | `MOSS_TICKS_PER_M` | encoder ticks per metre of track travel (unset) | `zero`, push or drive the rover exactly 1 m, read `ticks` in a `status` line, average the two sides |
-| `MOSS_MIN_PCT` | static-friction floor: the lowest percent that turns both tracks (0 = off) | `tools/moss_floor_probe.py --go` with the stack down, the rover on blocks or with a clear metre ahead: it steps the percent up, reads the encoders around each step and prints the value to export |
+| `MOSS_MIN_PCT` | static-friction floor: the lowest percent that turns both tracks (100 on MOSS, 0 = off) | `tools/moss_floor_probe.py --go` with the stack down, the rover on blocks or with a clear metre ahead: it steps the percent up, reads the encoders around each step and prints the value to export |
 
 Until `MOSS_TICKS_PER_M` is set, `read_odometry()` returns `None` and
 `read_velocities()` returns the commanded twist: an honest "no measurement"
 rather than a pose made of guesses. Set it and both come from the encoders.
 
 The other base knobs: `MOSS_MAX_PCT` (percent ceiling, 100 by default, never
-above the firmware's 100), `MOSS_MIN_PCT` (static-friction floor, 0 = off),
+above the firmware's 100), `MOSS_MIN_PCT` (static-friction floor, 100 by default, 0 = off),
 `MOSS_RAMP_MS` (`"UP DOWN"`, sent as `ramp UP DOWN` at connect), `MOSS_PORT`
 (the serial port; by default the QT Py's `/dev/serial/by-id` path; only a
 `dimos run` by hand reads it from the shell, `tools/moss-teleop.sh` and

@@ -50,7 +50,7 @@ def settle(s=0.06):
 # ── 0. gamepad scale: full stick = the base's limit, not the generic 0.6 m/s ──
 print("0. teleop_speeds / teleop_envelope (track 0.30 m, 0.45 m/s at 100 %, turn gain 2)")
 os.environ.pop("MOSS_TURN_GAIN", None)
-G100 = MossGeometry(track_m=0.30, mps_at_limit=0.45, max_pct=100)
+G100 = MossGeometry(track_m=0.30, mps_at_limit=0.45, max_pct=100, min_pct=0)   # floor off: the mapping itself
 _lin, _ang = teleop_speeds(G100)
 check(abs(_lin - 0.45) < 1e-9, "full stick forward -> 0.45 m/s (= 100/100)")
 check(abs(_ang - 6.0) < 1e-9, "full stick sideways -> 6.0 rad/s (gain 2 x the 3.0 rad/s spin)")
@@ -89,7 +89,7 @@ elif SKIP_GAMEPAD:
 
 
 # ── 1. pure mapping: twist -> track percent ─────────────────────────────
-G = MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=25, ticks_per_m=None)
+G = MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=25, ticks_per_m=None, min_pct=0)   # floor off: the mapping itself
 print("1. twist -> tracks (track 0.30 m, 0.15 m/s at 25 %)")
 check(twist_to_tracks(0.15, 0.0, G) == (25, 25), "vx=0.15 -> L=25 R=25 (the limit)")
 check(twist_to_tracks(0.06, 0.0, G) == (10, 10), "vx=0.06 -> L=10 R=10")
@@ -152,7 +152,13 @@ check(twist_to_tracks(0.0, 0.3, GF) == (-12, 12), "floor 12: tiny spin (-5/+5) -
 check(twist_to_tracks(0.001, 0.0, GF) == (0, 0), "floor 12: a twist that rounds to 0 is STILL a stop")
 check(twist_to_tracks(0.15, 0.0, GF) == (25, 25), "floor 12: the limit is untouched")
 check(twist_to_tracks(0.09, 0.0, GF) == (15, 15), "floor 12: 15 % above the floor passes as is")
-check(twist_to_tracks(0.06, 0.0, G) == (10, 10), "floor 0 (default): L=10 R=10 unchanged")
+check(twist_to_tracks(0.06, 0.0, G) == (10, 10), "floor 0 (explicit): L=10 R=10 unchanged")
+GD = MossGeometry()   # the MOSS default: the tracks only turn at full duty
+check(GD.min_pct == 100, f"the default floor is 100 (full duty only): {GD.min_pct}")
+check(twist_to_tracks(0.02, 0.0, GD) == (100, 100), f"default: a slow forward twist -> 100/100: {twist_to_tracks(0.02, 0.0, GD)}")
+check(twist_to_tracks(0.0, 0.2, GD) == (-100, 100), f"default: the planner's slowest pivot (0.2 rad/s) -> -100/+100: {twist_to_tracks(0.0, 0.2, GD)}")
+check(twist_to_tracks(-0.02, 0.0, GD) == (-100, -100), "default: slow reverse -> -100/-100 (sign kept)")
+check(twist_to_tracks(0.0001, 0.0, GD) == (0, 0), "default: a twist that rounds to 0 is still a stop")
 check(twist_to_tracks(0.06, 0.0, MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=25, min_pct=99)) == (25, 25),
       "a floor above the limit is clamped to the limit")
 check(twist_to_tracks(0.15, 0.0, MossGeometry(mps_at_limit=0.15, max_pct=10)) == (10, 10),
@@ -269,7 +275,7 @@ check(MossGeometry.from_env().min_pct == MossGeometry.from_env().max_pct, "MOSS_
 os.environ["MOSS_MIN_PCT"] = "-5"
 check(MossGeometry.from_env().min_pct == 0, "MOSS_MIN_PCT negative -> 0")
 os.environ.pop("MOSS_MIN_PCT", None)
-check(MossGeometry.from_env().min_pct == 0, "MOSS_MIN_PCT unset -> 0 (floor off, unchanged behaviour)")
+check(MossGeometry.from_env().min_pct == 100, "MOSS_MIN_PCT unset -> 100 (the tracks only turn at full duty)")
 
 # ── 8. the fake is the firmware: its own refusals ──────────────────────
 print("8. fake firmware fidelity (Control.h)")
