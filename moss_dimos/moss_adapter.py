@@ -68,6 +68,7 @@ Calibration (env, all optional):
                         full-power slices over the period (pulse_tracks), the way MOSS's tracks can be steered
     MOSS_PULSE_MIN_PCT  duty floor of a non-zero track while pulsing (default 40)
     MOSS_PIVOT_PCT      every pivot (tracks in opposite directions) is sent at this percent, both tracks (default 100, 0 = as asked)
+    (no variable)       stall guard: a commanded track whose encoder moved < STALL_MIN_TICKS over STALL_S -> 'stop', logged, counted
     MOSS_MOCK_BUS       any value but 0/false/no/off: drive the fake firmware (no motors)
 """
 from __future__ import annotations
@@ -102,6 +103,10 @@ REPLY_TIMEOUT_S = 0.150        # the firmware answers within a loop tick (ms)
 CONNECT_PROBE_S = 1.000        # the first "status" of a process: reader thread start + first parse on a Jetson take longer than a reply tick
 TELEMETRY_FRESH_S = 1.0        # mode read from telemetry older than this = unknown
 MOCK_BUS_ENV = "MOSS_MOCK_BUS"
+STALL_S = 1.0                  # a track commanded for this long whose encoder did not move is STALLED: the
+                               # rover is pushing against something (no bumper on MOSS: the encoders are the bumper)
+STALL_MIN_TICKS = 20           # ticks over STALL_S that count as motion (a track at 40 % makes ~800 per second)
+STALL_WINDOW_S = 2.0           # how long the tick history is kept for the comparison
 PULSE_MS_DEFAULT = 0           # MOSS_PULSE_MS: period of the full-duty time slicing, 0 = off (then MOSS_MIN_PCT applies).
                                # Off on MOSS: with the drive wheels seated on their axles the tracks turn continuously
                                # from 40 % (floor probe), so slices are only for a base that moves at full duty alone
@@ -329,6 +334,10 @@ class MossBaseAdapter:
         self._ramp = ""                    # the ramp sent at connect ("" = the firmware default)
         self._tick = 0
         self._pivot_pct = pivot_pct()      # pivots sent at this percent on both tracks (0 = as asked)
+        self._tick_hist: list[tuple[float, int, int]] = []   # (monotonic, ticks L, ticks R) from telemetry, STALL_WINDOW_S deep
+        self._drive_since: float | None = None               # when the current non-zero command started
+        self._stalled = False                                # True from a stall until the next accepted command
+        self._stall_count = 0                                # stalls since connect (telemetry_payload, the coordinator's bump)
         # the mapping geometry: when pulsing, the static-friction floor becomes the duty floor of the pulses
         self._map_geometry = replace(self._geometry, min_pct=pulse_min_pct()) if self._pulse_n else self._geometry
         self._last_logged = None
@@ -570,6 +579,11 @@ class MossBaseAdapter:
             left, right = self._slice(want)
             ok = self._drive(left, right)
             if ok:
+                if want == (0, 0):
+                    self._drive_since = None
+                elif self._want == (0, 0) or self._drive_since is None:
+                    self._drive_since = time.monotonic()
+                self._stalled = False
                 self._want = want
                 self._target = (left, right)
                 self._target_twist = (vx, 0.0, wz)
@@ -611,6 +625,7 @@ class MossBaseAdapter:
             if ok:
                 self._target = (0, 0)
                 self._want = (0, 0)
+                self._drive_since = None
                 self._target_twist = (0.0, 0.0, 0.0)
                 self._target_t = time.monotonic()
                 self._stopped_for_stale = True
@@ -640,6 +655,8 @@ class MossBaseAdapter:
                         self._velocity = (0.0, 0.0, 0.0)
                     continue
                 if self._want != (0, 0):
+                    if self._stall_check():
+                        continue
                     # pulsing: the slice of this tick, 'drive 0 0' included (an OFF slice
                     # keeps the firmware armed and its 300 ms deadman fed)
                     self._target = self._slice(self._want)
@@ -652,6 +669,62 @@ class MossBaseAdapter:
                         self._tel_logged_t = now
                         _log().info(f"MOSS telemetry: out={tel.get('output_pct')} target={tel.get('target_pct')} "
                                     f"bus={tel.get('bus_mV')} mV ticks={tel.get('ticks')} mode={tel.get('mode')}")
+
+    def _stall_check(self) -> bool:
+        """Called under the lock, every keepalive tick while a non-zero command
+        is held. Samples the encoder ticks from telemetry; once the command has
+        been held for STALL_S, a commanded track whose ticks moved less than
+        STALL_MIN_TICKS over the last STALL_S is a stall: 'stop' is sent, the
+        command dropped, the stall counted and logged. Returns True on a stall
+        (the caller then sends nothing more this tick). The next accepted
+        command clears the flag - the planner's escape drives away."""
+        tel = self._telemetry
+        now = time.monotonic()
+        if tel and self._telemetry_t is not None and now - self._telemetry_t < TELEMETRY_FRESH_S:
+            try:
+                ticks = (int(tel["ticks"][0]), int(tel["ticks"][1]))
+            except (KeyError, TypeError, ValueError, IndexError):
+                ticks = None
+            if ticks is not None and (not self._tick_hist or self._tick_hist[-1][0] < self._telemetry_t):
+                self._tick_hist.append((self._telemetry_t, ticks[0], ticks[1]))
+                while self._tick_hist and now - self._tick_hist[0][0] > STALL_WINDOW_S:
+                    self._tick_hist.pop(0)
+        if self._drive_since is None or now - self._drive_since < STALL_S or len(self._tick_hist) < 2:
+            return False
+        old = [h for h in self._tick_hist if now - h[0] >= STALL_S]
+        if not old:
+            return False
+        t_old, l_old, r_old = old[-1]
+        t_new, l_new, r_new = self._tick_hist[-1]
+        if t_new - t_old < STALL_S * 0.8:
+            return False
+        want_l, want_r = self._want
+        stalled_l = want_l != 0 and abs(l_new - l_old) < STALL_MIN_TICKS
+        stalled_r = want_r != 0 and abs(r_new - r_old) < STALL_MIN_TICKS
+        if not (stalled_l or stalled_r):
+            return False
+        self._send("stop")
+        self._stall_count += 1
+        self._stalled = True
+        self._want = (0, 0)
+        self._target = (0, 0)
+        self._drive_since = None
+        self._stopped_for_stale = True
+        if not self._geometry.ticks_per_m:
+            self._velocity = (0.0, 0.0, 0.0)
+        _log().warning(f"MOSS base: STALL #{self._stall_count}: tracks commanded L={want_l:+d}% R={want_r:+d}% "
+                       f"but the encoders moved L={l_new - l_old:+d} R={r_new - r_old:+d} ticks in "
+                       f"{t_new - t_old:.1f} s - stopped (the encoders are the bumper)")
+        return True
+
+    @property
+    def stalled(self) -> bool:
+        """True from a stall until the next accepted command."""
+        return self._stalled
+
+    @property
+    def stall_count(self) -> int:
+        return self._stall_count
 
     def _log_cmd(self, twist, pct) -> None:
         if pct == self._last_logged:
@@ -727,4 +800,6 @@ def telemetry_payload(adapter, now: float) -> dict | None:
         doc[key] = tel.get(key)
     doc["firmware_age_s"] = None if age is None else round(float(age), 3)
     doc["mock"] = bool(getattr(adapter, "mock_bus", False))
+    doc["stalled"] = bool(getattr(adapter, "stalled", False))
+    doc["stall_count"] = int(getattr(adapter, "stall_count", 0) or 0)
     return doc

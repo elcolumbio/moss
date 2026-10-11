@@ -147,6 +147,9 @@ FREE = 0
 UNKNOWN = -1
 OCCUPIED = 100
 OCCUPANCY_THRESHOLD = 99      # dimOS WavefrontConfig.occupancy_threshold; costmap2d
+LATE_VERDICT_S = 1.0          # a goal_reached this soon after a goal publish, when one is owed to the goal that
+                              # timed out unanswered, is that old goal's cancel (the planner's monitor cancels it on
+                              # its next tick, 10 Hz); anything later is the goal in flight's own verdict
                               # publishes 100 for obstacles
 
 _EIGHT = np.ones((3, 3), dtype=bool)
@@ -1171,6 +1174,7 @@ if HAVE_DIMOS:  # pragma: no cover - needs the dimOS stack
             self._state = ExploreState()
             self._last_goal: tuple[float, float] | None = None
             self._last_goal_ok: bool | None = None
+            self._goal_published_t = 0.0   # monotonic time of the last goal publish (the late-verdict window starts there)
             # True while a goal that timed out unanswered can still be answered.
             # goal_reached is a bare Bool with no goal identity in it, and the
             # planner's monitor thread (10 Hz) can cancel the OLD goal at any
@@ -1199,14 +1203,18 @@ if HAVE_DIMOS:  # pragma: no cover - needs the dimOS stack
         # module ignores it and sleeps its whole goal_timeout for nothing.
         def _on_goal_reached(self, msg: Bool) -> None:
             if self._late_answer_owed:
-                # The previous goal's verdict, landing after the current goal was
-                # published. Crediting it would exclude a frontier the rover has
-                # never driven to. At most one is owed: the planner cancels the
-                # old goal once, then adopts the new one.
                 self._late_answer_owed = False
-                logger.info("late goal_reached: the previous goal's verdict, not this one's - "
-                            "the goal in flight keeps its own timeout")
-                return
+                if time.monotonic() - self._goal_published_t <= LATE_VERDICT_S:
+                    # The previous goal's verdict, landing right after the current
+                    # goal was published (the planner's monitor cancels the old goal
+                    # on its next tick). Crediting it would exclude a frontier the
+                    # rover has never driven to. At most one is owed.
+                    logger.info("late goal_reached: the previous goal's verdict, not this one's - "
+                                "the goal in flight keeps its own timeout")
+                    return
+                # Past the window the planner has long adopted this goal: a verdict
+                # now is about THIS goal (its own "no path", a replanning that found
+                # nothing) and must wake the loop at once, not after goal_timeout.
             self._last_goal_ok = bool(getattr(msg, "data", False))
             self.goal_reached_event.set()
 
@@ -1268,16 +1276,15 @@ if HAVE_DIMOS:  # pragma: no cover - needs the dimOS stack
                 goal.frame_id = "world"
                 goal.ts = costmap.ts
                 # The goal being replaced timed out unanswered: the planner still
-                # owes it a verdict, so the first goal_reached after this publish
-                # belongs to it, not to the goal below. Swallow that one. The
-                # cost when it was in fact this goal's own "no path" is one
-                # goal_timeout instead of an instant wake - and the timeout
-                # branch then decides on the gap actually closed, in metres.
+                # owes it a verdict, so a goal_reached landing within LATE_VERDICT_S
+                # of this publish belongs to it, not to the goal below (swallowed).
+                # Any verdict later than that is this goal's own and wakes the loop.
                 self._late_answer_owed = self._last_goal is not None and self._last_goal_ok is None
                 self._last_goal = (float(goal.position.x), float(goal.position.y))
                 self._last_goal_ok = None
                 gap_at_issue = self._gap_to(self._last_goal)
                 self.goal_reached_event.clear()
+                self._goal_published_t = time.monotonic()
                 self.goal_request.publish(goal)
                 logger.info(
                     f"goal {state.targets_issued}: ({goal.position.x:.2f}, {goal.position.y:.2f}) "

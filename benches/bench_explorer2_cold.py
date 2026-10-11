@@ -697,6 +697,7 @@ else:
         ex._last_goal = None
         ex._last_goal_ok = None
         ex._late_answer_owed = False
+        ex._goal_published_t = 0.0
         ex._tuning = DEFAULT_TUNING
         ex.goal_reached_event = threading.Event()
         ex.stop_event = threading.Event()
@@ -730,6 +731,22 @@ else:
     check("and the timeout then judges on the gap closed: 0.40 m of 1.00 m, so no exclusion",
           ex._state.failed == [] and abs(float(ex.latest_odometry.position.x)
                                          - (START[0] + 2 * STEP_M)) < 1e-6)
+
+    # The verdict owed to goal 1 is only swallowed inside LATE_VERDICT_S of goal 2's
+    # publish. A verdict landing after that window is goal 2's own (its "no path"
+    # after a replanning): credited, and the loop wakes at once instead of
+    # sleeping the whole goal_timeout (a 45 s pause on the floor otherwise).
+    _explorer2_module.LATE_VERDICT_S = 0.05
+    def gave_up_later(ex):
+        threading.Timer(0.15, lambda: gave_up(ex)).start()
+    ex, planner, ended = run_loop({1: drove, 2: acts(gave_up_later, last)})
+    _explorer2_module.LATE_VERDICT_S = 1.0
+    check("a verdict past the late window is credited to the goal in flight",
+          [(round(f[0], 2), round(f[1], 2)) for f in ex._state.failed] == [STUB_GOAL],
+          f"{ex._state.failed}")
+    check("and wakes the loop at once (0.15 s, not the 0.4 s timeout)",
+          ended - planner.published_at[1] < GOAL_TIMEOUT_S - 0.05,
+          f"{ended - planner.published_at[1]:.2f} s")
 
     # Nothing is owed on the first goal of a run: a no-path verdict on it is the
     # planner talking about THAT goal, and it must still bite at once.

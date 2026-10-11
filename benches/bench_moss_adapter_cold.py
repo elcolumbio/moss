@@ -483,6 +483,45 @@ pb.disconnect()
 os.environ.pop("MOSS_PULSE_MS", None)
 os.environ.pop("MOSS_PULSE_MIN_PCT", None)
 
+
+# ── 14. the stall guard: the encoders are the bumper ───────────────────
+print("14. stall guard: a track commanded for STALL_S whose encoder did not move -> stop, counted (the encoders are the bumper)")
+from moss_dimos.moss_adapter import STALL_S, STALL_MIN_TICKS, telemetry_payload as _tp  # noqa: E402
+os.environ["MOSS_PULSE_MS"] = "0"
+fw9 = FakeMossFirmware(auto_time=True)        # the stock fake never turns its encoders: every drive is a push against a wall
+f9 = lambda: fw9  # noqa: E731
+f9.is_mock = True
+sa = MossBaseAdapter(dof=3, port_factory=f9, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100, min_pct=0))
+check(sa.connect() and sa.write_enable(True), "connected and armed on a fake with frozen encoders")
+t_start = time.monotonic()
+while time.monotonic() - t_start < STALL_S + 0.6 and not sa.stalled:
+    sa.write_velocities([0.06, 0.0, 0.0])      # 40 %, refreshed like a planner would
+    settle(0.1)
+check(sa.stalled and sa.stall_count == 1, f"stalled once after about {STALL_S:.0f} s of a held command: stalled {sa.stalled}, count {sa.stall_count}")
+check(fw9.commands[-1] == "stop" and fw9.mode == OFF, f"'stop' was sent and the fake is OFF: last {fw9.commands[-1]!r}, mode {fw9.mode}")
+check(sa.target_pct == (0, 0), "the command is dropped (no keepalive pushes on)")
+doc = _tp(sa, 0.0)
+check(doc is not None and doc.get("stalled") is True and doc.get("stall_count") == 1, f"telemetry_payload carries stalled/stall_count: {None if doc is None else (doc.get('stalled'), doc.get('stall_count'))}")
+check(sa.write_velocities([-0.06, 0.0, 0.0]) and sa.stalled is False, "the next accepted command (the escape, in reverse) clears the flag")
+sa.write_stop(); sa.disconnect()
+# a fake whose encoders turn never stalls, however long the command is held
+class Turning(FakeMossFirmware):
+    def _telemetry_line(self):
+        if self.mode == DRIVE:
+            self.ticks[0] += 80; self.ticks[1] += 80
+        return super()._telemetry_line()
+fw10 = Turning(auto_time=True)
+f10 = lambda: fw10  # noqa: E731
+f10.is_mock = True
+sb = MossBaseAdapter(dof=3, port_factory=f10, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100, min_pct=0))
+check(sb.connect() and sb.write_enable(True), "a fake whose encoders turn")
+t_start = time.monotonic()
+while time.monotonic() - t_start < STALL_S + 0.6:
+    sb.write_velocities([0.06, 0.0, 0.0]); settle(0.1)
+check(not sb.stalled and sb.stall_count == 0 and fw10.mode == DRIVE, f"no stall while the encoders move: count {sb.stall_count}, mode {fw10.mode}")
+sb.write_stop(); sb.disconnect()
+os.environ.pop("MOSS_PULSE_MS", None)
+
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")
 sys.exit(1 if KO else 0)

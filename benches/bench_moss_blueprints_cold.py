@@ -259,12 +259,13 @@ v3_line = {"ms": 1234, "fw": "qtpy-mdd3a-v3", "mode": 2, "reason": "drive",
 doc = telemetry_payload(FakeAdapter(v3_line, 0.3), 1760000000.0)
 expected = {"ts": 1760000000.0, "fw": "qtpy-mdd3a-v3", "driver": None, "mode": 2, "reason": "drive",
             "bus_mV": 11208, "ina_ok": True, "ticks": [160585, 158263], "target_pct": [40, -40],
-            "output_pct": [35, -35], "ramp_ms": [5, 5], "firmware_age_s": 0.3, "mock": False}
+            "output_pct": [35, -35], "ramp_ms": [5, 5], "firmware_age_s": 0.3, "mock": False,
+            "stalled": False, "stall_count": 0}
 check("v3 line, age 0.3 s, now 1760000000 -> the known document", doc == expected,
       "" if doc == expected else f"{doc}")
 check("exactly the cockpit's keys, in order", list(doc) == ["ts", "fw", "driver", "mode", "reason", "bus_mV", "ina_ok",
                                                              "ticks", "target_pct", "output_pct", "ramp_ms",
-                                                             "firmware_age_s", "mock"])
+                                                             "firmware_age_s", "mock", "stalled", "stall_count"])
 mdd10a = dict(v3_line, driver="mdd10a")
 check("an MDD10A build's driver key is carried", telemetry_payload(FakeAdapter(mdd10a, 0.0), 0.0)["driver"] == "mdd10a")
 check("no telemetry yet -> None (nothing published)", telemetry_payload(FakeAdapter(None, None), 0.0) is None)
@@ -544,8 +545,8 @@ os.environ.pop("MOSS_STATE_DIR")
 ins = set(MossRecorder.__annotations__) | set(MossRecorder.__mro__[1].__annotations__)
 check("MossRecorder records odom, global_costmap, lidar, color_image, wrist_image, cmd_vel, base_telemetry, episode_marker",
       {"odom", "global_costmap", "lidar", "color_image", "wrist_image", "cmd_vel", "base_telemetry", "episode_marker"} <= ins)
-check("MossControlCoordinator has the base_telemetry Out, and no other stream of its own",
-      set(MossControlCoordinator.__annotations__) == {"base_telemetry"}, f"{sorted(MossControlCoordinator.__annotations__)}")
+check("MossControlCoordinator has the base_telemetry and bump Outs, and no other stream of its own",
+      set(MossControlCoordinator.__annotations__) == {"base_telemetry", "bump"}, f"{sorted(MossControlCoordinator.__annotations__)}")
 check("its start/stop overrides keep @rpc (else dimOS pickles the module to call them)",
       {"start", "stop"} <= set(MossControlCoordinator.rpcs))
 check("it runs in its own worker (dedicated_worker)", MossControlCoordinator.dedicated_worker is True)

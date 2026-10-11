@@ -96,6 +96,7 @@ from dimos.msgs.std_msgs.String import String
 from dimos.utils.logging_config import setup_logger
 
 from moss_dimos import robot_profile
+from dimos.msgs.std_msgs.Bool import Bool
 from moss_dimos.moss_adapter import telemetry_payload
 from moss_dimos.robot_profile import (MOSS_LIDAR_MISSING, MOSS_QTPY_MISSING,
                                       RobotProfile)
@@ -152,6 +153,7 @@ class MossControlCoordinator(ControlCoordinator):
     """
 
     base_telemetry: Out[String]
+    bump: Out[Bool]                 # a stall of the base (moss_adapter stall guard) = a contact: the planner's escape backs off
 
     TELEMETRY_PERIOD_S = 0.5
 
@@ -187,6 +189,12 @@ class MossControlCoordinator(ControlCoordinator):
                     payload = telemetry_payload(getattr(hw, "adapter", None), now)
                     if payload is not None:
                         self.base_telemetry.publish(String(data=json.dumps(payload)))
+                        stalls = int(payload.get("stall_count") or 0)
+                        if stalls > getattr(self, "_stalls_seen", 0):
+                            self._stalls_seen = stalls
+                            _logger.warning(f"base stall #{stalls}: publishing bump (contact) for the planner's escape")
+                            if getattr(self.bump, "transport", None) is not None:
+                                self.bump.publish(Bool(data=True))
                 last_error = None
             except Exception as exc:  # noqa: BLE001
                 cause = f"{type(exc).__name__}: {exc}"
