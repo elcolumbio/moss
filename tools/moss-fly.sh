@@ -73,7 +73,7 @@ export MOSS_CAMERA="${MOSS_CAMERA:-1}"
 # open ground. The other explorer knobs (MOSS_GOAL_MAX_M, MOSS_EXPLORE_DISTANCE_EXP)
 # keep their code defaults: see docs/cockpit.md
 export MOSS_EXPLORE_RADIUS_M="${MOSS_EXPLORE_RADIUS_M:-4}"
-NERF_SPEED="${MOSS_NERF_SPEED:-0.5}"
+NERF_SPEED="${MOSS_NERF_SPEED:-0.7}"   # the planner's speed scale: 0.5 kept the tracks at the edge of their floor on a sagging battery
 COCKPIT_PORT="${MOSS_COCKPIT_PORT:-8904}"
 PREFLIGHT_JSON="$MOSS_STATE_DIR/preflight.json"   # served by the cockpit as /preflight.json
 if [ "${MOCK:-0}" = "1" ]; then export MOSS_MOCK_BUS=1; fi

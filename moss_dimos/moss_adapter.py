@@ -60,7 +60,7 @@ Calibration (env, all optional):
                         (default robot_profile.MOSS.track_m, 0.266 CAD, placeholder)
     MOSS_MPS_AT_LIMIT   floor speed in m/s at MOSS_MAX_PCT, measured
     MOSS_MAX_PCT        percent ceiling, <= the firmware's 100
-    MOSS_MIN_PCT        static-friction floor in percent (0 = off, default 40: measured, both tracks turn from 40 %): a non-zero track command below it is raised to it, sign kept
+    MOSS_MIN_PCT        static-friction floor in percent (0 = off, default 50: measured 40 on a full battery, 10 of margin for the sag): a non-zero track command below it is raised to it, sign kept
     MOSS_TICKS_PER_M    encoder ticks per metre of track travel, measured
     MOSS_TURN_GAIN      turn authority vs forward speed (teleop_speeds), 0.5..4, default 2
     MOSS_RAMP_MS        "UP DOWN" sent as 'ramp UP DOWN' after connect (while pulsing, unset = "1 1")
@@ -107,6 +107,8 @@ STALL_S = 1.0                  # every commanded track frozen for this long = ST
                                # something (no bumper on MOSS: the encoders are the bumper)
 STALL_MIN_TICKS = 20           # ticks over STALL_S that count as motion (a track at 40 % makes ~800 per second)
 STALL_WINDOW_S = 2.0           # how long the tick history is kept for the comparison
+STALL_PUSH_PCT = 75            # before a stall below this command becomes a contact, the tracks get one window at this
+                               # percent: a half-full battery sags and a track at the floor just creeps, which is not a wall
 PULSE_MS_DEFAULT = 0           # MOSS_PULSE_MS: period of the full-duty time slicing, 0 = off (then MOSS_MIN_PCT applies).
                                # Off on MOSS: with the drive wheels seated on their axles the tracks turn continuously
                                # from 40 % (floor probe), so slices are only for a base that moves at full duty alone
@@ -213,7 +215,7 @@ class MossGeometry:
     mps_at_limit: float = 0.45     # PLACEHOLDER: floor speed at 100 % (JGB37-520 178 rpm on a ~60 mm sprocket ~ 0.5 m/s), to measure
     max_pct: int = FIRMWARE_MAX_PCT
     ticks_per_m: float | None = None   # None = no encoder calibration yet
-    min_pct: int = 40    # static-friction floor: a non-zero track command below this percent is raised to it (sign kept). 0 = off. MOSS_MIN_PCT. 40 on MOSS: the floor probe (straight, continuous duty, wheels seated) turns both tracks from 40 %, barely at 20 %
+    min_pct: int = 50    # static-friction floor: a non-zero track command below this percent is raised to it (sign kept). 0 = off. MOSS_MIN_PCT. 50 on MOSS: both tracks turn from 40 % on a full battery, and a half-full one sags under load, so 10 % of margin
 
     @classmethod
     def from_env(cls) -> "MossGeometry":
@@ -338,6 +340,8 @@ class MossBaseAdapter:
         self._drive_since: float | None = None               # when the current non-zero command started
         self._stalled = False                                # True from a stall until the next accepted command
         self._stall_count = 0                                # stalls since connect (telemetry_payload, the coordinator's bump)
+        self._pushing: tuple[int, int] | None = None         # the command being pushed harder before a contact is declared
+        self._push_origin: tuple[int, int] | None = None     # the commander's own pair while the push runs (its repeats keep the push)
         # the mapping geometry: when pulsing, the static-friction floor becomes the duty floor of the pulses
         self._map_geometry = replace(self._geometry, min_pct=pulse_min_pct()) if self._pulse_n else self._geometry
         self._last_logged = None
@@ -576,6 +580,11 @@ class MossBaseAdapter:
             want = pivot_tracks(twist_to_tracks(vx, wz, self._map_geometry), self._pivot_pct)
             if want != (0, 0) and not self._enabled:
                 return False
+            if self._pushing is not None:
+                if want == self._push_origin:
+                    want = self._pushing            # the commander repeats itself: the push goes on, and is what is sent
+                else:
+                    self._pushing = self._push_origin = None   # a new order: the push is over
             left, right = self._slice(want)
             ok = self._drive(left, right)
             if ok:
@@ -702,6 +711,7 @@ class MossBaseAdapter:
         stalled_l = want_l != 0 and abs(l_new - l_old) < STALL_MIN_TICKS
         stalled_r = want_r != 0 and abs(r_new - r_old) < STALL_MIN_TICKS
         if not (stalled_l or stalled_r):
+            self._pushing = self._push_origin = None
             return False
         # Both commanded tracks frozen = the rover pushes against something. One track frozen
         # while the other turns is a contact only when the frozen track was commanded at least
@@ -712,6 +722,21 @@ class MossBaseAdapter:
             frozen_cmd, moving_cmd = (abs(want_l), abs(want_r)) if stalled_l else (abs(want_r), abs(want_l))
             if frozen_cmd < moving_cmd:
                 return False
+        # Frozen below STALL_PUSH_PCT: push harder for one more window before calling it a
+        # contact (the tracks creep at the floor on a sagging battery). The pushed command
+        # keeps each track's sign; a track at 0 stays at 0.
+        if max(abs(want_l), abs(want_r)) < STALL_PUSH_PCT and self._pushing is None:
+            push = (0 if want_l == 0 else (STALL_PUSH_PCT if want_l > 0 else -STALL_PUSH_PCT),
+                    0 if want_r == 0 else (STALL_PUSH_PCT if want_r > 0 else -STALL_PUSH_PCT))
+            self._pushing = push
+            self._push_origin = (want_l, want_r)
+            self._want = push
+            self._drive_since = now
+            self._tick_hist = self._tick_hist[-1:]
+            _log().info(f"MOSS base: tracks frozen at L={want_l:+d}% R={want_r:+d}% - pushing at {STALL_PUSH_PCT} % for "
+                        f"{STALL_S:.0f} s before calling it a contact")
+            return False
+        self._pushing = self._push_origin = None
         self._send("stop")
         self._stall_count += 1
         self._stalled = True

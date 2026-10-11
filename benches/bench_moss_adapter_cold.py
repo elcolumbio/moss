@@ -155,10 +155,10 @@ check(twist_to_tracks(0.15, 0.0, GF) == (25, 25), "floor 12: the limit is untouc
 check(twist_to_tracks(0.09, 0.0, GF) == (15, 15), "floor 12: 15 % above the floor passes as is")
 check(twist_to_tracks(0.06, 0.0, G) == (10, 10), "floor 0 (explicit): L=10 R=10 unchanged")
 GD = MossGeometry()   # the MOSS default: the tracks only turn at full duty
-check(GD.min_pct == 40, f"the default floor is 40 (measured): {GD.min_pct}")
-check(twist_to_tracks(0.02, 0.0, GD) == (40, 40), f"default: a slow forward twist -> 40/40: {twist_to_tracks(0.02, 0.0, GD)}")
-check(twist_to_tracks(0.0, 0.2, GD) == (-40, 40), f"default: the planner's slowest pivot (0.2 rad/s) -> -40/+40 before pivot_tracks: {twist_to_tracks(0.0, 0.2, GD)}")
-check(twist_to_tracks(-0.02, 0.0, GD) == (-40, -40), "default: slow reverse -> -40/-40 (sign kept)")
+check(GD.min_pct == 50, f"the default floor is 50: {GD.min_pct}")
+check(twist_to_tracks(0.02, 0.0, GD) == (50, 50), f"default: a slow forward twist -> 50/50: {twist_to_tracks(0.02, 0.0, GD)}")
+check(twist_to_tracks(0.0, 0.2, GD) == (-50, 50), f"default: the planner's slowest pivot (0.2 rad/s) -> -50/+50 before pivot_tracks: {twist_to_tracks(0.0, 0.2, GD)}")
+check(twist_to_tracks(-0.02, 0.0, GD) == (-50, -50), "default: slow reverse -> -50/-50 (sign kept)")
 check(twist_to_tracks(0.0001, 0.0, GD) == (0, 0), "default: a twist that rounds to 0 is still a stop")
 check(twist_to_tracks(0.06, 0.0, MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=25, min_pct=99)) == (25, 25),
       "a floor above the limit is clamped to the limit")
@@ -276,7 +276,7 @@ check(MossGeometry.from_env().min_pct == MossGeometry.from_env().max_pct, "MOSS_
 os.environ["MOSS_MIN_PCT"] = "-5"
 check(MossGeometry.from_env().min_pct == 0, "MOSS_MIN_PCT negative -> 0")
 os.environ.pop("MOSS_MIN_PCT", None)
-check(MossGeometry.from_env().min_pct == 40, "MOSS_MIN_PCT unset -> 40 (measured floor: both tracks turn from 40 %)")
+check(MossGeometry.from_env().min_pct == 50, "MOSS_MIN_PCT unset -> 50 (measured floor 40 on a full battery, 10 of margin)")
 
 # ── 8. the fake is the firmware: its own refusals ──────────────────────
 print("8. fake firmware fidelity (Control.h)")
@@ -493,11 +493,14 @@ f9 = lambda: fw9  # noqa: E731
 f9.is_mock = True
 sa = MossBaseAdapter(dof=3, port_factory=f9, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100, min_pct=0))
 check(sa.connect() and sa.write_enable(True), "connected and armed on a fake with frozen encoders")
-t_start = time.monotonic()
-while time.monotonic() - t_start < STALL_S + 0.6 and not sa.stalled:
+from moss_dimos.moss_adapter import STALL_PUSH_PCT  # noqa: E402
+t_start = time.monotonic(); pushed = False
+while time.monotonic() - t_start < 2 * STALL_S + 1.0 and not sa.stalled:
     sa.write_velocities([0.06, 0.0, 0.0])      # 40 %, refreshed like a planner would
+    pushed = pushed or sa.target_pct == (STALL_PUSH_PCT, STALL_PUSH_PCT)
     settle(0.1)
-check(sa.stalled and sa.stall_count == 1, f"stalled once after about {STALL_S:.0f} s of a held command: stalled {sa.stalled}, count {sa.stall_count}")
+check(pushed, f"frozen at 40 %: the guard first pushes at {STALL_PUSH_PCT} % for one window")
+check(sa.stalled and sa.stall_count == 1, f"still frozen at {STALL_PUSH_PCT} %: a stall, once (stalled {sa.stalled}, count {sa.stall_count})")
 check(fw9.commands[-1] == "stop" and fw9.mode == OFF, f"'stop' was sent and the fake is OFF: last {fw9.commands[-1]!r}, mode {fw9.mode}")
 check(sa.target_pct == (0, 0), "the command is dropped (no keepalive pushes on)")
 doc = _tp(sa, 0.0)
@@ -529,7 +532,7 @@ for twist, label, want_stall in (([0.06, 0.0, 0.1], "left frozen at the lower co
     sc = MossBaseAdapter(dof=3, port_factory=f11, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100, min_pct=0))
     sc.connect(); sc.write_enable(True)
     t_start = time.monotonic()
-    while time.monotonic() - t_start < STALL_S + 0.6 and not sc.stalled:
+    while time.monotonic() - t_start < 2 * STALL_S + 1.0 and not sc.stalled:
         sc.write_velocities(twist); settle(0.1)
     check((sc.stall_count == 1) == want_stall, f"{label} (count {sc.stall_count}, L/R {sc._want})")
     sc.write_stop(); sc.disconnect()

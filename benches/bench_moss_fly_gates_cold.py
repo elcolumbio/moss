@@ -374,8 +374,8 @@ order = [first(log, "py tools/moss_preflight.py"), first(log, " run moss-dimos.m
 check("order: preflight -> dimos run -> cockpit curl", -1 not in order and order == sorted(order), str(order))
 check("gate 1 runs the preflight with --no-spin (battery + disarmed read) and saves it",
       any("--no-spin" in ln and "--save" in ln for ln in ran(log, "py tools/moss_preflight.py")))
-check("one launch: --rerun-open none --nerf-speed 0.5 run moss-dimos.moss-nav --daemon",
-      len(run_l) == 1 and "--rerun-open none --nerf-speed 0.5 run moss-dimos.moss-nav --daemon" in run_l[0],
+check("one launch: --rerun-open none --nerf-speed 0.7 run moss-dimos.moss-nav --daemon",
+      len(run_l) == 1 and "--rerun-open none --nerf-speed 0.7 run moss-dimos.moss-nav --daemon" in run_l[0],
       run_l[0][:140] if run_l else "none")
 env_l = run_l[0].split("| ENV ", 1)[1] if run_l and "| ENV " in run_l[0] else ""
 for want in (f"MOSS_PORT={qtpy}", f"MOSS_LIDAR_PORT={c1}", "DIMOS_TRANSPORT=lcm",

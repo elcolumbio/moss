@@ -131,7 +131,9 @@ def _env_float(name: str, default: float, lo: float, hi: float) -> float:
 
 RESOLUTION_M = 0.05
 GRID_SPAN_M = 24.0           # world-fixed square, centred on the first pose
-OCCUPIED_AT = 2              # two hits from two places = an obstacle
+OCCUPIED_AT = int(round(_env_float("MOSS_OCCUPIED_AT", 1, 1, 10)))   # hits before a cell is an obstacle. 1: the first sighting
+                             # counts (the planner reacts within one revolution; a passer-by is carved back within a second).
+                             # 2 = the cautious rule, a wall only from two places 10 cm apart (MOSS_OCCUPIED_AT=2)
 # The layers are int8: the ceiling stays within 127, and at OCCUPIED_AT or above
 # (below it nothing could ever become a wall); the floor stays within [-128, 0].
 HIT_CAP = int(round(_env_float("MOSS_HIT_CAP", 10, OCCUPIED_AT, 127)))       # ceiling: no cell gets more certain than this.
@@ -140,9 +142,9 @@ HIT_CAP = int(round(_env_float("MOSS_HIT_CAP", 10, OCCUPIED_AT, 127)))       # c
                              # nothing sees it any more.
 FREE_FLOOR = int(round(_env_float("MOSS_FREE_FLOOR", -3, -128, 0)))          # floor: no cell gets more "free" than this.
                              # A floor nearer 0 lets a new obstacle on long-seen floor become a wall in fewer hits.
-NEW_VIEWPOINT_M = 0.10       # a hit counts only if the rover moved this much since the cell's last hit
+NEW_VIEWPOINT_M = _env_float("MOSS_NEW_VIEWPOINT_M", 0.05, 0.0, 1.0)   # a hit counts only if the rover moved this much since the cell's last hit
 LIDAR_Z_TOL_M = 1e-6         # lidar returns sit at EXACTLY the profile's lidar_height_m: the tag survives the float32 round trip to 5 nm (see lidar_returns)
-PUBLISH_EVERY = 5            # one grid every 5 revolutions (~2 Hz at 10 Hz). A 24 m grid is ~230 kB and every
+PUBLISH_EVERY = int(round(_env_float("MOSS_PUBLISH_EVERY", 2, 1, 20)))   # one grid every N revolutions (2 = 5 Hz at 10 Hz). A 24 m grid is ~230 kB and every
                              # subscriber (planner, explorer, recorder, cockpit) decodes each one; the map
                              # QUALITY does not depend on this rate (the odometry gives it).
 RAY_MAX_M = _env_float("MOSS_RAY_MAX_M", 4.0, 0.0, GRID_SPAN_M)   # rays are carved (misses) up to this range only:

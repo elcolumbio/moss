@@ -230,10 +230,10 @@ finally:
     LO.Module.start = real_module_start
     LO.logger = real_logger
 cfg = getattr(o._kiss, "cfg", None)
-check("start() builds kiss-icp: max 12 m, min 0.35 m, no deskew, voxel 0.05 m, 30 points/voxel, threshold 0.3 m, min motion 0.02 m",
+check("start() builds kiss-icp: max 12 m, min 0.35 m, deskew on, voxel 0.05 m, 30 points/voxel, threshold 0.3 m, min motion 0.02 m",
       cfg is not None and (cfg.data.max_range, cfg.data.min_range, cfg.data.deskew, cfg.mapping.voxel_size,
                            cfg.mapping.max_points_per_voxel, cfg.adaptive_threshold.initial_threshold,
-                           cfg.adaptive_threshold.min_motion_th) == (12.0, 0.35, False, 0.05, 30, 0.3, 0.02))
+                           cfg.adaptive_threshold.min_motion_th) == (12.0, 0.35, True, 0.05, 30, 0.3, 0.02))
 up = [line for line in spy.lines if line.startswith("lidar odometry up")]
 check("start() logs 'lidar odometry up (kiss-icp, ...' once (the launcher greps this prefix)",
       len(up) == 1 and up[0].startswith("lidar odometry up (kiss-icp,") and up[0].endswith("-> world"),
@@ -241,6 +241,21 @@ check("start() logs 'lidar odometry up (kiss-icp, ...' once (the launcher greps 
 
 
 # --- B. roundtrip 73 deg --------------------------------------------------------
+print("A2. sweep_times: when each point of a revolution was taken")
+ang = np.radians(np.arange(0, 360, 2.0))
+rev = np.stack([2.0 * np.cos(ang), 2.0 * np.sin(ang), np.zeros_like(ang)], 1)
+st = LO.sweep_times(rev)
+check("a full revolution in bearing order: 0 at the first point, 1 at the last, monotonic",
+      abs(st[0]) < 1e-9 and abs(st[-1] - 1.0) < 1e-9 and np.all(np.diff(st) >= 0), f"{st[:3]} .. {st[-3:]}")
+check("half way round the sweep -> about 0.5", abs(st[len(st) // 2] - 0.5) < 0.02, f"{st[len(st) // 2]:.3f}")
+rev_cw = rev[::-1]
+st_cw = LO.sweep_times(rev_cw)
+check("the other way round (clockwise): still 0 first, 1 last", abs(st_cw[0]) < 1e-9 and abs(st_cw[-1] - 1.0) < 1e-9 and np.all(np.diff(st_cw) >= 0))
+check("a revolution with a gap (points 0-170 deg only) keeps the fraction of the bearing covered",
+      abs(LO.sweep_times(rev[:86])[-1] - 1.0) < 1e-9 and abs(LO.sweep_times(rev[:86])[43] - 0.5) < 0.02)
+check("two points at the same bearing -> the point order", np.allclose(LO.sweep_times(np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])), [0.0, 1.0]))
+check("one point -> 0", LO.sweep_times(np.array([[1.0, 0.0, 0.0]])).tolist() == [0.0])
+
 print("B. roundtrip: a revolution registered at (1.20, -0.70, +73.0 deg)")
 TRUE = (1.20, -0.70, math.radians(73.0))
 o = odometry(Kiss(*TRUE))

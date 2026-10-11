@@ -76,6 +76,12 @@ import numpy as np  # noqa: E402
 # MOSS's own numbers, whatever the shell exported
 for _var in [v for v in os.environ if v.startswith("MOSS_")]:
     del os.environ[_var]
+# the checks below pin the cautious rules (a wall from two places, viewpoints 10 cm apart, one grid per
+# five revolutions); the module defaults are the fast ones (first sighting counts, 5 cm, every two),
+# checked in a subprocess by test_the_fast_defaults
+os.environ["MOSS_OCCUPIED_AT"] = "2"
+os.environ["MOSS_NEW_VIEWPOINT_M"] = "0.10"
+os.environ["MOSS_PUBLISH_EVERY"] = "5"
 
 from dimos_lcm.std_msgs import Bool  # noqa: E402
 
@@ -918,7 +924,20 @@ def test_body_clear_resets_the_camera_wall_flag() -> None:
           f"left on: a wall)")
 
 
-TESTS = (test_leg_needs_two_viewpoints_and_ray_is_free, test_ramp_hit_from_one_spot_never_becomes_a_wall,
+def test_the_fast_defaults() -> None:
+    """Without the environment the module counts an obstacle at its first sighting,
+    takes a new viewpoint every 5 cm and publishes every two revolutions (the
+    obstacle-latency levers)."""
+    import subprocess, sys as _sys
+    env = {k: v for k, v in os.environ.items() if not k.startswith("MOSS_")}
+    env["PYTHONPATH"] = os.environ.get("PYTHONPATH", "")
+    out = subprocess.run([_sys.executable, "-c", "import moss_dimos.costmap2d as c; print(c.OCCUPIED_AT, c.NEW_VIEWPOINT_M, c.PUBLISH_EVERY)"],
+                         capture_output=True, text=True, env=env, timeout=120).stdout.split()
+    assert out == ["1", "0.05", "2"], out
+    print("  defaults: OCCUPIED_AT 1, NEW_VIEWPOINT_M 0.05, PUBLISH_EVERY 2 (this bench pins 2 / 0.10 / 5 for its own checks)")
+
+
+TESTS = (test_the_fast_defaults, test_leg_needs_two_viewpoints_and_ray_is_free, test_ramp_hit_from_one_spot_never_becomes_a_wall,
          test_chair_moved_is_forgotten_by_lidar_rays, test_reinforcement_is_capped_and_unlearning_bounded,
          test_parked_rover_never_erases_an_established_wall, test_body_clear_is_the_moss_footprint,
          test_the_lidar_tag_is_one_exact_height, test_the_map_writes_only_during_the_mission,

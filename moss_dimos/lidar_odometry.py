@@ -95,6 +95,24 @@ def _se2(dx: float, dy: float, dyaw: float) -> np.ndarray:
     return np.array([[c, -s, 0.0, dx], [s, c, 0.0, dy], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
 
 
+def sweep_times(pts: np.ndarray) -> np.ndarray:
+    """When, within one revolution, each point was taken: 0 for the first, 1 for
+    the last, from the unwrapped bearing of the points in scan order (the C1
+    publishes a revolution in sweep order; its bearing runs one way round). A
+    revolution whose bearings do not progress (fewer than a few degrees of span)
+    falls back to the point order. kiss-icp's deskew moves each point by that
+    fraction of the motion prior, so a scan bent by a fast pivot comes straight."""
+    n = len(pts)
+    if n < 2:
+        return np.zeros(n)
+    ang = np.unwrap(np.arctan2(pts[:, 1], pts[:, 0]))
+    span = ang[-1] - ang[0]
+    if abs(span) < math.radians(5.0):
+        return np.linspace(0.0, 1.0, n)
+    t = (ang - ang[0]) / span
+    return np.clip(t, 0.0, 1.0)
+
+
 def split_floor_and_obstacles(bx: np.ndarray, by: np.ndarray, bz: np.ndarray,
                               floor_z: np.ndarray, cell_m: float = 0.05) -> tuple[np.ndarray, np.ndarray]:
     """Masks (obstacle, floor) over base-frame depth points.
@@ -129,7 +147,7 @@ class LidarOdometry(Module):
 
     def __init__(self, max_range_m: float = 12.0, min_range_m: float = 0.35,
                  voxel_size_m: float = 0.05, initial_threshold_m: float = 0.3,
-                 gyro_axis: str = "-y", use_gyro_prior: bool = True,
+                 gyro_axis: str = "-y", use_gyro_prior: bool = True, deskew: bool = True,
                  world_frame: str = "world",
                  base_frame: str = "base_link", lidar_frame: str = "lidar_link",
                  log_every_s: float = 2.0, **kwargs: Any) -> None:
@@ -142,6 +160,7 @@ class LidarOdometry(Module):
         # yaw_rate = -gyro.y. A camera mounted upside down flips the sign.
         self.gyro_axis = gyro_axis
         self.use_gyro_prior = use_gyro_prior
+        self.deskew = deskew          # kiss-icp straightens each revolution by the motion prior (sweep_times): a full-power pivot bends a 10 Hz scan by 25 degrees
         self.world_frame, self.base_frame, self.lidar_frame = world_frame, base_frame, lidar_frame
         self.log_every_s = log_every_s
         # dimOS pickles module instances into their worker: no lock, no native
@@ -175,7 +194,7 @@ class LidarOdometry(Module):
         cfg = KISSConfig()
         cfg.data.max_range = self.max_range_m
         cfg.data.min_range = self.min_range_m
-        cfg.data.deskew = False
+        cfg.data.deskew = self.deskew
         cfg.mapping.voxel_size = self.voxel_size_m
         cfg.mapping.max_points_per_voxel = 30
         # kiss-icp defaults are tuned for cars (2 m initial threshold)
@@ -361,7 +380,7 @@ class LidarOdometry(Module):
         with self._lock:
             k = self._kiss
             prior = self._prior_delta()
-            frame = k.preprocessor.preprocess(thick, np.zeros(len(thick)), prior)
+            frame = k.preprocessor.preprocess(thick, np.tile(sweep_times(pts), 3) if self.deskew else np.zeros(len(thick)), prior)
             source, frame_down = k.voxelize(frame)
             sigma = k.adaptive_threshold.get_threshold()
             initial_guess = np.asarray(k.last_pose) @ prior
