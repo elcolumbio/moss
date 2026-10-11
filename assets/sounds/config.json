@@ -1,0 +1,12 @@
+{
+  "volume": 0.65,
+  "global_gap_s": 2.0,
+  "mute": false,
+  "personality": false,
+  "backend": "auto",
+  "target": null,
+  "queue_limit": 16,
+  "event_id_window_s": 60,
+  "dedup_limit": 512,
+  "events": {}
+}

@@ -34,6 +34,10 @@ Switches (env, read when moss-nav / moss-explore is built; robot_profile.env_on
 parses them: 0, false, no or off = off, any other value = on, unset = the default):
     MOSS_CAMERA=0     no RealSense (default on: colour 640x480 @ 5 fps, JPEG on the bus, plus depth aligned
                       to colour at the same rate, turned into map obstacles by lidar_odometry)
+    MOSS_SOUNDS=0     no sound module (default on when pw-play or paplay is on the PATH: the sound pack
+                      in assets/sounds plays boot_ready, bump_surprise, recovery_success, resume,
+                      mission_complete, battery_low / battery_critical on the stack's events;
+                      MOSS_SOUND_VOLUME 0..1, MOSS_SOUND_SINK = a PulseAudio sink; see moss_dimos/sounds.py)
     MOSS_WRIST=0      no wrist camera (default on: the UVC camera on the arm, 640x480 @ 5 fps,
                       JPEG on the bus as wrist_image; absent device = warning, module skipped)
     MOSS_WRIST_DEV    wrist camera: a /dev/videoN path or an index, instead of the by-id lookup
@@ -447,6 +451,14 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         if serial:
             cam_kwargs["serial_number"] = serial
         parts.append(RealSenseCamera.blueprint(**cam_kwargs))
+    if robot_profile.env_on("MOSS_SOUNDS", True):
+        from moss_dimos.sounds import MossSounds, playback_backend
+        if playback_backend() is None:
+            _logger.warning("MOSS blueprint: no sound playback command on the PATH (pw-play / paplay): "
+                            "the sound module is left out, the rover stays silent")
+        else:
+            sink = os.environ.get("MOSS_SOUND_SINK", "").strip() or None
+            parts.append(MossSounds.blueprint(sink=sink))
     if robot_profile.env_on("MOSS_WRIST", True):
         idx = wrist_camera_index()
         if idx is None:

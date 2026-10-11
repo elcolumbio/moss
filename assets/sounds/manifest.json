@@ -1,0 +1,756 @@
+{
+  "pack": "MOSS robot sounds",
+  "version": "1.0.0",
+  "voice": "Original nonverbal playful 8-bit robot cues, synthesized for MOSS",
+  "format": {
+    "sample_rate": 44100,
+    "channels": 1,
+    "sample_width_bytes": 2
+  },
+  "asset_count": 60,
+  "event_count": 20,
+  "events": {
+    "boot_ready": {
+      "description": "System ready after startup",
+      "category": "system",
+      "priority": 30,
+      "cooldown_s": 15,
+      "enabled": true,
+      "ttl_s": 1.5,
+      "variants": [
+        "boot_ready_01",
+        "boot_ready_02",
+        "boot_ready_03"
+      ]
+    },
+    "hello": {
+      "description": "Explicit user greeting / demo",
+      "category": "personality",
+      "priority": 20,
+      "cooldown_s": 20,
+      "enabled": false,
+      "ttl_s": 1.5,
+      "variants": [
+        "hello_01",
+        "hello_02",
+        "hello_03"
+      ]
+    },
+    "curious": {
+      "description": "Optional exploration personality cue",
+      "category": "personality",
+      "priority": 10,
+      "cooldown_s": 45,
+      "enabled": false,
+      "ttl_s": 1.5,
+      "variants": [
+        "curious_01",
+        "curious_02",
+        "curious_03"
+      ]
+    },
+    "obstacle_noticed": {
+      "description": "Obstacle causes a new avoidance action",
+      "category": "recovery",
+      "priority": 35,
+      "cooldown_s": 12,
+      "enabled": false,
+      "ttl_s": 1.5,
+      "variants": [
+        "obstacle_noticed_01",
+        "obstacle_noticed_02",
+        "obstacle_noticed_03"
+      ]
+    },
+    "bump_surprise": {
+      "description": "Confirmed contact or recovery trigger",
+      "category": "recovery",
+      "priority": 50,
+      "cooldown_s": 8,
+      "enabled": true,
+      "ttl_s": 1.5,
+      "variants": [
+        "bump_surprise_01",
+        "bump_surprise_02",
+        "bump_surprise_03"
+      ]
+    },
+    "repositioning": {
+      "description": "Optional intermediate recovery state",
+      "category": "recovery",
+      "priority": 25,
+      "cooldown_s": 12,
+      "enabled": false,
+      "ttl_s": 1.5,
+      "variants": [
+        "repositioning_01",
+        "repositioning_02",
+        "repositioning_03"
+      ]
+    },
+    "recovery_success": {
+      "description": "Recovery completed and progress resumed",
+      "category": "recovery",
+      "priority": 45,
+      "cooldown_s": 8,
+      "enabled": true,
+      "ttl_s": 1.5,
+      "variants": [
+        "recovery_success_01",
+        "recovery_success_02",
+        "recovery_success_03"
+      ]
+    },
+    "stuck": {
+      "description": "Recovery failed / human intervention requested",
+      "category": "recovery",
+      "priority": 65,
+      "cooldown_s": 20,
+      "enabled": true,
+      "ttl_s": 1.5,
+      "variants": [
+        "stuck_01",
+        "stuck_02",
+        "stuck_03"
+      ]
+    },
+    "resume": {
+      "description": "Explicit resume from pause",
+      "category": "system",
+      "priority": 35,
+      "cooldown_s": 5,
+      "enabled": true,
+      "ttl_s": 1.5,
+      "variants": [
+        "resume_01",
+        "resume_02",
+        "resume_03"
+      ]
+    },
+    "target_spotted": {
+      "description": "New litter target selected",
+      "category": "pickup",
+      "priority": 25,
+      "cooldown_s": 10,
+      "enabled": false,
+      "ttl_s": 1.5,
+      "variants": [
+        "target_spotted_01",
+        "target_spotted_02",
+        "target_spotted_03"
+      ]
+    },
+    "pickup_attempt": {
+      "description": "Optional beginning of one grasp attempt",
+      "category": "pickup",
+      "priority": 25,
+      "cooldown_s": 10,
+      "enabled": false,
+      "ttl_s": 1.5,
+      "variants": [
+        "pickup_attempt_01",
+        "pickup_attempt_02",
+        "pickup_attempt_03"
+      ]
+    },
+    "pickup_success": {
+      "description": "Pickup confirmed, not only commanded",
+      "category": "pickup",
+      "priority": 55,
+      "cooldown_s": 6,
+      "enabled": true,
+      "ttl_s": 1.5,
+      "variants": [
+        "pickup_success_01",
+        "pickup_success_02",
+        "pickup_success_03"
+      ]
+    },
+    "pickup_missed": {
+      "description": "Grasp failure confirmed",
+      "category": "pickup",
+      "priority": 40,
+      "cooldown_s": 10,
+      "enabled": true,
+      "ttl_s": 1.5,
+      "variants": [
+        "pickup_missed_01",
+        "pickup_missed_02",
+        "pickup_missed_03"
+      ]
+    },
+    "bin_drop": {
+      "description": "Confirmed release into bin",
+      "category": "pickup",
+      "priority": 45,
+      "cooldown_s": 6,
+      "enabled": false,
+      "ttl_s": 1.5,
+      "variants": [
+        "bin_drop_01",
+        "bin_drop_02",
+        "bin_drop_03"
+      ]
+    },
+    "mission_complete": {
+      "description": "Task/mission actually completed",
+      "category": "system",
+      "priority": 60,
+      "cooldown_s": 20,
+      "enabled": true,
+      "ttl_s": 1.5,
+      "variants": [
+        "mission_complete_01",
+        "mission_complete_02",
+        "mission_complete_03"
+      ]
+    },
+    "battery_low": {
+      "description": "Battery crossed low threshold with hysteresis",
+      "category": "battery",
+      "priority": 80,
+      "cooldown_s": 90,
+      "enabled": true,
+      "ttl_s": 3.0,
+      "variants": [
+        "battery_low_01",
+        "battery_low_02",
+        "battery_low_03"
+      ]
+    },
+    "battery_critical": {
+      "description": "Battery crossed critical threshold",
+      "category": "battery",
+      "priority": 95,
+      "cooldown_s": 30,
+      "enabled": true,
+      "ttl_s": 3.0,
+      "variants": [
+        "battery_critical_01",
+        "battery_critical_02",
+        "battery_critical_03"
+      ]
+    },
+    "teleop_connected": {
+      "description": "Control session became connected",
+      "category": "connection",
+      "priority": 35,
+      "cooldown_s": 8,
+      "enabled": true,
+      "ttl_s": 1.5,
+      "variants": [
+        "teleop_connected_01",
+        "teleop_connected_02",
+        "teleop_connected_03"
+      ]
+    },
+    "teleop_disconnected": {
+      "description": "Control session became disconnected",
+      "category": "connection",
+      "priority": 75,
+      "cooldown_s": 15,
+      "enabled": true,
+      "ttl_s": 3.0,
+      "variants": [
+        "teleop_disconnected_01",
+        "teleop_disconnected_02",
+        "teleop_disconnected_03"
+      ]
+    },
+    "sleep": {
+      "description": "Going idle or shutting down, if audio is still available",
+      "category": "system",
+      "priority": 30,
+      "cooldown_s": 20,
+      "enabled": false,
+      "ttl_s": 1.5,
+      "variants": [
+        "sleep_01",
+        "sleep_02",
+        "sleep_03"
+      ]
+    }
+  },
+  "assets": {
+    "boot_ready_01": {
+      "path": "boot_ready_01.wav",
+      "event": "boot_ready",
+      "variant": 1,
+      "duration_s": 0.695,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -20.81
+    },
+    "boot_ready_02": {
+      "path": "boot_ready_02.wav",
+      "event": "boot_ready",
+      "variant": 2,
+      "duration_s": 0.67,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -20.85
+    },
+    "boot_ready_03": {
+      "path": "boot_ready_03.wav",
+      "event": "boot_ready",
+      "variant": 3,
+      "duration_s": 0.735,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -20.99
+    },
+    "hello_01": {
+      "path": "hello_01.wav",
+      "event": "hello",
+      "variant": 1,
+      "duration_s": 0.545,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.06
+    },
+    "hello_02": {
+      "path": "hello_02.wav",
+      "event": "hello",
+      "variant": 2,
+      "duration_s": 0.435,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.02
+    },
+    "hello_03": {
+      "path": "hello_03.wav",
+      "event": "hello",
+      "variant": 3,
+      "duration_s": 0.545,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.32
+    },
+    "curious_01": {
+      "path": "curious_01.wav",
+      "event": "curious",
+      "variant": 1,
+      "duration_s": 0.595,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.56
+    },
+    "curious_02": {
+      "path": "curious_02.wav",
+      "event": "curious",
+      "variant": 2,
+      "duration_s": 0.515,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.69
+    },
+    "curious_03": {
+      "path": "curious_03.wav",
+      "event": "curious",
+      "variant": 3,
+      "duration_s": 0.65,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -22.11
+    },
+    "obstacle_noticed_01": {
+      "path": "obstacle_noticed_01.wav",
+      "event": "obstacle_noticed",
+      "variant": 1,
+      "duration_s": 0.37,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.77
+    },
+    "obstacle_noticed_02": {
+      "path": "obstacle_noticed_02.wav",
+      "event": "obstacle_noticed",
+      "variant": 2,
+      "duration_s": 0.38,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.57
+    },
+    "obstacle_noticed_03": {
+      "path": "obstacle_noticed_03.wav",
+      "event": "obstacle_noticed",
+      "variant": 3,
+      "duration_s": 0.39,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.94
+    },
+    "bump_surprise_01": {
+      "path": "bump_surprise_01.wav",
+      "event": "bump_surprise",
+      "variant": 1,
+      "duration_s": 0.51,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.13
+    },
+    "bump_surprise_02": {
+      "path": "bump_surprise_02.wav",
+      "event": "bump_surprise",
+      "variant": 2,
+      "duration_s": 0.54,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.46
+    },
+    "bump_surprise_03": {
+      "path": "bump_surprise_03.wav",
+      "event": "bump_surprise",
+      "variant": 3,
+      "duration_s": 0.425,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.44
+    },
+    "repositioning_01": {
+      "path": "repositioning_01.wav",
+      "event": "repositioning",
+      "variant": 1,
+      "duration_s": 0.63,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.74
+    },
+    "repositioning_02": {
+      "path": "repositioning_02.wav",
+      "event": "repositioning",
+      "variant": 2,
+      "duration_s": 0.575,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.61
+    },
+    "repositioning_03": {
+      "path": "repositioning_03.wav",
+      "event": "repositioning",
+      "variant": 3,
+      "duration_s": 0.625,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.88
+    },
+    "recovery_success_01": {
+      "path": "recovery_success_01.wav",
+      "event": "recovery_success",
+      "variant": 1,
+      "duration_s": 0.455,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -20.94
+    },
+    "recovery_success_02": {
+      "path": "recovery_success_02.wav",
+      "event": "recovery_success",
+      "variant": 2,
+      "duration_s": 0.445,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.2
+    },
+    "recovery_success_03": {
+      "path": "recovery_success_03.wav",
+      "event": "recovery_success",
+      "variant": 3,
+      "duration_s": 0.535,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.3
+    },
+    "stuck_01": {
+      "path": "stuck_01.wav",
+      "event": "stuck",
+      "variant": 1,
+      "duration_s": 0.685,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.18
+    },
+    "stuck_02": {
+      "path": "stuck_02.wav",
+      "event": "stuck",
+      "variant": 2,
+      "duration_s": 0.755,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.44
+    },
+    "stuck_03": {
+      "path": "stuck_03.wav",
+      "event": "stuck",
+      "variant": 3,
+      "duration_s": 0.695,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.25
+    },
+    "resume_01": {
+      "path": "resume_01.wav",
+      "event": "resume",
+      "variant": 1,
+      "duration_s": 0.495,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.32
+    },
+    "resume_02": {
+      "path": "resume_02.wav",
+      "event": "resume",
+      "variant": 2,
+      "duration_s": 0.45,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.0
+    },
+    "resume_03": {
+      "path": "resume_03.wav",
+      "event": "resume",
+      "variant": 3,
+      "duration_s": 0.47,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.27
+    },
+    "target_spotted_01": {
+      "path": "target_spotted_01.wav",
+      "event": "target_spotted",
+      "variant": 1,
+      "duration_s": 0.41,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.49
+    },
+    "target_spotted_02": {
+      "path": "target_spotted_02.wav",
+      "event": "target_spotted",
+      "variant": 2,
+      "duration_s": 0.45,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.65
+    },
+    "target_spotted_03": {
+      "path": "target_spotted_03.wav",
+      "event": "target_spotted",
+      "variant": 3,
+      "duration_s": 0.515,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -22.12
+    },
+    "pickup_attempt_01": {
+      "path": "pickup_attempt_01.wav",
+      "event": "pickup_attempt",
+      "variant": 1,
+      "duration_s": 0.495,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.16
+    },
+    "pickup_attempt_02": {
+      "path": "pickup_attempt_02.wav",
+      "event": "pickup_attempt",
+      "variant": 2,
+      "duration_s": 0.465,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.22
+    },
+    "pickup_attempt_03": {
+      "path": "pickup_attempt_03.wav",
+      "event": "pickup_attempt",
+      "variant": 3,
+      "duration_s": 0.59,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.33
+    },
+    "pickup_success_01": {
+      "path": "pickup_success_01.wav",
+      "event": "pickup_success",
+      "variant": 1,
+      "duration_s": 0.615,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -20.7
+    },
+    "pickup_success_02": {
+      "path": "pickup_success_02.wav",
+      "event": "pickup_success",
+      "variant": 2,
+      "duration_s": 0.635,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.03
+    },
+    "pickup_success_03": {
+      "path": "pickup_success_03.wav",
+      "event": "pickup_success",
+      "variant": 3,
+      "duration_s": 0.645,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.27
+    },
+    "pickup_missed_01": {
+      "path": "pickup_missed_01.wav",
+      "event": "pickup_missed",
+      "variant": 1,
+      "duration_s": 0.555,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.24
+    },
+    "pickup_missed_02": {
+      "path": "pickup_missed_02.wav",
+      "event": "pickup_missed",
+      "variant": 2,
+      "duration_s": 0.62,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.64
+    },
+    "pickup_missed_03": {
+      "path": "pickup_missed_03.wav",
+      "event": "pickup_missed",
+      "variant": 3,
+      "duration_s": 0.635,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.51
+    },
+    "bin_drop_01": {
+      "path": "bin_drop_01.wav",
+      "event": "bin_drop",
+      "variant": 1,
+      "duration_s": 0.435,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -22.0
+    },
+    "bin_drop_02": {
+      "path": "bin_drop_02.wav",
+      "event": "bin_drop",
+      "variant": 2,
+      "duration_s": 0.42,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.24
+    },
+    "bin_drop_03": {
+      "path": "bin_drop_03.wav",
+      "event": "bin_drop",
+      "variant": 3,
+      "duration_s": 0.54,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.74
+    },
+    "mission_complete_01": {
+      "path": "mission_complete_01.wav",
+      "event": "mission_complete",
+      "variant": 1,
+      "duration_s": 0.935,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.06
+    },
+    "mission_complete_02": {
+      "path": "mission_complete_02.wav",
+      "event": "mission_complete",
+      "variant": 2,
+      "duration_s": 0.905,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.11
+    },
+    "mission_complete_03": {
+      "path": "mission_complete_03.wav",
+      "event": "mission_complete",
+      "variant": 3,
+      "duration_s": 0.905,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.27
+    },
+    "battery_low_01": {
+      "path": "battery_low_01.wav",
+      "event": "battery_low",
+      "variant": 1,
+      "duration_s": 0.645,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.05
+    },
+    "battery_low_02": {
+      "path": "battery_low_02.wav",
+      "event": "battery_low",
+      "variant": 2,
+      "duration_s": 0.575,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.45
+    },
+    "battery_low_03": {
+      "path": "battery_low_03.wav",
+      "event": "battery_low",
+      "variant": 3,
+      "duration_s": 0.725,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.65
+    },
+    "battery_critical_01": {
+      "path": "battery_critical_01.wav",
+      "event": "battery_critical",
+      "variant": 1,
+      "duration_s": 0.805,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.77
+    },
+    "battery_critical_02": {
+      "path": "battery_critical_02.wav",
+      "event": "battery_critical",
+      "variant": 2,
+      "duration_s": 0.75,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.81
+    },
+    "battery_critical_03": {
+      "path": "battery_critical_03.wav",
+      "event": "battery_critical",
+      "variant": 3,
+      "duration_s": 0.825,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.68
+    },
+    "teleop_connected_01": {
+      "path": "teleop_connected_01.wav",
+      "event": "teleop_connected",
+      "variant": 1,
+      "duration_s": 0.445,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.57
+    },
+    "teleop_connected_02": {
+      "path": "teleop_connected_02.wav",
+      "event": "teleop_connected",
+      "variant": 2,
+      "duration_s": 0.435,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.09
+    },
+    "teleop_connected_03": {
+      "path": "teleop_connected_03.wav",
+      "event": "teleop_connected",
+      "variant": 3,
+      "duration_s": 0.445,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.45
+    },
+    "teleop_disconnected_01": {
+      "path": "teleop_disconnected_01.wav",
+      "event": "teleop_disconnected",
+      "variant": 1,
+      "duration_s": 0.505,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.48
+    },
+    "teleop_disconnected_02": {
+      "path": "teleop_disconnected_02.wav",
+      "event": "teleop_disconnected",
+      "variant": 2,
+      "duration_s": 0.49,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.28
+    },
+    "teleop_disconnected_03": {
+      "path": "teleop_disconnected_03.wav",
+      "event": "teleop_disconnected",
+      "variant": 3,
+      "duration_s": 0.505,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.49
+    },
+    "sleep_01": {
+      "path": "sleep_01.wav",
+      "event": "sleep",
+      "variant": 1,
+      "duration_s": 0.725,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -20.73
+    },
+    "sleep_02": {
+      "path": "sleep_02.wav",
+      "event": "sleep",
+      "variant": 2,
+      "duration_s": 0.695,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -20.94
+    },
+    "sleep_03": {
+      "path": "sleep_03.wav",
+      "event": "sleep",
+      "variant": 3,
+      "duration_s": 0.805,
+      "peak_dbfs": -12.04,
+      "rms_dbfs": -21.37
+    }
+  }
+}

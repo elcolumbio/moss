@@ -80,6 +80,15 @@ firmware 300 ms after the last drive.
   table top the rover has turned away from keeps its wall until the camera looks
   at that spot again and sees nothing. The knobs are `MOSS_HIT_CAP`,
   `MOSS_FREE_FLOOR` and `MOSS_RAY_MAX_M` (below);
+- the sound module (`moss_dimos/sounds.py`): a pack of short synthesized cues in
+  `assets/sounds` played through the robot user's PulseAudio session (a Bluetooth
+  speaker once connected, the default sink otherwise) on confirmed events only: the
+  stack up, a contact, the tracks moving again after a stall, the order to explore,
+  the end of an exploration, the battery crossing low and critical (with hysteresis).
+  Each cue has a cooldown and the player keeps a gap between cues, so the rover
+  never chatters. `MOSS_SOUNDS=0` leaves it out, `MOSS_SOUND_VOLUME` (0 to 1) and
+  `MOSS_SOUND_SINK` (a PulseAudio sink name) tune it; a stack launched as a system
+  service has no audio session and stays silent;
 - the RealSense colour stream at 640x480, 5 fps, carried as JPEG on the bus, and its
   depth aligned to colour at the same rate, which `lidar_odometry` turns into obstacle
   points from 12 cm (the camera's close-range depth) to 3 m, drawn in amber on the map
