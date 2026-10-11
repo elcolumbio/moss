@@ -103,8 +103,8 @@ REPLY_TIMEOUT_S = 0.150        # the firmware answers within a loop tick (ms)
 CONNECT_PROBE_S = 1.000        # the first "status" of a process: reader thread start + first parse on a Jetson take longer than a reply tick
 TELEMETRY_FRESH_S = 1.0        # mode read from telemetry older than this = unknown
 MOCK_BUS_ENV = "MOSS_MOCK_BUS"
-STALL_S = 1.0                  # a track commanded for this long whose encoder did not move is STALLED: the
-                               # rover is pushing against something (no bumper on MOSS: the encoders are the bumper)
+STALL_S = 1.0                  # every commanded track frozen for this long = STALLED: the rover is pushing against
+                               # something (no bumper on MOSS: the encoders are the bumper)
 STALL_MIN_TICKS = 20           # ticks over STALL_S that count as motion (a track at 40 % makes ~800 per second)
 STALL_WINDOW_S = 2.0           # how long the tick history is kept for the comparison
 PULSE_MS_DEFAULT = 0           # MOSS_PULSE_MS: period of the full-duty time slicing, 0 = off (then MOSS_MIN_PCT applies).
@@ -701,7 +701,12 @@ class MossBaseAdapter:
         want_l, want_r = self._want
         stalled_l = want_l != 0 and abs(l_new - l_old) < STALL_MIN_TICKS
         stalled_r = want_r != 0 and abs(r_new - r_old) < STALL_MIN_TICKS
-        if not (stalled_l or stalled_r):
+        commanded = [stalled for want, stalled in ((want_l, stalled_l), (want_r, stalled_r)) if want != 0]
+        # a stall is the rover pushing against something: EVERY commanded track frozen. One
+        # track frozen while the other turns is an arc whose inner track sits under its
+        # friction floor, or a tread dragging on a step: the rover still moves, the planner's
+        # own stuck detection owns that case, and a false bump would back it off for nothing.
+        if not commanded or not all(commanded):
             return False
         self._send("stop")
         self._stall_count += 1
