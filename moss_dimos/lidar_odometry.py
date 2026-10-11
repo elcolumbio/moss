@@ -146,6 +146,7 @@ class LidarOdometry(Module):
         # dimOS pickles module instances into their worker: no lock, no native
         # object before start().
         self._kiss: Any = None
+        self._dropped = 0                  # revolutions lost to a registration that failed twice
         self._lock: Any = None
         self._n = 0
         self._last_log = 0.0
@@ -181,6 +182,7 @@ class LidarOdometry(Module):
         cfg.adaptive_threshold.min_motion_th = 0.02
         self._kiss = KissICP(cfg)
         self._lock = threading.Lock()
+        self._warm_up()
         logger.info(f"lidar odometry up (kiss-icp, voxel {self.voxel_size_m} m, range "
                     f"{self.min_range_m}-{self.max_range_m} m, prior: gyro={self.use_gyro_prior} "
                     f"axis {self.gyro_axis}, wheels NEVER) -> {self.world_frame}")
@@ -188,6 +190,39 @@ class LidarOdometry(Module):
     @rpc
     def stop(self) -> None:
         super().stop()
+
+    # ── registration, with the first-call failure absorbed ──────────────
+    def _warm_up(self) -> None:
+        """One registration on a synthetic ring before the first scan. On this
+        board the first call into kiss-icp's registration can fail once with
+        'pthread_create has failed: Invalid argument' (its thread pool starting
+        up); the next call works. Taking that failure here keeps the first real
+        revolution and keeps the error out of the run log. The map is not
+        touched (registration only)."""
+        k = self._kiss
+        ang = np.linspace(0.0, 2.0 * math.pi, 64, endpoint=False)
+        ring = np.stack([2.0 * np.cos(ang), 2.0 * np.sin(ang), np.zeros_like(ang)], 1)
+        try:
+            source, _ = k.voxelize(ring)
+            sigma = k.adaptive_threshold.get_threshold()
+            self._register(k, source, np.eye(4), sigma, where="warm-up")
+        except Exception as exc:  # noqa: BLE001 - a warm-up never stops the module
+            logger.warning(f"lidar odometry: registration warm-up skipped ({type(exc).__name__}: {exc})")
+
+    @staticmethod
+    def _register(k, source, initial_guess, sigma, where: str = "scan"):
+        """align_points_to_map with ONE retry: a RuntimeError from the first
+        attempt (thread pool start-up) is logged and the call repeated; a second
+        failure propagates to the caller, which drops that revolution."""
+        try:
+            return k.registration.align_points_to_map(
+                points=source, voxel_map=k.local_map, initial_guess=initial_guess,
+                max_correspondance_distance=3 * sigma, kernel=sigma)
+        except RuntimeError as exc:
+            logger.warning(f"lidar odometry: registration failed once at {where} ({exc}) - retrying")
+            return k.registration.align_points_to_map(
+                points=source, voxel_map=k.local_map, initial_guess=initial_guess,
+                max_correspondance_distance=3 * sigma, kernel=sigma)
 
     # ── priors ─────────────────────────────────────────────────────────
     async def handle_imu(self, msg: Imu) -> None:
@@ -329,9 +364,13 @@ class LidarOdometry(Module):
             source, frame_down = k.voxelize(frame)
             sigma = k.adaptive_threshold.get_threshold()
             initial_guess = np.asarray(k.last_pose) @ prior
-            new_pose = k.registration.align_points_to_map(
-                points=source, voxel_map=k.local_map, initial_guess=initial_guess,
-                max_correspondance_distance=3 * sigma, kernel=sigma)
+            try:
+                new_pose = self._register(k, source, initial_guess, sigma)
+            except RuntimeError as exc:
+                self._dropped += 1
+                logger.warning(f"lidar odometry: registration failed twice, revolution dropped ({exc}); "
+                               f"dropped so far: {self._dropped}")
+                return
             corr = np.linalg.inv(initial_guess) @ np.asarray(new_pose)
             k.adaptive_threshold.update_model_deviation(corr)
             k.local_map.update(frame_down, new_pose)

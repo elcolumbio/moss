@@ -673,8 +673,11 @@ if shutil.which("systemd-analyze"):
                         cwd=ud, capture_output=True, text=True, timeout=60)
     (ud / "broken.service").write_text(lb.read_text().replace("Type=oneshot", "Type=oneshoot"))
     vb = subprocess.run(["systemd-analyze", "verify", "./broken.service"], cwd=ud, capture_output=True, text=True, timeout=60)
+    # only lines about OUR units count: systemd-analyze also warns about unrelated
+    # system units it loads (a newer key in an older systemd, for example)
+    ours = [l for l in (va.stderr + va.stdout).split("\n") if "lcm-loopback.service" in l or "moss-cockpit.service" in l]
     check("systemd-analyze verify: both units (the cockpit filled by the install sed) pass",
-          va.returncode == 0 and not va.stderr.strip(), " / ".join((va.stderr or va.stdout).split("\n"))[:200])
+          va.returncode == 0 and not ours, " / ".join(ours)[:200])
     check("... control: the same check refuses a broken copy", vb.returncode != 0,
           " / ".join((vb.stderr or "").strip().split("\n"))[-120:])
 else:

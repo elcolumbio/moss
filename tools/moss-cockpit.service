@@ -31,6 +31,10 @@ RestartSec=3
 # in this unit's cgroup: a cockpit restart, crash or stop must end the cockpit
 # only, never a flight it started. Stop a flight with tools/moss-fly.sh stop.
 KillMode=process
+# The same stack limit as a login shell (8 MB). A stack launched from the page inherits
+# this unit's limits; with an unlimited stack, thread pools size their stacks from it and
+# thread creation can fail with EINVAL.
+LimitSTACK=8M
 
 [Install]
 WantedBy=multi-user.target

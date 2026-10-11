@@ -95,9 +95,19 @@ class LocalMap:
 
 
 class Registration:
+    """The registration "finds" exactly the prediction: the published pose is
+    then the prior the bench commanded. `fail_first` makes the next N calls
+    raise the board's thread-pool error, as the real one does once at start."""
+
+    def __init__(self):
+        self.calls = 0
+        self.fail_first = 0
+
     def align_points_to_map(self, points, voxel_map, initial_guess, max_correspondance_distance, kernel):
-        # the registration "finds" exactly the prediction: the published pose
-        # is then the prior the bench commanded
+        self.calls += 1
+        if self.fail_first > 0:
+            self.fail_first -= 1
+            raise RuntimeError("pthread_create has failed: Invalid argument")
         return np.asarray(initial_guess)
 
 
@@ -354,6 +364,35 @@ for m in REAL:
 gc.collect()
 
 print()
+print("F. the first registration call fails once (thread pool start-up): absorbed, never a lost run")
+reg_fail = Registration(); reg_fail.fail_first = 1
+kiss6 = Kiss(); kiss6.registration = reg_fail
+_kiss_mod.KissICP = lambda cfg: kiss6
+o6 = LO.LidarOdometry(use_gyro_prior=False)
+try:
+    o6.log_every_s = 1e9
+    o6.odom, o6.lidar, o6.tf, o6.camera_floor = Sink(), Sink(), Sink(), Sink()
+    _ms = LO.Module.start
+    LO.Module.start = lambda self: None          # the dimOS runtime is not under test here
+    try:
+        o6.start()
+    finally:
+        LO.Module.start = _ms
+    check(o6._kiss is kiss6 and reg_fail.calls == 2, f"start(): the warm-up failed once and was retried ({reg_fail.calls} registration calls)")
+    check(kiss6.local_map.updates == 0, "the warm-up touched no map")
+    _a = np.linspace(0.0, 2.0 * math.pi, 64, endpoint=False)
+    ring6 = np.stack([2.0 * np.cos(_a), 2.0 * np.sin(_a), np.zeros_like(_a)], 1)
+    reg_fail.fail_first = 1
+    drive(o6, 1, ring6)
+    check(len(o6.odom.msgs) == 1 and reg_fail.calls == 4, f"a scan whose first registration fails is retried and published ({len(o6.odom.msgs)} odom, {reg_fail.calls} calls)")
+    reg_fail.fail_first = 2
+    drive(o6, 1, ring6)
+    check(len(o6.odom.msgs) == 1 and o6._dropped == 1, f"two failures in a row: the revolution is dropped, nothing escapes (dropped {o6._dropped})")
+    drive(o6, 1, ring6)
+    check(len(o6.odom.msgs) == 2, "the next revolution publishes again")
+finally:
+    _kiss_mod.KissICP = lambda cfg: Kiss(cfg=cfg)
+
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")
 sys.exit(1 if KO else 0)
