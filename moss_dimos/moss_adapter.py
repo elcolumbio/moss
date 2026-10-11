@@ -60,11 +60,11 @@ Calibration (env, all optional):
                         (default robot_profile.MOSS.track_m, 0.266 CAD, placeholder)
     MOSS_MPS_AT_LIMIT   floor speed in m/s at MOSS_MAX_PCT, measured
     MOSS_MAX_PCT        percent ceiling, <= the firmware's 100
-    MOSS_MIN_PCT        static-friction floor in percent (0 = off, default 100: the tracks only turn at full duty): a non-zero track command below it is raised to it, sign kept
+    MOSS_MIN_PCT        static-friction floor in percent (0 = off, default 40: measured, both tracks turn from 40 %): a non-zero track command below it is raised to it, sign kept
     MOSS_TICKS_PER_M    encoder ticks per metre of track travel, measured
     MOSS_TURN_GAIN      turn authority vs forward speed (teleop_speeds), 0.5..4, default 2
     MOSS_RAMP_MS        "UP DOWN" sent as 'ramp UP DOWN' after connect (while pulsing, unset = "1 1")
-    MOSS_PULSE_MS       period of the full-duty time slicing (default 500, 0 = off): a percent becomes a duty of
+    MOSS_PULSE_MS       period of the full-duty time slicing (default 0 = off; 500 = five slices of 100 ms): a percent becomes a duty of
                         full-power slices over the period (pulse_tracks), the way MOSS's tracks can be steered
     MOSS_PULSE_MIN_PCT  duty floor of a non-zero track while pulsing (default 40)
     MOSS_PIVOT_PCT      every pivot (tracks in opposite directions) is sent at this percent, both tracks (default 100, 0 = as asked)
@@ -102,7 +102,9 @@ REPLY_TIMEOUT_S = 0.150        # the firmware answers within a loop tick (ms)
 CONNECT_PROBE_S = 1.000        # the first "status" of a process: reader thread start + first parse on a Jetson take longer than a reply tick
 TELEMETRY_FRESH_S = 1.0        # mode read from telemetry older than this = unknown
 MOCK_BUS_ENV = "MOSS_MOCK_BUS"
-PULSE_MS_DEFAULT = 500         # MOSS_PULSE_MS: period of the full-duty time slicing, 0 = off (then MOSS_MIN_PCT applies)
+PULSE_MS_DEFAULT = 0           # MOSS_PULSE_MS: period of the full-duty time slicing, 0 = off (then MOSS_MIN_PCT applies).
+                               # Off on MOSS: with the drive wheels seated on their axles the tracks turn continuously
+                               # from 40 % (floor probe), so slices are only for a base that moves at full duty alone
 PULSE_MS_MAX = 2000
 PULSE_RAMP = "1 1"             # firmware ramp while pulsing: 1 ms per %, so a 100 ms slice reaches full duty
 PIVOT_PCT_DEFAULT = 100        # MOSS_PIVOT_PCT: a pivot (tracks in opposite directions) is sent at this percent on both
@@ -206,7 +208,7 @@ class MossGeometry:
     mps_at_limit: float = 0.45     # PLACEHOLDER: floor speed at 100 % (JGB37-520 178 rpm on a ~60 mm sprocket ~ 0.5 m/s), to measure
     max_pct: int = FIRMWARE_MAX_PCT
     ticks_per_m: float | None = None   # None = no encoder calibration yet
-    min_pct: int = 100   # static-friction floor: a non-zero track command below this percent is raised to it (sign kept). 0 = off. MOSS_MIN_PCT. 100 on MOSS: the geared motors behind the MDD3A only turn at full duty, so every non-zero command is a full-duty command (the planner's 0.2 rad/s pivots map to ~8 %, which does not move the tracks)
+    min_pct: int = 40    # static-friction floor: a non-zero track command below this percent is raised to it (sign kept). 0 = off. MOSS_MIN_PCT. 40 on MOSS: the floor probe (straight, continuous duty, wheels seated) turns both tracks from 40 %, barely at 20 %
 
     @classmethod
     def from_env(cls) -> "MossGeometry":

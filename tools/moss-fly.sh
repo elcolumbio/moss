@@ -62,9 +62,9 @@ export GLIBC_TUNABLES=glibc.rtld.optional_static_tls=4194304   # larger static T
 BUS="${DIMOS_TRANSPORT:-${TRANSPORT:-lcm}}"
 export DIMOS_TRANSPORT="$BUS" TRANSPORT="$BUS"
 export MOSS_MAX_PCT="${MOSS_MAX_PCT:-100}"    # firmware limit 100; lower it for a cautious lap
-# firmware ramp, ms per % up/down: 1 1 while the base adapter pulses (a 100 ms slice must
-# reach full duty, MOSS_PULSE_MS, 500 by default), 5 5 when pulsing is off (MOSS_PULSE_MS=0)
-if [ "${MOSS_PULSE_MS:-500}" != "0" ]; then export MOSS_RAMP_MS="${MOSS_RAMP_MS:-1 1}"; else export MOSS_RAMP_MS="${MOSS_RAMP_MS:-5 5}"; fi
+# firmware ramp, ms per % up/down: 5 5 (pulsing off, the default), 1 1 while the base adapter
+# pulses (MOSS_PULSE_MS=<ms>: a 100 ms slice must reach full duty)
+if [ "${MOSS_PULSE_MS:-0}" != "0" ]; then export MOSS_RAMP_MS="${MOSS_RAMP_MS:-1 1}"; else export MOSS_RAMP_MS="${MOSS_RAMP_MS:-5 5}"; fi
 export MOSS_STATE_DIR="${MOSS_STATE_DIR:-$HOME/.local/state/moss}"
 export MOSS_RECORD="${MOSS_RECORD:-1}"
 export MOSS_CAMERA="${MOSS_CAMERA:-1}"
