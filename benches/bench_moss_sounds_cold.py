@@ -40,6 +40,13 @@ check(len(manifest["assets"]) == 60 and not missing, f"60 assets named and prese
 check(len(manifest["events"]) == 20 and all(len(e["variants"]) == 3 for e in manifest["events"].values()),
       "20 event families, three variants each")
 check("date" not in manifest and "hardware_context" not in manifest, "the manifest carries no date and no workshop context")
+import wave as _wave  # noqa: E402
+with _wave.open(str(ASSETS / "keep_awake.wav"), "rb") as _w:
+    check(_w.getnchannels() == 1 and _w.getframerate() == 44100 and 0.4 < _w.getnframes() / 44100 < 1.0
+          and max(abs(x) for x in __import__("struct").unpack("<" + "h" * _w.getnframes(), _w.readframes(_w.getnframes()))) == 0,
+          "keep_awake.wav: mono 44.1 kHz, about half a second, all zeros (silent)")
+from moss_dimos.sounds import KEEP_AWAKE_S  # noqa: E402
+check(KEEP_AWAKE_S == 240.0, "the keep-awake breath is every 4 min")
 cmd = playback_command(ASSETS / "boot_ready_01.wav", backend="paplay", target="bt_sink", volume=0.5) if __import__("shutil").which("paplay") else None
 check(cmd is None or (cmd[0] == "paplay" and "--device=bt_sink" in cmd and cmd[-1].endswith("boot_ready_01.wav")),
       f"paplay command names the sink and the file: {cmd}")

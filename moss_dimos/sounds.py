@@ -32,6 +32,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -57,6 +59,8 @@ BATTERY_CRITICAL_MV = 10400     # the flight check refuses to launch below 10.8 
 BATTERY_SAMPLES = 6             # consecutive telemetry lines (3 s at 2 Hz) below a threshold before it counts
 RECOVERY_WINDOW_S = 20.0        # a stall followed by motion inside this window = a recovery
 RECOVERY_MIN_TICKS = 100        # encoder ticks that count as "moving again" after a stall
+KEEP_AWAKE_S = 240.0            # a Bluetooth speaker sleeps after minutes of silence and the cues are rare: a silent
+                                # 0.6 s clip every KEEP_AWAKE_S keeps it on (assets/sounds/keep_awake.wav); 0 = off
 
 
 def sound_volume(default: float, env: dict | None = None) -> float:
@@ -199,9 +203,36 @@ class MossSounds(Module):
         logger.info(f"MOSS sounds: up, {len(self._player.rules)} event families, backend {backend}, "
                     f"sink {self._sink or 'default'}, volume {self._player.volume:.2f}, assets {self._assets_dir}")
         self._play(["boot_ready"])
+        self._keep_awake(backend)
+
+    def _keep_awake(self, backend: str) -> None:
+        """A silent clip every KEEP_AWAKE_S on the same output, so a Bluetooth speaker in the
+        bin never goes to sleep between two cues (it did on the floor, and the cues after
+        that went nowhere). A daemon thread, stopped with the module."""
+        clip = self._assets_dir / "keep_awake.wav"
+        if KEEP_AWAKE_S <= 0 or not clip.is_file():
+            return
+        self._awake_stop = threading.Event()
+
+        def loop() -> None:
+            from moss_dimos.sound_pack.player import playback_command
+            while not self._awake_stop.wait(KEEP_AWAKE_S):
+                if self._player is None:
+                    return
+                try:
+                    cmd = playback_command(clip, backend, self._sink, 0.05)
+                    subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, timeout=10)
+                except Exception as exc:  # noqa: BLE001 - a missed breath is not an error
+                    logger.warning(f"MOSS sounds: keep-awake clip failed ({type(exc).__name__}: {exc})")
+
+        threading.Thread(target=loop, name="moss-sounds-keep-awake", daemon=True).start()
 
     @rpc
     def stop(self) -> None:
+        stop_evt = getattr(self, "_awake_stop", None)
+        if stop_evt is not None:
+            stop_evt.set()
         if self._player is not None:
             try:
                 self._player.close()
