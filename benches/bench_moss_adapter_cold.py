@@ -48,6 +48,7 @@ def settle(s=0.06):
 
 
 # ── 0. gamepad scale: full stick = the base's limit, not the generic 0.6 m/s ──
+os.environ["MOSS_PULSE_MS"] = "0"   # sections 0-12: the plain mapping and keepalive; pulsing has its own section
 print("0. teleop_speeds / teleop_envelope (track 0.30 m, 0.45 m/s at 100 %, turn gain 2)")
 os.environ.pop("MOSS_TURN_GAIN", None)
 G100 = MossGeometry(track_m=0.30, mps_at_limit=0.45, max_pct=100, min_pct=0)   # floor off: the mapping itself
@@ -419,6 +420,56 @@ for _name in ("moss_adapter.py", "moss_mock.py"):
     check(_hits == [], f"{_name}: no dated journal comment (day/month, clock stamp, ISO date): hits {_hits}")
 
 print()
+
+# ── 13. full-duty pulses: a percent becomes a duty of 100 % slices ─────
+print("13. pulse_tracks + the adapter pulsing on the fake (MOSS_PULSE_MS=500 -> 5 slices of 100 ms)")
+from moss_dimos.moss_adapter import pulse_tracks, pulse_ms, PULSE_RAMP  # noqa: E402
+check([pulse_tracks((100, 100), k, 5) for k in range(5)] == [(100, 100)] * 5, "100 % -> on every slice")
+check([pulse_tracks((20, 20), k, 5) for k in range(5)] == [(100, 100), (0, 0), (0, 0), (0, 0), (0, 0)], "20 % -> one slice of 100 % then four off")
+check([pulse_tracks((50, -50), k, 5) for k in range(5)] == [(100, -100)] * 3 + [(0, 0)] * 2, "50 % -> three slices on (ceil of 2.5), sign kept per track")
+check([pulse_tracks((1, 0), k, 5) for k in range(5)] == [(100, 0), (0, 0), (0, 0), (0, 0), (0, 0)], "1 % -> still one slice on; a 0 track stays off")
+check(pulse_tracks((0, 0), 3, 5) == (0, 0), "(0, 0) -> (0, 0): a stop is never pulsed")
+check(pulse_tracks((60, 40), 7, 5) == (100, 0), "tick 7 of a 5-slice period = slice 2: 60 % on (3 slices), 40 % off (2 slices)")
+check(pulse_tracks((30, 30), 2, 0) == (30, 30), "n_ticks 0 -> pass-through (pulsing off)")
+check(pulse_tracks((80, 80), 0, 5, full=25) == (25, 25), "full = the geometry's ceiling (25 here)")
+os.environ["MOSS_PULSE_MS"] = "500"
+check(pulse_ms() == 500, "MOSS_PULSE_MS=500 -> 500")
+os.environ["MOSS_PULSE_MS"] = "9000"
+check(pulse_ms() == 2000, "MOSS_PULSE_MS above the cap -> 2000")
+os.environ.pop("MOSS_PULSE_MS", None)
+check(pulse_ms() == 500, "MOSS_PULSE_MS unset -> 500 (the MOSS default: pulsing on)")
+os.environ["MOSS_PULSE_MS"] = "500"
+os.environ.pop("MOSS_RAMP_MS", None)
+fw7 = FakeMossFirmware()
+f7 = lambda: fw7  # noqa: E731
+f7.is_mock = True
+pa = MossBaseAdapter(dof=3, port_factory=f7, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100))
+check(pa._pulse_n == 5 and pa._map_geometry.min_pct == 0, f"adapter: 5 slices, mapping floor off while pulsing ({pa._pulse_n}, {pa._map_geometry.min_pct})")
+check(pa.connect() and pa._ramp == PULSE_RAMP, f"connect picks 'ramp {PULSE_RAMP}' when MOSS_RAMP_MS is unset (sent on a real board, not on the fake): {pa._ramp!r}")
+check(pa.write_enable(True), "armed")
+n0 = len(fw7.commands)
+check(pa.write_velocities([0.03, 0.0, 0.0]), "vx 0.03 m/s (20 %) accepted")
+settle(0.62)
+pa.write_stop()
+drives = [c for c in fw7.commands[n0:] if c.startswith("drive")]
+on = sum(1 for c in drives if c == "drive 100 100")
+off = sum(1 for c in drives if c == "drive 0 0")
+check(on >= 1 and off >= 3 and on + off == len(drives) and set(drives) <= {"drive 100 100", "drive 0 0"},
+      f"on the wire: full-duty slices and off slices only, 20 % = {on} on / {off} off over {len(drives)} ticks: {drives[:8]}")
+check(pa._want == (0, 0) and fw7.mode == OFF, "stop clears the duty and the fake is OFF")
+check(pa.write_velocities([0.15, 0.0, 0.0]) and fw7.commands[-1] == "drive 100 100", "100 % -> every slice on (first sent now)")
+pa.write_stop()
+pa.disconnect()
+os.environ["MOSS_PULSE_MS"] = "0"
+fw8 = FakeMossFirmware()
+f8 = lambda: fw8  # noqa: E731
+f8.is_mock = True
+pb = MossBaseAdapter(dof=3, port_factory=f8, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100))
+check(pb._pulse_n == 0 and pb._map_geometry.min_pct == 100, "MOSS_PULSE_MS=0 -> no pulsing, the 100 % floor applies instead")
+check(pb.connect() and not any(c.startswith("ramp") for c in fw8.commands), "...and no ramp line without MOSS_RAMP_MS")
+pb.disconnect()
+os.environ.pop("MOSS_PULSE_MS", None)
+
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")
 sys.exit(1 if KO else 0)

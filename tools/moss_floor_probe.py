@@ -33,7 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from moss_dimos.moss_adapter import MossBaseAdapter, MossGeometry  # noqa: E402
+from moss_dimos.moss_adapter import KEEPALIVE_S, MossBaseAdapter, MossGeometry  # noqa: E402
 
 STACK_RE = r"[b]in/dimos( [^ ]+)* run( |$)"
 TELEMETRY_WAIT_S = 3.0
@@ -161,6 +161,11 @@ def main(argv=None) -> int:
         rows = run(adapter, pcts, a.hold, a.settle, a.min_ticks, stop_at_first=not a.all)
     finally:
         adapter.disconnect()
+    if getattr(adapter, "_pulse_n", 0):
+        print(f"pulse mode ({adapter._pulse_n} slices of {KEEPALIVE_S * 1000:.0f} ms, ramp {adapter._ramp or 'firmware default'}): "
+              "the percent is a duty of full-power slices, the table above is the ticks per step; "
+              "MOSS_MIN_PCT does not apply (MOSS_PULSE_MS=0 to measure a floor instead)")
+        return 0 if rows else 1
     floor = judge(rows, a.min_ticks)
     if floor is None:
         print(f"no step up to {pcts[-1] if pcts else '-'} % turned both tracks: raise --to, or check the drive line")

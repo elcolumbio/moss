@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+os.environ["MOSS_PULSE_MS"] = "0"   # this bench measures a FLOOR: the adapter must send the percent itself, not full-duty slices
 from moss_dimos import moss_mock  # noqa: E402
 from moss_dimos.moss_adapter import MossBaseAdapter, MossGeometry  # noqa: E402
 

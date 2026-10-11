@@ -117,21 +117,28 @@ everywhere. The values are PLACEHOLDERS until measured on the robot:
 | track centre distance | 0.266 m (CAD) | `MOSS_TRACK_M` |
 | nose camera position on the base | 0.156, 0, 0.075 m (CAD) | `MOSS_CAMERA_XYZ_M="0.156 0 0.075"` |
 | nose camera pitch | 0 deg | `MOSS_CAMERA_PITCH_DEG` |
-| static-friction floor of the base adapter (percent) | 100 (full duty only) | `MOSS_MIN_PCT` |
+| full-duty pulse period of the base adapter (ms, 0 = off) | 500 | `MOSS_PULSE_MS` |
+| static-friction floor of the base adapter when pulsing is off (percent) | 100 | `MOSS_MIN_PCT` |
 
 The speed knobs are `MOSS_MAX_PCT` (the PWM cap of the base adapter, 100 by
 default) and `MOSS_NERF_SPEED` (the launcher's `--nerf-speed` for the planner,
 0.5 by default).
 
-`MOSS_MIN_PCT` is the static-friction floor: a non-zero track command below it
-is raised to it, sign kept (a command that rounds to zero stays a stop). On
-MOSS it is 100 by default: the geared motors behind the MDD3A only turn the
-tracks at full duty on the floor, so every non-zero command becomes a full-duty
-command (straight, pivot left, pivot right, stop) and the planner's slowest
-pivot (0.2 rad/s, about 6 % PWM on its own) moves the rover instead of leaving
-it to log `Robot is stuck. Replanning.` until the goal times out. A base whose
-tracks turn below full duty lowers it: `MOSS_MIN_PCT=<percent>` on the launch
-line, measured with `tools/moss_floor_probe.py --go` (stack down).
+The tracks of MOSS only turn at full duty on the floor (the geared motors
+behind the MDD3A), so the base adapter delivers every non-zero command as
+full-duty PULSES: a percent becomes a duty over a period of `MOSS_PULSE_MS`
+(500 by default, five slices of 100 ms): 40 % = two slices at full power then
+three off, 100 % = always on, any non-zero command = at least one slice. The
+planner's slowest commands move the rover, and a turn is still a turn. The
+firmware ramp follows: while pulsing the launcher defaults `MOSS_RAMP_MS` to
+`1 1` (a slice reaches full duty in 100 ms); a slower fall (`"1 5"`) releases
+instead of braking between slices, a longer period (`1000`) makes one cycle per
+second. `tools/moss-pulse-test.sh sec|moyen|doux` drives three bursts with a
+preset so the profile can be seen on the floor, and prints the two variables to
+put on the launch line. `MOSS_PULSE_MS=0` turns pulsing off; then
+`MOSS_MIN_PCT` (100 by default) raises every non-zero command to the floor
+instead, and `tools/moss_floor_probe.py --go` measures a floor for a base whose
+tracks turn below full duty.
 
 The lidar's floor projection is `base_link`, the rover's rotation centre: mount
 the C1 there, or the footprint and the pivot clearance are off by its offset.

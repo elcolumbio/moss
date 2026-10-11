@@ -25,8 +25,8 @@ limit), so the stick stays proportional across its travel. With the default
 beyond it; a gain of 1 only ever stops it. Releasing R1 sends 0.5 s of zeros,
 then silence (`MOSS_BRAKE_S`, 0 to 1.0 s). Unloaded, the motors start between
 5 % and 15 % duty; on the floor they only turn at full duty, so the base
-adapter raises every non-zero command to 100 % (`MOSS_MIN_PCT`, see
-[cockpit.md](cockpit.md)).
+adapter delivers every non-zero command as full-duty pulses (`MOSS_PULSE_MS`,
+see [cockpit.md](cockpit.md)).
 
 This is the dimOS path. The bench tool in `moss_pi/` drives the same firmware
 without dimOS and reads raw SDL button 4 as its deadman: L1 on an Xbox-layout
@@ -86,7 +86,7 @@ Until `MOSS_TICKS_PER_M` is set, `read_odometry()` returns `None` and
 rather than a pose made of guesses. Set it and both come from the encoders.
 
 The other base knobs: `MOSS_MAX_PCT` (percent ceiling, 100 by default, never
-above the firmware's 100), `MOSS_MIN_PCT` (static-friction floor, 100 by default, 0 = off),
+above the firmware's 100), `MOSS_PULSE_MS` (full-duty pulse period, 500 by default, 0 = off), `MOSS_MIN_PCT` (static-friction floor when pulsing is off, 100 by default),
 `MOSS_RAMP_MS` (`"UP DOWN"`, sent as `ramp UP DOWN` at connect), `MOSS_PORT`
 (the serial port; by default the QT Py's `/dev/serial/by-id` path; only a
 `dimos run` by hand reads it from the shell, `tools/moss-teleop.sh` and

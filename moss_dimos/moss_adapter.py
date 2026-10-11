@@ -63,7 +63,9 @@ Calibration (env, all optional):
     MOSS_MIN_PCT        static-friction floor in percent (0 = off, default 100: the tracks only turn at full duty): a non-zero track command below it is raised to it, sign kept
     MOSS_TICKS_PER_M    encoder ticks per metre of track travel, measured
     MOSS_TURN_GAIN      turn authority vs forward speed (teleop_speeds), 0.5..4, default 2
-    MOSS_RAMP_MS        "UP DOWN" sent as 'ramp UP DOWN' after connect
+    MOSS_RAMP_MS        "UP DOWN" sent as 'ramp UP DOWN' after connect (while pulsing, unset = "1 1")
+    MOSS_PULSE_MS       period of the full-duty time slicing (default 500, 0 = off): a percent becomes a duty of
+                        full-power slices over the period (pulse_tracks), the way MOSS's tracks can be steered
     MOSS_MOCK_BUS       any value but 0/false/no/off: drive the fake firmware (no motors)
 """
 from __future__ import annotations
@@ -74,7 +76,7 @@ import math
 import os
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from moss_dimos import robot_profile
 
@@ -98,6 +100,36 @@ REPLY_TIMEOUT_S = 0.150        # the firmware answers within a loop tick (ms)
 CONNECT_PROBE_S = 1.000        # the first "status" of a process: reader thread start + first parse on a Jetson take longer than a reply tick
 TELEMETRY_FRESH_S = 1.0        # mode read from telemetry older than this = unknown
 MOCK_BUS_ENV = "MOSS_MOCK_BUS"
+PULSE_MS_DEFAULT = 500         # MOSS_PULSE_MS: period of the full-duty time slicing, 0 = off (then MOSS_MIN_PCT applies)
+PULSE_MS_MAX = 2000
+PULSE_RAMP = "1 1"             # firmware ramp while pulsing: 1 ms per %, so a 100 ms slice reaches full duty
+
+
+def pulse_ms() -> int:
+    """MOSS_PULSE_MS clamped to 0..PULSE_MS_MAX; 0 = no pulsing."""
+    return max(0, min(PULSE_MS_MAX, int(_env_float("MOSS_PULSE_MS", PULSE_MS_DEFAULT))))
+
+
+def pulse_tracks(want: tuple[int, int], tick: int, n_ticks: int, full: int = 100) -> tuple[int, int]:
+    """Time-slice a (left, right) percent pair into full-duty pulses.
+
+    The tracks of MOSS only turn at full duty (the geared motors behind the
+    MDD3A), so a percent is delivered as a DUTY over a period of n_ticks
+    keepalive ticks: a track at p % is ON (+-full) for ceil(|p| * n / 100)
+    ticks from the start of the period and OFF (0) for the rest. Any non-zero
+    p is on for at least one tick; |p| >= 100 is always on; 0 is always off.
+    Both tracks share the period, so a straight command pulses both together."""
+    if n_ticks <= 0:
+        return want
+    k = tick % n_ticks
+    out = []
+    for p in want:
+        if p == 0:
+            out.append(0)
+            continue
+        on = math.ceil(min(100, abs(p)) * n_ticks / 100 - 1e-9)
+        out.append((full if p > 0 else -full) if k < on else 0)
+    return out[0], out[1]
 
 MODE_OFF, MODE_READY, MODE_DRIVE, MODE_TEST = 0, 1, 2, 3
 
@@ -259,10 +291,17 @@ class MossBaseAdapter:
         self._telemetry_t: float | None = None
         self._connected = False
         self._enabled = False
-        self._target = (0, 0)
+        self._target = (0, 0)              # the last pair sent to the firmware (a pulse value when pulsing)
+        self._want = (0, 0)                # the last pair asked by the commander (the duty when pulsing)
         self._target_twist = (0.0, 0.0, 0.0)
         self._target_t = 0.0
         self._stopped_for_stale = True
+        # full-duty time slicing: n keepalive ticks per period, 0 = off (floor mode)
+        self._pulse_n = int(round(pulse_ms() / 1000.0 / KEEPALIVE_S)) if pulse_ms() > 0 else 0
+        self._ramp = ""                    # the ramp sent at connect ("" = the firmware default)
+        self._tick = 0
+        # the mapping geometry: when pulsing, the static-friction floor is the pulse itself
+        self._map_geometry = replace(self._geometry, min_pct=0) if self._pulse_n else self._geometry
         self._last_logged = None
         self._reader = None
         self._keepalive = None
@@ -352,6 +391,12 @@ class MossBaseAdapter:
                                                name="moss-keepalive", daemon=True)
             self._keepalive.start()
             ramp = os.environ.get("MOSS_RAMP_MS", "").strip()   # "10 5" = ms per % up / down
+            if self._pulse_n and not ramp:
+                ramp = PULSE_RAMP                                 # a slice must reach full duty inside a keepalive tick
+            if self._pulse_n:
+                _log().info(f"MOSS base: full-duty pulses, period {self._pulse_n * KEEPALIVE_S * 1000:.0f} ms "
+                            f"({self._pulse_n} slices of {KEEPALIVE_S * 1000:.0f} ms), ramp {ramp} ms per %")
+            self._ramp = ramp
             if ramp and not self._mock:
                 if self._send(f"ramp {ramp}"):
                     _log().info(f"MOSS base: firmware ramp set to {ramp} ms per % (rise fall)")
@@ -490,18 +535,26 @@ class MossBaseAdapter:
                 vx, vy, wz = float(vx), float(vy), float(wz)
             except Exception:
                 return False
-            left, right = twist_to_tracks(vx, wz, self._geometry)
-            if (left, right) != (0, 0) and not self._enabled:
+            want = twist_to_tracks(vx, wz, self._map_geometry)
+            if want != (0, 0) and not self._enabled:
                 return False
+            left, right = self._slice(want)
             ok = self._drive(left, right)
             if ok:
+                self._want = want
                 self._target = (left, right)
                 self._target_twist = (vx, 0.0, wz)
                 self._target_t = time.monotonic()
-                self._stopped_for_stale = (left, right) == (0, 0)
+                self._stopped_for_stale = want == (0, 0)
                 self._velocity = self._velocity if self._geometry.ticks_per_m else (vx, 0.0, wz)
-                self._log_cmd((vx, vy, wz), (left, right))
+                self._log_cmd((vx, vy, wz), want)
             return ok
+
+    def _slice(self, want: tuple[int, int]) -> tuple[int, int]:
+        """The pair to send now: the pulse value of this tick when pulsing, else the pair itself."""
+        if not self._pulse_n:
+            return want
+        return pulse_tracks(want, self._tick, self._pulse_n, int(self._geometry.max_pct))
 
     def _drive(self, left: int, right: int) -> bool:
         """Send 'drive L R'; on 'ERR not_armed' (arm expiry, invalid line,
@@ -528,6 +581,7 @@ class MossBaseAdapter:
             ok = self._send("stop")
             if ok:
                 self._target = (0, 0)
+                self._want = (0, 0)
                 self._target_twist = (0.0, 0.0, 0.0)
                 self._target_t = time.monotonic()
                 self._stopped_for_stale = True
@@ -542,6 +596,7 @@ class MossBaseAdapter:
         while not self._stop_threads.is_set():
             time.sleep(KEEPALIVE_S)
             with self._lock:
+                self._tick += 1
                 if not self._connected or self._stopped_for_stale:
                     continue
                 age = time.monotonic() - self._target_t
@@ -549,12 +604,16 @@ class MossBaseAdapter:
                     _log().warning(f"MOSS base: no twist for {age:.2f}s - stop (deadman)")
                     self._send("stop")
                     self._target = (0, 0)
+                    self._want = (0, 0)
                     self._target_twist = (0.0, 0.0, 0.0)
                     self._stopped_for_stale = True
                     if not self._geometry.ticks_per_m:
                         self._velocity = (0.0, 0.0, 0.0)
                     continue
-                if self._target != (0, 0):
+                if self._want != (0, 0):
+                    # pulsing: the slice of this tick, 'drive 0 0' included (an OFF slice
+                    # keeps the firmware armed and its 300 ms deadman fed)
+                    self._target = self._slice(self._want)
                     self._send(f"drive {self._target[0]} {self._target[1]}")
                     # what the firmware actually applies, and the battery
                     # voltage under load: one line per 2 s

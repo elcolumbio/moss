@@ -380,7 +380,7 @@ check("one launch: --rerun-open none --nerf-speed 0.5 run moss-dimos.moss-nav --
 env_l = run_l[0].split("| ENV ", 1)[1] if run_l and "| ENV " in run_l[0] else ""
 for want in (f"MOSS_PORT={qtpy}", f"MOSS_LIDAR_PORT={c1}", "DIMOS_TRANSPORT=lcm",
              "TRANSPORT=lcm", "GLIBC_TUNABLES=glibc.rtld.optional_static_tls=4194304", "MOSS_MAX_PCT=100",
-             "MOSS_RAMP_MS=5 5", "MOSS_RECORD=1", "MOSS_CAMERA=1", f"MOSS_STATE_DIR={case / 'state'}"):
+             "MOSS_RAMP_MS=1 1", "MOSS_RECORD=1", "MOSS_CAMERA=1", f"MOSS_STATE_DIR={case / 'state'}"):
     check(f"stack env: {want.split('=')[0]}={want.split('=', 1)[1][-40:]}",
           re.search(r"(^| )" + re.escape(want) + r"( |$)", env_l) is not None, env_l[-120:])
 check("the launcher does not export ROBOT_PROFILE (MOSS is the only profile)",
