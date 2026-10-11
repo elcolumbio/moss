@@ -3,7 +3,7 @@
 // Same serial protocol as the V0.3 DevKitC firmware (see ../README.md), over
 // the QT Py's native USB: build with "USB CDC On Boot: Enabled"
 // (arduino-cli: --fqbn esp32:esp32:adafruit_qtpy_esp32s3_nopsram:CDCOnBoot=cdc).
-// Motors never start at boot. NOT YET RUN ON HARDWARE: pin map to confirm on the
+// Motors never start at boot. On a new board: confirm the pin map on the
 // terminal block, then bench with "test left 10" before any "drive".
 #include <Arduino.h>
 #include <Wire.h>
@@ -22,7 +22,7 @@ constexpr int ENC_L_A = SDA, ENC_L_B = SCL;   // GPIO 7 / 6 (primary I2C pins re
 constexpr int ENC_R_A = TX,  ENC_R_B = RX;    // GPIO 5 / 16
 // INA219 on the STEMMA QT connector = Wire1 (SDA1 = GPIO 41, SCL1 = GPIO 40)
 constexpr uint8_t INA_ADDRESS = 0x40;
-constexpr bool INVERT_LEFT = true, INVERT_RIGHT = false;   // 10/10 first drive: left track ran backwards (Laurent); ticks follow
+constexpr bool INVERT_LEFT = true, INVERT_RIGHT = false;   // the left track runs backwards without it; its encoder ticks are inverted with it
 constexpr float SHUNT_OHMS = 0.0f;   // voltage only (see V0.3 README)
 constexpr uint32_t PWM_HZ = 20000;
 constexpr int PWM_BITS = 10;
@@ -54,7 +54,7 @@ void ARDUINO_ISR_ATTR encoderRight() {
   portEXIT_CRITICAL_ISR(&encoderMux);
 }
 void sendLine(const char* text) {
-  // First hardware contact: the native CDC FIFO is 64 bytes, so a guard that required the
+  // The native CDC FIFO is 64 bytes, so a guard that required the
   // whole line to fit dropped every telemetry line (~330 bytes). write() already returns 0 when no
   // host has the port open (DTR low); with a 20 ms tx timeout a stalled host costs at most 20 ms per
   // line, which keeps the deadman (300 ms) serviced. A line cut by that timeout is the host's problem
@@ -69,7 +69,7 @@ void outputsZero() {
 // Two drivers, one wiring (A0/A1 left, A2/A3 right), chosen at compile time:
 //   default            Cytron MDD3A, two PWM inputs per channel (M1A/M1B): PWM on one,
 //                      the other held low; zero = both low = brake.
-//   -DMOSS_DRIVER_MDD10A  Cytron MDD10A (ordered 10/10: 10 A / 30 A per channel), PWM + DIR per
+//   -DMOSS_DRIVER_MDD10A  Cytron MDD10A (10 A continuous, 30 A peak per channel), PWM + DIR per
 //                      channel: pinA = PWM1 (magnitude), pinB = DIR1 (held high or low through
 //                      the same LEDC channel: duty 100 % = high). Zero = PWM low = brake.
 //                      Build: arduino-cli compile ... --build-property "compiler.cpp.extra_flags=-DMOSS_DRIVER_MDD10A"

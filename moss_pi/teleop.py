@@ -32,7 +32,7 @@ from moss_dimos.teleop_logic import DeadmanBrake, TeleopConfig, axes_to_twist
 
 from .serial_bridge import MAX_PERCENT, SerialBridge, open_serial
 
-# Standard dual-stick pad, pygame numbering (same as moss_dimos/gamepad.py).
+# Standard dual-stick pad, pygame numbering (axes as moss_dimos/gamepad.py; the deadman differs: L1 here, R1 there).
 AXIS_LEFT_Y = 1
 AXIS_RIGHT_X = 2
 BUTTON_ARM = 0       # A / cross

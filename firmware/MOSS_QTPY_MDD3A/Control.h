@@ -5,16 +5,16 @@
 // Defaults below: 0 -> 70 % in 2.1 s (the slope asked for a rover carrying an
 // arm), 70 -> 0 in 1.05 s; 0 -> 100 % takes 3 s. Tune at runtime with "ramp"
 // (the host passes MOSS_RAMP_MS), no reflash.
-// MAX_PERCENT stays a compile-time limit, not a serial command: 100 since
-// 10/10 (the commissioning 25 % was the bench on blocks, 05/10); the host
-// side caps lower with MOSS_MAX_PCT when it wants to.
+// MAX_PERCENT stays a compile-time limit, not a serial command: full PWM (100;
+// the commissioning builds ran at 25 % with the rover on blocks). The host side
+// caps lower with MOSS_MAX_PCT when it wants to.
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 
 namespace moss {
-constexpr int MAX_PERCENT = 100; // Full PWM = the motors' rated 12 V (bench 05/10 was 25 %, raised 10/10).
+constexpr int MAX_PERCENT = 100; // Full PWM = the motors' rated 12 V (the commissioning limit was 25 %).
 constexpr uint32_t COMMAND_TIMEOUT_MS = 300;
 constexpr uint32_t ARM_TIMEOUT_MS = 10000;
 constexpr uint32_t TEST_MS = 1000;

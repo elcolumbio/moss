@@ -1,0 +1,36 @@
+# MOSS cockpit server: the bus tap and the page on :8904 (docs/cockpit.md).
+# A template: MOSS_USER is the account that runs the rover's stack, MOSS_DIR the
+# absolute path of this checkout (with its .venv). Install from the checkout:
+#   sed -e "s|MOSS_USER|$USER|g" -e "s|MOSS_DIR|$PWD|g" tools/moss-cockpit.service \
+#     | sudo tee /etc/systemd/system/moss-cockpit.service >/dev/null
+#   sudo systemctl daemon-reload && sudo systemctl enable moss-cockpit && sudo systemctl restart moss-cockpit
+# `restart`, not `enable --now`: a cockpit already running (an older install, or
+# another checkout) keeps serving its own code until it is restarted. The same
+# three lines reinstall it after the checkout moved.
+# No PrivateDevices here on purpose: the cockpit never opens a device itself, but the
+# launcher it runs on request (tools/moss-fly.sh) must reach the motor board and the lidar.
+# No NoNewPrivileges either, on purpose: a stack launched from the page inherits this
+# unit's flags, and dimOS sets loopback multicast, its 224.0.0.0/4 route and the
+# socket buffers with sudo at launch. Either the stack's user has passwordless sudo,
+# or tools/lcm-loopback.service sets them at boot (ordered before this unit).
+[Unit]
+Description=MOSS cockpit (bus tap + web page)
+Wants=lcm-loopback.service
+After=network.target lcm-loopback.service
+
+[Service]
+Type=simple
+User=MOSS_USER
+WorkingDirectory=MOSS_DIR
+Environment=GLIBC_TUNABLES=glibc.rtld.optional_static_tls=4194304
+Environment=MOSS_COCKPIT_PORT=8904
+ExecStart=MOSS_DIR/.venv/bin/python tools/moss_cockpit.py
+Restart=always
+RestartSec=3
+# A stack launched from the page (tools/moss-fly.sh, then the dimOS daemon) lives
+# in this unit's cgroup: a cockpit restart, crash or stop must end the cockpit
+# only, never a flight it started. Stop a flight with tools/moss-fly.sh stop.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

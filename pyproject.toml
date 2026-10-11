@@ -1,16 +1,42 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "moss-dimos"
-version = "0.0.1"
-description = "MOSS litter-picking rover: dimOS modules (scaffold)"
+version = "0.1.0"
+description = "MOSS litter-picking rover: dimOS modules and blueprints (base, lidar, odometry, map, planner, explorer, gamepad, recorder), plus the Pi teleop path"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
-dependencies = ["numpy"]
+dependencies = ["numpy", "pyserial>=3.5", "scipy"]
 
 [project.optional-dependencies]
+# No `dimos` extra on purpose. MOSS runs against one dimOS commit, installed
+# from git as Software.md says:
+#     DIMOS_ALLOW_MISSING_COCKPIT=1 uv pip install --python .venv/bin/python \
+#         "dimos @ git+https://github.com/dimensionalOS/dimos.git@a7d19f76158b01739b26e7a17390f89764aaef83"
+# The variable builds dimOS without its web UI, which MOSS does not use. dimOS
+# main has since moved the planner and the explorer this package imports, so a
+# newer commit must pass benches/run_all.sh first. moss_pi and the pure parts of
+# moss_dimos (robot_profile, moss_adapter, moss_mock) need none of it.
+nav = ["kiss-icp==1.3.0"]                  # lidar_odometry calls kiss-icp internals, run against this release
 gamepad = ["pygame>=2.6"]
+camera = ["pyrealsense2"]                  # the RealSense; on a Jetson see Software.md
+firmware = ["esptool", "pyserial>=3.5"]    # firmware/MOSS_QTPY_MDD3A/bench/flash_qtpy.sh
 pi = ["pyserial>=3.5", "pygame>=2.6"]
 test = ["pytest"]
 
+# dimOS names these `moss-dimos.<name>`: dimos run moss-dimos.moss-nav
+[project.entry-points."dimos.blueprints"]
+moss-base = "moss_dimos.blueprints:moss_base_blueprint"
+moss-gamepad = "moss_dimos.blueprints:moss_gamepad_blueprint"
+moss-nav = "moss_dimos.blueprints:moss_nav_blueprint"
+moss-explore = "moss_dimos.blueprints:moss_explore_blueprint"
+
 [tool.setuptools]
 packages = ["moss_dimos", "moss_pi"]
+
+[tool.pytest.ini_options]
+# the script benches live in benches/ and run through benches/run_all.sh
+testpaths = ["tests"]

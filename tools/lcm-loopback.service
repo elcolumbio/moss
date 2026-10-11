@@ -1,0 +1,23 @@
+# LCM on loopback, set once at boot: what dimOS otherwise sets with sudo at every
+# launch (a launch that cannot sudo dies without the first two). With this
+# unit, a stack launched from the cockpit page needs no sudo (docs/cockpit.md).
+# Not a template: install it as it is, from the checkout:
+#   sudo cp tools/lcm-loopback.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable lcm-loopback && sudo systemctl restart lcm-loopback
+# Check: ip -o link show lo (MULTICAST), ip route show 224.0.0.0/4 (dev lo),
+# sysctl net.core.rmem_max net.core.rmem_default (67108864 each).
+[Unit]
+Description=LCM multicast on loopback and socket buffers (dimOS)
+After=network.target
+Before=moss-cockpit.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/ip link set lo multicast on
+# replace, not add: idempotent, and it also moves a 224.0.0.0/4 route set on another interface
+ExecStart=/usr/sbin/ip route replace 224.0.0.0/4 dev lo
+ExecStart=/usr/sbin/sysctl -w net.core.rmem_max=67108864 net.core.rmem_default=67108864
+
+[Install]
+WantedBy=multi-user.target
