@@ -34,8 +34,8 @@ Switches (env, read when moss-nav / moss-explore is built; robot_profile.env_on
 parses them: 0, false, no or off = off, any other value = on, unset = the default):
     MOSS_CAMERA=0     no RealSense (default on: colour 640x480 @ 5 fps, JPEG on the bus, plus depth aligned
                       to colour at the same rate, turned into map obstacles by lidar_odometry)
-    MOSS_GYRO=0       no gyro prior for the lidar odometry (default on, with the camera: the RealSense's IMU
-                      feeds the odometry's rotation prior; without a camera there is no gyro)
+    MOSS_GYRO=1       gyro prior for the lidar odometry from the RealSense's IMU (default OFF: the IMU
+                      pipeline fails to open on the rover and takes the camera down with it; an experiment)
     MOSS_SOUNDS=0     no sound module (default on when pw-play or paplay is on the PATH: the sound pack
                       in assets/sounds plays boot_ready, bump_surprise, recovery_success, resume,
                       mission_complete, battery_low / battery_critical on the stack's events;
@@ -428,7 +428,10 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
     from moss_dimos.lidar_odometry import LidarOdometry
     from moss_dimos.rplidar_c1 import RPLidarC1
 
-    gyro = robot_profile.env_on("MOSS_GYRO", True) and robot_profile.env_on("MOSS_CAMERA", True)
+    # MOSS_GYRO=1 is an experiment: dimOS's RealSense module opens a second pipeline for the IMU,
+    # which fails with 'No device connected' on the rover (the colour and depth streams then never
+    # start either), so the gyro prior is OFF unless asked for
+    gyro = robot_profile.env_on("MOSS_GYRO", False) and robot_profile.env_on("MOSS_CAMERA", True)
     parts = [
         _coordinator_blueprint(_moss_base(address=ports["base"])),
         _gamepad_part(),
