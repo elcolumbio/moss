@@ -88,6 +88,7 @@ import importlib
 import json
 import math
 import os
+from types import SimpleNamespace
 import pickle
 import re
 import shutil
@@ -499,7 +500,7 @@ cam = atom(nav, "DedicatedMossRealSense").kwargs
 check("RealSense 640x480 @ 5 fps, colour + depth (aligned), no point cloud, the IMU in the camera's own process (MOSS_IMU on by default)",
       (cam.get("width"), cam.get("height"), cam.get("fps"), cam.get("enable_depth"),
        cam.get("enable_pointcloud"), cam.get("enable_imu")) == (640, 480, 5, True, False, True))
-t = cam["base_transform"]
+t = cam["base_transform"] if "base_transform" in cam else SimpleNamespace(translation=SimpleNamespace(**dict(zip("xyz", atom(nav, "MossCameraMount").kwargs["xyzq"]))))  # main: a mount module
 check("camera mount from the profile: (0.156, 0, 0.075) m",
       close(t.translation.x, 0.156) and close(t.translation.z, 0.075))
 check("recorder at the MOSS state dir", atom(nav, "MossRecorder").kwargs.get("db_path") == str(home_db))

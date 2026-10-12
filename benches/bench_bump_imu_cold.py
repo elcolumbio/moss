@@ -619,78 +619,82 @@ check("MossRealSense is a RealSenseCamera with exactly the parent's streams (imu
       issubclass(ri.MossRealSense, RealSenseCamera) and not vars(ri.MossRealSense).get("__annotations__")
       and _streams(ri.MossRealSense) == _streams(RealSenseCamera) and ("imu", Imu, "out") in _streams(RealSenseCamera))
 check("its stop keeps @rpc", "stop" in ri.MossRealSense.rpcs)
-dev, motion = d455()
-cam._profile = FakePipelineProfile(dev)
-cam._start_imu()
-check("_start_imu: the motion sensor of the pipeline's own device is opened with [accel 200 Hz, gyro 200 Hz]",
-      cam._imu_sensor is motion and [(p.kind, p.rate) for p in motion.opened] == [(rs.stream.accel, 200), (rs.stream.gyro, 200)],
-      f"{motion.opened}")
-check("... and started on the parent's own handler (_on_motion_frame), no second pipeline",
-      motion.calls == ["open", "start"] and motion.callback == cam._on_motion_frame and cam._imu_pipeline is None)
-check("... announced in the log with the rates and the axes",
-      any("accel 200 Hz, gyro 200 Hz" in ln and "z forward" in ln for ln in spy2.lines), f"{spy2.lines}")
+NATIVE_CAMERA = any(c.__name__ == "NativeModule" for c in RealSenseCamera.__mro__)  # dimOS main (7a83fe5b1): Rust opens the IMU
+if NATIVE_CAMERA:
+    print("  -- SKIP _start_imu and the motion handler: this dimOS camera is native (Rust) and opens its motion module itself")
+else:
+    dev, motion = d455()
+    cam._profile = FakePipelineProfile(dev)
+    cam._start_imu()
+    check("_start_imu: the motion sensor of the pipeline's own device is opened with [accel 200 Hz, gyro 200 Hz]",
+          cam._imu_sensor is motion and [(p.kind, p.rate) for p in motion.opened] == [(rs.stream.accel, 200), (rs.stream.gyro, 200)],
+          f"{motion.opened}")
+    check("... and started on the parent's own handler (_on_motion_frame), no second pipeline",
+          motion.calls == ["open", "start"] and motion.callback == cam._on_motion_frame and cam._imu_pipeline is None)
+    check("... announced in the log with the rates and the axes",
+          any("accel 200 Hz, gyro 200 Hz" in ln and "z forward" in ln for ln in spy2.lines), f"{spy2.lines}")
 
 
-class FakeMotionFrame:
-    def __init__(self, kind, ms, xyz):
-        self.kind, self.ms, self.xyz = kind, ms, xyz
+    class FakeMotionFrame:
+        def __init__(self, kind, ms, xyz):
+            self.kind, self.ms, self.xyz = kind, ms, xyz
 
-    def as_motion_frame(self):
-        return self
+        def as_motion_frame(self):
+            return self
 
-    def get_motion_data(self):
-        return types.SimpleNamespace(x=self.xyz[0], y=self.xyz[1], z=self.xyz[2])
+        def get_motion_data(self):
+            return types.SimpleNamespace(x=self.xyz[0], y=self.xyz[1], z=self.xyz[2])
 
-    def get_timestamp(self):
-        return self.ms
+        def get_timestamp(self):
+            return self.ms
 
-    def get_profile(self):
-        return FakeProfile(self.kind, 200)
+        def get_profile(self):
+            return FakeProfile(self.kind, 200)
 
 
-published = []
-cam.imu = types.SimpleNamespace(publish=published.append)
-base_ms = T0 * 1000.0
-motion.callback(FakeMotionFrame(rs.stream.accel, base_ms, (0.10, -9.81, 0.20)))
-motion.callback(FakeMotionFrame(rs.stream.accel, base_ms + 10.0, (0.30, -9.81, 0.40)))
-motion.callback(FakeMotionFrame(rs.stream.gyro, base_ms + 5.0, (0.01, 0.02, 0.03)))
-imu = published[0] if published else None
-check("the parent publishes one Imu per gyro sample, accel interpolated to it: (0.20, -9.81, 0.30) at +5 ms",
-      imu is not None and len(published) == 1
-      and all(abs(a - b) < 1e-4 for a, b in zip((imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z),
-                                                 (0.20, -9.81, 0.30)))
-      and abs(imu.ts - (T0 + 0.005)) < 1e-6, f"{imu!r}")
-check("... unrotated (librealsense's axes as they come: y down = -9.81) in camera_accel_optical_frame",
-      imu is not None and imu.frame_id == "camera_accel_optical_frame"
-      and (imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z) == (0.01, 0.02, 0.03))
-cam.stop()
-check("stop(): the motion sensor is stopped then closed, and forgotten",
-      motion.calls == ["open", "start", "stop", "close"] and cam._imu_sensor is None, f"{motion.calls}")
+    published = []
+    cam.imu = types.SimpleNamespace(publish=published.append)
+    base_ms = T0 * 1000.0
+    motion.callback(FakeMotionFrame(rs.stream.accel, base_ms, (0.10, -9.81, 0.20)))
+    motion.callback(FakeMotionFrame(rs.stream.accel, base_ms + 10.0, (0.30, -9.81, 0.40)))
+    motion.callback(FakeMotionFrame(rs.stream.gyro, base_ms + 5.0, (0.01, 0.02, 0.03)))
+    imu = published[0] if published else None
+    check("the parent publishes one Imu per gyro sample, accel interpolated to it: (0.20, -9.81, 0.30) at +5 ms",
+          imu is not None and len(published) == 1
+          and all(abs(a - b) < 1e-4 for a, b in zip((imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z),
+                                                     (0.20, -9.81, 0.30)))
+          and abs(imu.ts - (T0 + 0.005)) < 1e-6, f"{imu!r}")
+    check("... unrotated (librealsense's axes as they come: y down = -9.81) in camera_accel_optical_frame",
+          imu is not None and imu.frame_id == "camera_accel_optical_frame"
+          and (imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z) == (0.01, 0.02, 0.03))
+    cam.stop()
+    check("stop(): the motion sensor is stopped then closed, and forgotten",
+          motion.calls == ["open", "start", "stop", "close"] and cam._imu_sensor is None, f"{motion.calls}")
 
-spy2.lines.clear()
-bare = ri.MossRealSense(enable_imu=True, imu_hz=200)
-MODULES.append(bare)
-bare._profile = FakePipelineProfile(FakeDevice(d455()[0].sensors[:2]))
-bare._start_imu()
-bare._start_imu()
-check("a camera without a motion module: ONE warning for two starts, no sensor, no exception",
-      bare._imu_sensor is None and len([ln for ln in spy2.lines if "no motion module" in ln]) == 1, f"{spy2.lines}")
-spy2.lines.clear()
-odd = ri.MossRealSense(enable_imu=True, imu_hz=300)
-MODULES.append(odd)
-odd._profile = FakePipelineProfile(d455()[0])
-odd._start_imu()
-check("imu_hz=300 (not offered): a warning naming the rates, the camera goes on (no exception)",
-      odd._imu_sensor is None and any("[200, 400]" in ln and "colour and depth go on" in ln for ln in spy2.lines), f"{spy2.lines}")
-spy2.lines.clear()
-fdev, fmotion = d455(fail_start=True)
-failing = ri.MossRealSense(enable_imu=True, imu_hz=200)
-MODULES.append(failing)
-failing._profile = FakePipelineProfile(fdev)
-failing._start_imu()
-check("a start that fails ('failed to set power state'): the sensor is closed again, a warning, the camera goes on",
-      failing._imu_sensor is None and fmotion.calls == ["open", "start", "close"]
-      and any("failed to set power state" in ln for ln in spy2.lines), f"{fmotion.calls} {spy2.lines}")
+    spy2.lines.clear()
+    bare = ri.MossRealSense(enable_imu=True, imu_hz=200)
+    MODULES.append(bare)
+    bare._profile = FakePipelineProfile(FakeDevice(d455()[0].sensors[:2]))
+    bare._start_imu()
+    bare._start_imu()
+    check("a camera without a motion module: ONE warning for two starts, no sensor, no exception",
+          bare._imu_sensor is None and len([ln for ln in spy2.lines if "no motion module" in ln]) == 1, f"{spy2.lines}")
+    spy2.lines.clear()
+    odd = ri.MossRealSense(enable_imu=True, imu_hz=300)
+    MODULES.append(odd)
+    odd._profile = FakePipelineProfile(d455()[0])
+    odd._start_imu()
+    check("imu_hz=300 (not offered): a warning naming the rates, the camera goes on (no exception)",
+          odd._imu_sensor is None and any("[200, 400]" in ln and "colour and depth go on" in ln for ln in spy2.lines), f"{spy2.lines}")
+    spy2.lines.clear()
+    fdev, fmotion = d455(fail_start=True)
+    failing = ri.MossRealSense(enable_imu=True, imu_hz=200)
+    MODULES.append(failing)
+    failing._profile = FakePipelineProfile(fdev)
+    failing._start_imu()
+    check("a start that fails ('failed to set power state'): the sensor is closed again, a warning, the camera goes on",
+          failing._imu_sensor is None and fmotion.calls == ["open", "start", "close"]
+          and any("failed to set power state" in ln for ln in spy2.lines), f"{fmotion.calls} {spy2.lines}")
 ri.logger = real_ri_logger
 del sys.modules["pyrealsense2"]
 

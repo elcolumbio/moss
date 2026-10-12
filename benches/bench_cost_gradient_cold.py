@@ -31,7 +31,7 @@ sys.path.insert(0, str(_FsPath(__file__).resolve().parent.parent))
 
 from dimos.msgs.geometry_msgs.Pose import Pose  # noqa: E402
 from dimos.msgs.nav_msgs.OccupancyGrid import CostValues, OccupancyGrid  # noqa: E402
-from dimos.navigation.replanning_a_star.min_cost_astar import min_cost_astar  # noqa: E402
+from moss_dimos.recovering_planner import min_cost_astar  # noqa: E402  (dimOS's, from wherever this dimOS keeps it)
 from moss_dimos import robot_profile  # noqa: E402
 from moss_dimos.recovering_planner import (  # noqa: E402
     PIVOT_PENALTY,

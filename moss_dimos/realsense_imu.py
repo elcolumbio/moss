@@ -148,3 +148,25 @@ class MossRealSense(RealSenseCamera):
                 except Exception:  # noqa: BLE001 - already stopped or the device is gone
                     pass
         super().stop()
+
+
+# dimOS main (7a83fe5b1): the RealSense is a native (Rust) module that publishes only its own
+# subtree from camera_link and takes no base_transform; the mount is a static edge of its own.
+from dimos.msgs.geometry_msgs.Quaternion import Quaternion  # noqa: E402
+from dimos.msgs.geometry_msgs.Transform import Transform  # noqa: E402
+from dimos.msgs.geometry_msgs.Vector3 import Vector3  # noqa: E402
+from dimos.protocol.tf.static_tf_publisher import StaticTfPublisher, StaticTfPublisherConfig  # noqa: E402
+
+
+class MossCameraMountConfig(StaticTfPublisherConfig):
+    xyzq: tuple[float, float, float, float, float, float, float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+
+
+class MossCameraMount(StaticTfPublisher):
+    """base_link -> camera_link (blueprints.camera_mount_xyzq), for a camera that no longer publishes it."""
+    config: MossCameraMountConfig
+
+    def transforms(self) -> list[Transform]:
+        x, y, z, qx, qy, qz, qw = self.config.xyzq
+        return [Transform(translation=Vector3(x, y, z), rotation=Quaternion(qx, qy, qz, qw),
+                          frame_id="base_link", child_frame_id="camera_link")]

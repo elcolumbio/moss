@@ -60,8 +60,12 @@ parses them: 0, false, no or off = off, any other value = on, unset = the defaul
     MOSS_RECORD=0     no recording (default on: MossRecorder, <MOSS_STATE_DIR>/recordings/moss.db)
     MOSS_RERUN=1      add the stock Rerun/websocket viewers (default off: no 7779/9877/3030 on MOSS)
     MOSS_PREMAP=1     the costmap takes a premap (default off: every loaded_map is ignored, said once): the
-                      points a relocalization module run apart publishes on loaded_map, placed by its world ->
-                      map fix on tf, become lidar walls (moss_dimos/costmap2d.py, the premap)
+                      points a relocalization module publishes on loaded_map (run apart, or MOSS_RELOC_MAP),
+                      placed by its world -> map fix on tf, become lidar walls (moss_dimos/costmap2d.py, the premap)
+    MOSS_RELOC_MAP    moss-explore only, dimOS main only: a premap file (.pc2.lcm, absolute path) adds dimOS's
+                      LidarWindowRelocalization to the stack (default unset: no relocalizer). It reads `lidar`
+                      and publishes the world -> map fix on tf and the premap on loaded_map; nothing in the
+                      stack acts on them unless MOSS_PREMAP=1
 
 Why the coordinator is a subclass defined HERE. An out-of-tree drive train
 needs two things, and the second one is not obvious:
@@ -558,6 +562,11 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         serial = os.environ.get("MOSS_RS_SERIAL", "").strip()
         if serial:
             cam_kwargs["serial_number"] = serial
+        from dimos.hardware.sensors.camera.realsense.camera import RealSenseCameraConfig
+        if "base_transform" not in RealSenseCameraConfig.model_fields:  # dimOS main's native camera (7a83fe5b1)
+            from moss_dimos.realsense_imu import MossCameraMount
+            cam_kwargs.pop("base_transform")
+            parts.append(MossCameraMount.blueprint(xyzq=(x, y, z, qx, qy, qz, qw)))
         # the camera in a worker of its own (_realsense_module_class), with or without the IMU
         if imu:
             cam_kwargs.update(enable_imu=True, imu_hz=IMU_HZ)
@@ -594,7 +603,10 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
     if robot_profile.env_on("MOSS_RERUN", False):
         from dimos.core.global_config import global_config
         from dimos.visualization.vis_module import vis_module
-        parts.append(vis_module(viewer_backend=global_config.viewer))
+        try:  # dimOS main made the websocket command center opt-in (e7e289830); the pinned dimOS always adds it
+            parts.append(vis_module(viewer_backend=global_config.viewer, websocket_vis=True))
+        except TypeError:
+            parts.append(vis_module(viewer_backend=global_config.viewer))
     return parts
 
 
@@ -693,6 +705,12 @@ def build_moss_explore():
                             lethal_clearance_m=lethal, pivot_clearance_m=pivot,
                             **explorer_env()),
     ]
+    reloc_map = os.environ.get("MOSS_RELOC_MAP", "").strip()   # a premap (.pc2.lcm, absolute path); unset = no relocalizer
+    # dimOS main's relocalizer reads `lidar` (world frame) and publishes the world -> map fix on tf and the premap on
+    # loaded_map: a spectator, since only the costmap reads those two, and only with MOSS_PREMAP=1
+    if reloc_map:
+        from dimos.mapping.relocalization.lidar.module import LidarWindowRelocalization  # dimOS main only
+        parts.append(LidarWindowRelocalization.blueprint(map_file=reloc_map))
     return _jpeg_camera(autoconnect(*parts)).remappings([
         (MossControlCoordinator, "twist_command", "cmd_vel"),
     ])

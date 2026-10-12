@@ -1185,9 +1185,16 @@ if HAVE_DIMOS:  # pragma: no cover - needs the dimOS stack
 
     from dimos.core.core import rpc
     from dimos.msgs.nav_msgs.OccupancyGrid import OccupancyGrid
-    from dimos.navigation.frontier_exploration.wavefront_frontier_goal_selector import (
-        WavefrontConfig, WavefrontFrontierExplorer,
-    )
+    try:  # dimOS main moved the explorer under navigation/experimental (e5679069d)
+        from dimos.navigation.experimental.frontier_exploration.wavefront_frontier_goal_selector import (
+            WavefrontConfig, WavefrontFrontierExplorer,
+        )
+    except ModuleNotFoundError as _e:  # the pinned dimOS (pyproject.toml) keeps it at navigation/frontier_exploration
+        if not (_e.name or "").startswith("dimos.navigation.experimental"):
+            raise
+        from dimos.navigation.frontier_exploration.wavefront_frontier_goal_selector import (
+            WavefrontConfig, WavefrontFrontierExplorer,
+        )
     from dimos.utils.logging_config import setup_logger
     from dimos.core.stream import Out
     from dimos_lcm.std_msgs import Bool

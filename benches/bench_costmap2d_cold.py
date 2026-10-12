@@ -163,6 +163,7 @@ os.environ["MOSS_OCCUPIED_AT"] = "2"
 os.environ["MOSS_NEW_VIEWPOINT_M"] = "0.10"
 os.environ["MOSS_PUBLISH_EVERY"] = "5"
 
+os.environ.setdefault("DIMOS_TRANSPORT", "lcm")  # MOSS runs on LCM (tools/moss-fly.sh sets it); dimOS main defaults to zenoh (4333a8fa6)
 from dimos_lcm.std_msgs import Bool  # noqa: E402
 
 from moss_dimos import costmap2d as cmod  # noqa: E402

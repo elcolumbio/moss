@@ -39,9 +39,16 @@ from dimos.msgs.nav_msgs.OccupancyGrid import CostValues, OccupancyGrid
 from dimos.msgs.nav_msgs.Path import Path
 from dimos.core.stream import In
 from dimos.navigation.base import NavigationState
-from dimos.navigation.replanning_a_star.global_planner import GlobalPlanner
-from dimos.navigation.replanning_a_star.min_cost_astar import min_cost_astar
-from dimos.navigation.replanning_a_star.module import ReplanningAStarPlanner
+try:  # dimOS main moved the planner under navigation/go2 (e5679069d)
+    from dimos.navigation.go2.replanning_a_star.global_planner import GlobalPlanner
+    from dimos.navigation.go2.replanning_a_star.min_cost_astar import min_cost_astar
+    from dimos.navigation.go2.replanning_a_star.module import ReplanningAStarPlanner
+except ModuleNotFoundError as _e:  # the pinned dimOS (pyproject.toml) keeps it at navigation/replanning_a_star
+    if not (_e.name or "").startswith("dimos.navigation.go2"):
+        raise
+    from dimos.navigation.replanning_a_star.global_planner import GlobalPlanner
+    from dimos.navigation.replanning_a_star.min_cost_astar import min_cost_astar
+    from dimos.navigation.replanning_a_star.module import ReplanningAStarPlanner
 from dimos_lcm.std_msgs import Bool
 from dimos.utils.logging_config import setup_logger
 

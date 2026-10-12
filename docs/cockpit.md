@@ -214,13 +214,52 @@ two lines received neither input. With `MOSS_PREMAP=0`, the default, every
 (MOSS_PREMAP=0)` once. `MOSS_PREMAP` reads its value like the four switches
 above, when `moss-nav` or `moss-explore` is built. The costmap never saves a
 premap of its own. The relocalization that produces the two inputs is a separate
-module from dimOS main, run apart from this stack, a version step the robot has
-not taken. This stack hears it only on LCM, on `/loaded_map` and `/tf`: run the
+module from dimOS main, a version step the robot has not taken. Run apart from
+this stack, it is heard only on LCM, on `/loaded_map` and `/tf`: run the
 relocalization with `DIMOS_TRANSPORT=lcm` (dimOS main's default transport is
 zenoh, which this stack does not hear) and with `republish_loaded_map` above 0,
 for example 10 s, because by default it sends the premap once per accepted fix
 (once per run when it stops at its first fix) and LCM does not resend a lost
-message.
+message. On dimOS main, `MOSS_RELOC_MAP` runs it inside `moss-explore` instead
+([Running on dimOS main](#running-on-dimos-main)).
+
+### Running on dimOS main
+
+`pyproject.toml` pins the dimOS commit this package runs against, and the same
+code also builds and runs its cold benches on dimOS main, where four things
+moved. The replanning A* planner now lives under `dimos.navigation.go2` and the
+frontier explorer under `dimos.navigation.experimental`: `recovering_planner.py`
+and `explorer2.py` import from the new place, else from the pinned one. The
+RealSense is a native module, a Rust binary that opens the IMU itself before
+its video stream (what `MossRealSense` does on the pinned dimOS) and takes no
+`base_transform`: the blueprints then add `MossCameraMount`, a static
+`base_link` -> `camera_link` transform from the robot profile. `MOSS_RERUN=1`
+asks for dimOS's websocket command center by name, because main no longer adds
+it by default. And main's default transport is zenoh, not LCM: the launchers
+export `DIMOS_TRANSPORT=lcm`, so nothing changes under them, but a `dimos run`
+typed by hand needs it exported first, or `tools/explore_ctl.py` and the
+cockpit, which speak LCM, reach nobody (`bench_explore_ctl_cold` expects LCM
+when neither `DIMOS_TRANSPORT` nor `TRANSPORT` is set, and fails on main for
+that one case). The camera's binary is not on PyPI. dimOS looks for it in its
+own source tree: a pip install has none, so at its first start dimOS clones its
+main branch from GitHub and builds there through nix. On the robot, install
+dimOS from a git checkout instead, editable, and build the binary there once:
+`cargo build --release` in `dimos/hardware/sensors/camera/realsense/rust`,
+against the robot's own librealsense2, found through pkg-config (the crate is
+`realsense-sys` 2.56, and one dependency comes from git, so the build needs the
+network). Without the binary, `MOSS_CAMERA=0` runs the stack, with no depth
+obstacles and no IMU contacts. Main also brings dimOS's lidar relocalizer:
+`MOSS_RELOC_MAP=<premap.pc2.lcm>` adds `LidarWindowRelocalization` to
+`moss-explore` as a spectator. It reads `lidar` and publishes the `world` ->
+`map` fix on `tf` and the premap on `loaded_map`; only the costmap reads them,
+and only with `MOSS_PREMAP=1`, and nothing goes back to the odometry. Inside
+the stack it is on the stack's own transport, but by default it sends the
+premap once per run: with `MOSS_PREMAP=1`, add `--republish-loaded-map 10`
+to the `dimos run` line. `--map-file X` replaces the premap's path. Unset, the
+blueprint is the one without it; on the pinned dimOS, `moss-explore` does not
+build with it set. `benches/bench_moss_reloc_cold.py` checks that wiring, and
+runs the module on a recording when `MOSS_RELOC_BENCH_DATA` names a directory
+holding a premap and the run it was built from.
 
 ## The robot profile
 
@@ -293,7 +332,8 @@ Other variables:
 | `MOSS_RAY_MAX_M` | how far from the rover the lidar's rays clear the costmap's lidar layer (and the camera's rays its own), 4 m by default (0 = never). Anything farther than that from every place the rover stood is never forgotten: 6 forgets somebody who stood 4.5 m away, and longer rays cost more CPU per revolution |
 | `MOSS_PUBLISH_EVERY` | one costmap grid every N lidar revolutions, 2 by default (5 grids a second), 1 to 20. Every subscriber decodes every grid and the recorder writes each one: raise it if the load climbs |
 | `MOSS_CONTACT_WALL` | `1` turns a contact into a wall on the costmap: the band 2 to 20 cm beyond the body's front, across its width, when the rover was driving straight forward (3 cm or more along its heading and less than 10 degrees of turn over the last 0.5 s). Off by default: a contact is a reflex, only the lidar and the camera write the map |
-| `MOSS_PREMAP` | `1` lets the costmap take a premap: the points dimOS's relocalization publishes on `loaded_map`, placed by its `world` -> `map` fix on `tf`, become lidar walls at the lowest wall score, published with the first grid of the mission, cleared by a lidar ray within `MOSS_RAY_MAX_M` like any wall, written again when the fix moves more than 2 cm or 1 degree. The relocalization must publish on LCM (`DIMOS_TRANSPORT=lcm`). Off by default: every `loaded_map` is ignored, said once in the log. Read when `moss-nav` or `moss-explore` is built ([A premap in the costmap](#a-premap-in-the-costmap)) |
+| `MOSS_PREMAP` | `1` lets the costmap take a premap: the points dimOS's relocalization publishes on `loaded_map`, placed by its `world` -> `map` fix on `tf`, become lidar walls at the lowest wall score, published with the first grid of the mission, cleared by a lidar ray within `MOSS_RAY_MAX_M` like any wall, written again when the fix moves more than 2 cm or 1 degree. Run apart, the relocalization must publish on LCM (`DIMOS_TRANSPORT=lcm`); `MOSS_RELOC_MAP` runs it inside `moss-explore`. Off by default: every `loaded_map` is ignored, said once in the log. Read when `moss-nav` or `moss-explore` is built ([A premap in the costmap](#a-premap-in-the-costmap)) |
+| `MOSS_RELOC_MAP` | dimOS main only: a premap file (`.pc2.lcm`, absolute path) adds dimOS's lidar relocalizer, `LidarWindowRelocalization`, to `moss-explore`. It reads `lidar` and publishes the `world` -> `map` fix on `tf` and the premap on `loaded_map`, which the costmap uses only with `MOSS_PREMAP=1`; with it, add `--republish-loaded-map 10` to the `dimos run` line (the premap goes out once per run by default). `--map-file X` replaces the path. Unset by default: no relocalizer. Read when `moss-explore` is built ([Running on dimOS main](#running-on-dimos-main)) |
 
 ## Recording
 

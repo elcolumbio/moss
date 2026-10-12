@@ -395,7 +395,7 @@ if SG is not None:
           _m is not None and float(_m.group(1)) == SG.NERF_SPEED_DEFAULT,
           f"launcher {_m.group(1) if _m else None}, guard {SG.NERF_SPEED_DEFAULT}")
     _spec = importlib.util.find_spec("dimos")
-    _lp = Path(_spec.origin).parent / "navigation" / "replanning_a_star" / "local_planner.py" if _spec and _spec.origin else None
+    _lp = next((p for d in ("go2", ".") if (p := Path(_spec.origin).parent / "navigation" / d / "replanning_a_star" / "local_planner.py").is_file()), None) if _spec and _spec.origin else None  # main: navigation/go2/ (e5679069d)
     if _lp is None or not _lp.is_file():
         print("  -- SKIP the planner-speed check: no dimOS source here")
     else:

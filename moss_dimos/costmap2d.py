@@ -106,7 +106,8 @@ exploration (`explore_done`, `stop_explore_cmd`) stops the explorer, not the
 map, because a cockpit goal or STOP sends `stop_explore_cmd` mid-run.
 
 The premap (`premap=True`, MOSS_PREMAP=1 on the blueprints; off by default).
-dimOS's relocalization module, run apart from this stack, places this run's
+dimOS's relocalization module (run apart from this stack, or inside it with
+MOSS_RELOC_MAP on a dimOS build that carries it) places this run's
 `world` inside a map saved earlier and publishes two things: the fix, a
 `world` -> `map` transform on `tf` (sent again every few seconds), and the
 saved map's points on `loaded_map`, in `map`. Until BOTH have arrived nothing
