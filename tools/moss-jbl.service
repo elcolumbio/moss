@@ -1,0 +1,28 @@
+# MOSS Bluetooth speaker: connected at boot and made the default output of the robot
+# user's audio session (tools/moss-jbl-connect.sh), so the sound pack plays on it after
+# a reboot. A systemd USER unit and a template: MOSS_DIR is the absolute path of this
+# checkout. The speaker is paired and trusted once with bluetoothctl; its address lives
+# only in ~/.local/state/moss/jbl.env (one line MOSS_JBL_MAC=<address>), never here.
+# Install from the checkout, as the robot's user (lingering is on, so the user manager
+# starts at boot without a login):
+#   mkdir -p ~/.config/systemd/user
+#   sed -e "s|MOSS_DIR|$PWD|g" tools/moss-jbl.service > ~/.config/systemd/user/moss-jbl.service
+#   systemctl --user daemon-reload && systemctl --user enable moss-jbl && systemctl --user restart --no-block moss-jbl
+# --no-block returns at once (a oneshot unit would hold the shell until the script ends);
+# the result is in journalctl --user -u moss-jbl (when it connected, or why it gave up).
+# The script gives up after MOSS_JBL_TRIES tries (120, 5 s between tries: about ten minutes
+# of waits, about twenty with the speaker off) and the unit fails with the reason;
+# `systemctl --user restart --no-block moss-jbl` tries again (a speaker switched on late).
+# After=pulseaudio.service only orders the start, and does nothing when that unit is absent.
+[Unit]
+Description=MOSS Bluetooth speaker: connect and make it the default sink
+After=bluetooth.target pulseaudio.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-%h/.local/state/moss/jbl.env
+ExecStart=MOSS_DIR/tools/moss-jbl-connect.sh
+
+[Install]
+WantedBy=default.target

@@ -68,8 +68,8 @@ firmware 300 ms after the last drive.
   straight to `cmd_vel`;
 - the RPLidar C1 reader (`moss_dimos/rplidar_c1.py`) on its own USB serial adapter;
 - lidar odometry (kiss-icp, `moss_dimos/lidar_odometry.py`), the pose source:
-  the encoders give metres only once `MOSS_TICKS_PER_M` is set, and no IMU
-  feeds the odometry;
+  the encoders give metres only once `MOSS_TICKS_PER_M` is set, and the
+  RealSense's gyro gives the odometry its rotation prior (below);
 - the 2D scored costmap (`moss_dimos/costmap2d.py`), where the lidar writes obstacles
   and the depth camera adds the ones below the scan plane. An obstacle becomes a
   wall once seen from two places 10 cm apart, never from one spot. The lidar's
@@ -80,11 +80,14 @@ firmware 300 ms after the last drive.
   table top the rover has turned away from keeps its wall until the camera looks
   at that spot again and sees nothing. The knobs are `MOSS_HIT_CAP`,
   `MOSS_FREE_FLOOR` and `MOSS_RAY_MAX_M` (below);
-- an experiment, off by default: the lidar odometry's rotation prior from the RealSense's
-  gyro (`MOSS_GYRO=1`): a full-power pivot turns the rover 25 degrees between two scans,
-  more than the constant-velocity prior follows, and the map drifts; the gyro would say
-  where the rover turned, but the IMU pipeline fails to open on the rover today and takes
-  the camera down with it;
+- the lidar odometry's rotation prior from the RealSense's gyro, on with `MOSS_IMU` (the
+  default): the IMU read in the camera's own process gives the yaw rate at 200 Hz, and each
+  registration starts from the yaw integrated since the previous revolution. A full-power
+  pivot turns the rover 25 degrees between two scans, more than the constant-velocity prior
+  follows, and the map would drift. `MOSS_GYRO=0` turns it off; with `MOSS_IMU=0`,
+  `MOSS_GYRO=1` is refused with a warning (it would open dimOS's second IMU pipeline, which
+  fails on the rover and takes the camera down), and `MOSS_GYRO_FORCE=1` builds it anyway,
+  as an experiment ([imu.md](imu.md#the-gyro-and-the-odometry));
 - the sound module (`moss_dimos/sounds.py`): a pack of short synthesized cues in
   `assets/sounds` played through the robot user's PulseAudio session (a Bluetooth
   speaker once connected, the default sink otherwise) on confirmed events only: the
@@ -93,7 +96,37 @@ firmware 300 ms after the last drive.
   Each cue has a cooldown and the player keeps a gap between cues, so the rover
   never chatters. `MOSS_SOUNDS=0` leaves it out, `MOSS_SOUND_VOLUME` (0 to 1) and
   `MOSS_SOUND_SINK` (a PulseAudio sink name) tune it; a stack launched as a system
-  service has no audio session and stays silent;
+  service has no audio session and stays silent. A Bluetooth speaker sleeps its link
+  after a few tens of seconds of silence, and a short cue sent into a sleeping link is
+  lost (a silent clip every 240 s did not keep it awake). The module does two things
+  against it: it plays a silent clip every `MOSS_SOUND_KEEP_AWAKE_S` seconds (15; 0 =
+  off), and it plays 0.3 s of silence in front of every cue (`MOSS_SOUND_PREROLL_S`, up
+  to 2 s; 0 = off), meant to wake the link on the silence rather than on the cue. The
+  cues with their silence are WAV copies written once into `MOSS_SOUND_CACHE` (default
+  `<tempdir>/moss_sound_cache`); a cue whose copy cannot be written plays as it is. The
+  module's first log line gives the period and the pre-roll. One check on the robot:
+  `pactl list short modules | grep suspend`. When it shows `module-suspend-on-idle`,
+  PulseAudio suspends the sink 5 s after each clip (its default timeout), whatever the
+  keep-awake period. After a reboot the speaker comes back through a systemd user unit,
+  `tools/moss-jbl.service`, which runs `tools/moss-jbl-connect.sh`: `bluetoothctl
+  connect`, up to `MOSS_JBL_TRIES` tries (120) with 5 s between tries, then the
+  speaker's PulseAudio sink becomes the default sink, at the volume PulseAudio remembers
+  for it; a try that connects but finds no sink connects again on the next one. It gives
+  up after about ten minutes of waits (about twenty with the speaker off, each connect
+  waiting out its page timeout). The speaker is paired and trusted once with
+  `bluetoothctl`; its address lives only in `~/.local/state/moss/jbl.env`. Install from
+  the checkout as the robot's user, whose user manager starts at boot (`sudo loginctl
+  enable-linger $USER`, once):
+
+  ```sh
+  mkdir -p ~/.config/systemd/user ~/.local/state/moss
+  echo 'MOSS_JBL_MAC=<speaker address>' > ~/.local/state/moss/jbl.env
+  sed -e "s|MOSS_DIR|$PWD|g" tools/moss-jbl.service > ~/.config/systemd/user/moss-jbl.service
+  systemctl --user daemon-reload && systemctl --user enable moss-jbl && systemctl --user restart --no-block moss-jbl
+  ```
+
+  `--no-block` returns at once, the script runs on in the background;
+  `journalctl --user -u moss-jbl` says when it connected, or why it gave up;
 - the RealSense colour stream at 640x480, 5 fps, carried as JPEG on the bus, and its
   depth aligned to colour at the same rate, which `lidar_odometry` turns into obstacle
   points from 12 cm (the camera's close-range depth) to 3 m, drawn in amber on the map
@@ -428,9 +461,9 @@ $ sudo systemctl daemon-reload && sudo systemctl enable --now lcm-loopback
 - The geometry and the base numbers are placeholders until measured: ground
   speed, ticks per metre, track width, lidar pose, the footprint and the
   static-friction floor. [base.md](base.md) says how to measure the base's.
-- The lidar odometry runs without a gyro prior (`use_gyro_prior=False`); the
-  D455F IMU could feed it once the camera mount is measured, and there is no
-  switch for it.
+- The gyro prior reads the yaw rate on one axis of the camera's frame
+  (`gyro_axis="-y"`), the right one for the level, upright mount: a camera
+  mounted upside down flips its sign, and there is no switch for the axis.
 - Every launch starts a fresh map: no map is saved between runs and there are
   no keep-out zones. The recording keeps the run.
 - A recording is not replayed through the stack; the SQLite file is readable

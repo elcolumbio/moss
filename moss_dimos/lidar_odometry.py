@@ -15,6 +15,17 @@ sanity signal. Rotation without a gyro is the known weak spot: on C1 scans of
 ~340 points, kiss-icp alone was measured under-estimating turns by 20-35 %.
 Bench the turn tracking before trusting long runs.
 
+A contact shakes the lidar: the revolution swept during it comes in with a
+fraction of its points and registers at a wrong heading (measured: +6.4 deg
+in one revolution of 97 points where the gyro moved +0.5 deg), and every
+later revolution keeps that heading. So a contact on `bump` (the IMU's
+BumpImu, the base's stall guard, the explorer's back-off) is remembered: a
+revolution within MOSS_CONTACT_WINDOW_S of it that carries fewer than
+MOSS_CONTACT_DROP_RATIO times the running median point count is not
+registered (the pose is carried by the gyro, or held without it, and its
+cloud never reaches the map), and the next MOSS_RELOC_SWEEPS registered
+revolutions search with their sigma times MOSS_RELOC_SIGMA_GAIN.
+
 Frames and heights:
   * `world` is kiss-icp's own frame: every run starts at the origin, facing +x.
   * `odom` is published on the floor plane (z = 0) - see handle_pointcloud.
@@ -33,6 +44,7 @@ costmap2d maps the camera obstacles next to the lidar returns.
 Streams
   pointcloud              : In[PointCloud2]  one revolution, lidar_link (rplidar_c1.py)
   imu                     : In[Imu]          gyro (angular_velocity) for the optional rotation prior
+  bump                    : In[Bool]         a contact: the shaken revolution after it is dropped
   coordinator_joint_state : In[JointState]   base/vx, base/vy, base/wz positions = wheel odometry, logged only
   depth_image             : In[Image]        optional depth camera, DEPTH16 mm, aligned to colour
   camera_info             : In[CameraInfo]   its colour intrinsics
@@ -44,6 +56,7 @@ Streams
 from __future__ import annotations
 
 import math
+import os
 import threading
 import time
 from typing import Any
@@ -64,6 +77,7 @@ from dimos.msgs.sensor_msgs.JointState import JointState
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
 from dimos.msgs.tf2_msgs.TFMessage import TFMessage
 from dimos.utils.logging_config import setup_logger
+from dimos_lcm.std_msgs import Bool   # the SAME Bool class as BumpImu / the coordinator / the costmap: one 'bump' stream type
 
 from moss_dimos.robot_profile import RobotProfile, current as _current_profile
 
@@ -78,6 +92,34 @@ OBSTACLE_MAX_M = 3.0           # camera obstacles are trusted up to this range; 
                                # on a glossy floor arm phantom obstacles. Floor samples keep the full
                                # DEPTH_MAX_M range: erasing stays cheap.
 OBSTACLE_Z_M = (0.12, 1.30)    # world z band the camera turns into floor obstacles. Upper bound 1.30, not 0.70: a table top is a BLOCK - the rover goes around tables, never between the legs
+
+
+def _env_float(name: str, default: float, lo: float, hi: float) -> float:
+    """A number from the environment, read once at import. Unset or empty ->
+    `default`; not a number -> `default`, said in the log; outside [lo, hi]
+    -> the nearest bound, said in the log."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(f"lidar odometry: {name}={raw!r} is not a number - using {default}")
+        return default
+    if not lo <= value <= hi:
+        bounded = hi if value > hi else lo      # below lo, or nan
+        logger.warning(f"lidar odometry: {name}={raw!r} is outside [{lo}, {hi}] - using {bounded}")
+        return bounded
+    return value
+
+
+# A contact (`bump`) shakes the lidar: the revolution swept during it comes in thin and
+# registers at a wrong heading, and the map jumps. These four decide what happens next.
+CONTACT_WINDOW_S = _env_float("MOSS_CONTACT_WINDOW_S", 0.4, 0.0, 5.0)        # a revolution this soon after a contact may be the shaken one
+CONTACT_DROP_RATIO = _env_float("MOSS_CONTACT_DROP_RATIO", 0.5, 0.0, 1.0)    # ... and is dropped under this share of the median point count (0 = never)
+RELOC_SWEEPS = int(round(_env_float("MOSS_RELOC_SWEEPS", 5, 0, 50)))        # registered revolutions after a contact that search wider (0 = none)
+RELOC_SIGMA_GAIN = _env_float("MOSS_RELOC_SIGMA_GAIN", 2.0, 1.0, 10.0)      # their sigma (kernel, and 3 sigma of correspondence distance) times this
+COUNT_HISTORY = 20             # registered revolutions in the running median of the point count
 
 
 def _profile() -> RobotProfile:
@@ -137,6 +179,7 @@ def split_floor_and_obstacles(bx: np.ndarray, by: np.ndarray, bz: np.ndarray,
 class LidarOdometry(Module):
     pointcloud: In[PointCloud2]
     imu: In[Imu]
+    bump: In[Bool]                  # a contact (BumpImu, the stall guard, the explorer's back-off): the shaken revolution is dropped
     coordinator_joint_state: In[JointState]
     depth_image: In[Image]          # depth camera (aligned to colour), DEPTH16 mm
     camera_info: In[CameraInfo]     # colour intrinsics (= aligned depth intrinsics)
@@ -186,6 +229,16 @@ class LidarOdometry(Module):
         self._depth_n = 0
         self._depth_pts_last = 0
         self._pending_cam_pts = None
+        # contacts: the last one's monotonic stamp, the point counts of the last
+        # registered revolutions, and the relocation that follows a contact
+        self._contact_t: float | None = None
+        self._dropped_contact = 0          # revolutions dropped as shaken by a contact
+        self._counts: list[int] = []
+        self._reloc_armed_t: float | None = None   # the contact stamp that armed the current relocation
+        self._reloc_left = 0               # registered revolutions still to search wider
+        self._reloc_n = 0                  # ... done so far in this relocation
+        self._reloc_yaw = 0.0              # the yaw the registration corrected over them, rad
+        self._reloc_announce = False
 
     # ── lifecycle ──────────────────────────────────────────────────────
     @rpc
@@ -208,6 +261,9 @@ class LidarOdometry(Module):
         logger.info(f"lidar odometry up (kiss-icp, voxel {self.voxel_size_m} m, range "
                     f"{self.min_range_m}-{self.max_range_m} m, prior: gyro={self.use_gyro_prior} "
                     f"axis {self.gyro_axis}, wheels NEVER) -> {self.world_frame}")
+        logger.info(f"lidar odometry contacts: a revolution within {CONTACT_WINDOW_S:g} s of a bump under "
+                    f"{CONTACT_DROP_RATIO:g} x the median point count is dropped; then {RELOC_SWEEPS} "
+                    f"revolutions register with sigma x{RELOC_SIGMA_GAIN:g}")
 
     @rpc
     def stop(self) -> None:
@@ -260,6 +316,13 @@ class LidarOdometry(Module):
                 self._gyro_acc += sign * v[axis] * dt
                 self._gyro_seen = True
         self._gyro_last_ts = ts
+
+    async def handle_bump(self, msg: Bool) -> None:
+        """A contact: stamped, nothing else here. The next revolutions read the
+        stamp (handle_pointcloud): the shaken one is dropped, the relocation
+        is armed."""
+        if bool(getattr(msg, "data", False)):
+            self._contact_t = time.monotonic()
 
     async def handle_coordinator_joint_state(self, msg: JointState) -> None:
         names = list(msg.name); pos = list(msg.position)
@@ -371,6 +434,51 @@ class LidarOdometry(Module):
         self._prior_used = "+".join(used) or "cv"
         return _se2(dx, dy, dyaw)
 
+    # ── contacts ───────────────────────────────────────────────────────
+    def _arm_relocation(self) -> None:
+        """A contact not seen yet arms the relocation: the next RELOC_SWEEPS
+        registered revolutions search wider. A contact during a relocation
+        starts its count again; the yaw correction keeps adding up."""
+        stamp = self._contact_t
+        if stamp is None or stamp == self._reloc_armed_t:
+            return
+        self._reloc_armed_t = stamp
+        if RELOC_SWEEPS > 0:
+            self._reloc_left = RELOC_SWEEPS
+            self._reloc_announce = True
+
+    def _shaken(self, n_pts: int, t0: float) -> float | None:
+        """The running median point count when this revolution is a shaken
+        sweep to drop (within CONTACT_WINDOW_S of a contact, under
+        CONTACT_DROP_RATIO times the median of the last registered ones),
+        else None."""
+        stamp = self._contact_t
+        if stamp is None or t0 - stamp > CONTACT_WINDOW_S or not self._counts:
+            return None
+        median = float(np.median(self._counts))
+        return median if n_pts < CONTACT_DROP_RATIO * median else None
+
+    def _carry(self, k, n_pts: int, median: float) -> np.ndarray:
+        """The pose for a dropped revolution: the last one turned by the gyro
+        integral when the prior is on and fed, else the last one unchanged.
+        kiss-icp's last pose follows it (the next prior starts from there);
+        its map and its threshold are not touched."""
+        last = np.asarray(k.last_pose)
+        turned = self.use_gyro_prior and self._gyro_seen
+        pose = last @ _se2(0.0, 0.0, self._gyro_acc) if turned else last
+        k.last_pose = pose
+        self._gyro_acc, self._gyro_seen = 0.0, False
+        self._dropped_contact += 1
+        if turned:
+            how = "pose carried by the gyro"
+        elif self.use_gyro_prior:      # the prior is on but the imu stream went quiet
+            how = "pose held (no gyro sample since the last revolution)"
+        else:
+            how = "pose held (no gyro prior)"
+        logger.warning(f"lidar odom contact: revolution dropped ({n_pts} pts, median {median:.0f}), {how}; "
+                       f"dropped by contacts so far: {self._dropped_contact}")
+        return pose
+
     # ── the work ───────────────────────────────────────────────────────
     async def handle_pointcloud(self, msg: PointCloud2) -> None:
         out = msg.as_numpy()
@@ -381,25 +489,15 @@ class LidarOdometry(Module):
         thick = np.concatenate([pts, pts + [0, 0, PLANE_THICKNESS_M], pts - [0, 0, PLANE_THICKNESS_M]])
         with self._lock:
             k = self._kiss
-            prior = self._prior_delta()
-            frame = k.preprocessor.preprocess(thick, np.tile(sweep_times(pts), 3) if self.deskew else np.zeros(len(thick)), prior)
-            source, frame_down = k.voxelize(frame)
-            sigma = k.adaptive_threshold.get_threshold()
-            initial_guess = np.asarray(k.last_pose) @ prior
-            try:
-                new_pose = self._register(k, source, initial_guess, sigma)
-            except RuntimeError as exc:
-                self._dropped += 1
-                logger.warning(f"lidar odometry: registration failed twice, revolution dropped ({exc}); "
-                               f"dropped so far: {self._dropped}")
-                return
-            corr = np.linalg.inv(initial_guess) @ np.asarray(new_pose)
-            k.adaptive_threshold.update_model_deviation(corr)
-            k.local_map.update(frame_down, new_pose)
-            k.last_delta = np.linalg.inv(np.asarray(k.last_pose)) @ new_pose
-            k.last_pose = new_pose
-            # consume the priors
-            self._gyro_acc, self._gyro_seen = 0.0, False
+            self._arm_relocation()
+            median = self._shaken(len(pts), t0)
+            shaken = median is not None
+            if shaken:
+                new_pose = self._carry(k, len(pts), median)
+            else:
+                new_pose = self._register_revolution(k, pts, thick)
+                if new_pose is None:
+                    return
         pose = np.asarray(new_pose)
         R, t = pose[:3, :3], pose[:3, 3]
         x, y, yaw = float(t[0]), float(t[1]), math.atan2(R[1, 0], R[0, 0])
@@ -418,14 +516,17 @@ class LidarOdometry(Module):
         # goal FOREVER. The lidar height lives in the tf child and in the
         # world-cloud transform, never in the pose.
         self.odom.publish(PoseStamped(ts, self.world_frame, position=Vector3(x, y, 0.0), orientation=q))
-        cam = self._pending_cam_pts
-        if cam is not None and time.monotonic() - cam[1] < 0.5:
-            world_pts = np.vstack([world_pts, cam[0]])
-        self.lidar.publish(PointCloud2.from_numpy(world_pts.astype(np.float32), frame_id=self.world_frame, timestamp=ts))
+        if not shaken:      # a shaken sweep: its pose goes out, its cloud never reaches the map
+            cam = self._pending_cam_pts
+            if cam is not None and time.monotonic() - cam[1] < 0.5:
+                world_pts = np.vstack([world_pts, cam[0]])
+            self.lidar.publish(PointCloud2.from_numpy(world_pts.astype(np.float32), frame_id=self.world_frame, timestamp=ts))
         self.tf.publish(TFMessage(
             Transform(translation=Vector3(x, y, 0.0), rotation=q, frame_id=self.world_frame, child_frame_id=self.base_frame, ts=ts),
             Transform(translation=Vector3(0.0, 0.0, lidar_h), rotation=Quaternion(0, 0, 0, 1),
                       frame_id=self.base_frame, child_frame_id=self.lidar_frame, ts=ts)))
+        if shaken:
+            return
         self._n += 1
         self._last_ms = (time.monotonic() - t0) * 1000.0
         if t0 - self._last_log >= self.log_every_s:
@@ -436,3 +537,47 @@ class LidarOdometry(Module):
                         f"{self._depth_pts_last} pts) | gyro integral "
                         f"x={g[0]:+.1f} y={g[1]:+.1f} z={g[2]:+.1f}deg | wheels "
                         + (f"x={w[0]:+.3f} y={w[1]:+.3f} th={math.degrees(w[2]):+.1f}deg" if w else "none"))
+
+    def _register_revolution(self, k, pts: np.ndarray, thick: np.ndarray) -> np.ndarray | None:
+        """Register one revolution into kiss-icp and update its state; the new
+        pose, or None when the registration failed twice (revolution dropped).
+        Called under the lock. During a relocation the sigma is RELOC_SIGMA_GAIN
+        times the adaptive one, from the same prior (the gyro's heading when
+        the prior is on)."""
+        prior = self._prior_delta()
+        frame = k.preprocessor.preprocess(thick, np.tile(sweep_times(pts), 3) if self.deskew else np.zeros(len(thick)), prior)
+        source, frame_down = k.voxelize(frame)
+        sigma = k.adaptive_threshold.get_threshold()
+        relocating = self._reloc_left > 0
+        if relocating:
+            sigma *= RELOC_SIGMA_GAIN       # after a contact: search wider, from the prior's heading
+            if self._reloc_announce:
+                self._reloc_announce = False
+                logger.info(f"lidar odom contact: relocating over {self._reloc_left} revolutions "
+                            f"(sigma x{RELOC_SIGMA_GAIN:.1f})")
+        initial_guess = np.asarray(k.last_pose) @ prior
+        try:
+            new_pose = self._register(k, source, initial_guess, sigma)
+        except RuntimeError as exc:
+            self._dropped += 1
+            logger.warning(f"lidar odometry: registration failed twice, revolution dropped ({exc}); "
+                           f"dropped so far: {self._dropped}")
+            return None
+        corr = np.linalg.inv(initial_guess) @ np.asarray(new_pose)
+        k.adaptive_threshold.update_model_deviation(corr)
+        k.local_map.update(frame_down, new_pose)
+        k.last_delta = np.linalg.inv(np.asarray(k.last_pose)) @ new_pose
+        k.last_pose = new_pose
+        # consume the priors
+        self._gyro_acc, self._gyro_seen = 0.0, False
+        self._counts.append(len(pts))
+        del self._counts[:-COUNT_HISTORY]
+        if relocating:
+            self._reloc_yaw += math.atan2(corr[1, 0], corr[0, 0])
+            self._reloc_n += 1
+            self._reloc_left -= 1
+            if self._reloc_left == 0:
+                logger.info(f"lidar odom contact: relocation done over {self._reloc_n} revolutions, "
+                            f"the registration corrected the yaw by {math.degrees(self._reloc_yaw):+.1f} deg in total")
+                self._reloc_n, self._reloc_yaw = 0, 0.0
+        return new_pose

@@ -10,8 +10,8 @@ short, hard deceleration along the direction of travel. The RealSense on the
 nose carries an IMU, and `MOSS_IMU=1` turns its decelerations into contacts on
 the same `bump` stream.
 
-It is opt-in (default off) until a stationary launch on the robot shows
-colour, depth and the IMU alive together (below).
+It is on by default since a stationary launch on the robot showed colour,
+depth and the IMU alive together (below); `MOSS_IMU=0` turns it off.
 
 ## The IMU
 
@@ -27,7 +27,7 @@ Two facts decide how it must be opened:
 * dimOS's `RealSenseCamera` with `enable_imu=True` opens a SECOND pipeline for
   the motion module (`_start_imu`). On the rover that pipeline fails ("No
   device connected") and takes colour and depth down with it. That is why
-  `MOSS_GYRO=1` alone stays an experiment.
+  the gyro prior never takes that path unless forced (below).
 
 So `moss_dimos/realsense_imu.py` defines `MossRealSense`, the same module with
 the same outputs, which changes one method: `_start_imu` opens the motion
@@ -66,6 +66,23 @@ and the mean accel on z goes negative (about -1.7 m/s^2 at 10 degrees). If it
 goes positive, the camera is mounted the other way round: set
 `MOSS_BUMP_AXIS=-z`.
 
+## The gyro and the odometry
+
+The same IMU gives the lidar odometry its rotation prior. On the robot the
+`imu` messages from the camera's own process reach `LidarOdometry` at about
+200 Hz; it integrates the yaw rate (`-gyro.y`) from one lidar revolution to
+the next, the next registration starts from that yaw (the translation stays
+kiss-icp's constant-velocity model), and the integral starts again from
+zero. A full-power pivot (254 deg/s measured on the floor) turns the rover 25
+degrees between two scans, more than the constant-velocity prior follows; the
+gyro says where the rover turned. A revolution with no gyro sample since the
+last one falls back to the constant-velocity model. Three switches: with
+`MOSS_IMU` on (the default) the prior is on, and the odometry's start line
+says `prior: gyro=True`; `MOSS_GYRO=0` turns it off at any time; with
+`MOSS_IMU=0`, `MOSS_GYRO=1` is refused with a warning, because the gyro would
+then come from dimOS's second IMU pipeline (above), and `MOSS_GYRO_FORCE=1`
+builds it anyway, the experiment path.
+
 ## The rule
 
 `moss_dimos/bump_imu.py`, class `ImuContactDetector` (pure, benched with known
@@ -97,11 +114,12 @@ IMU contact: forward -4.8 m/s^2 (threshold 4.0) while commanded L=+70% R=+60%
 ```
 
 `bump` is the stream the coordinator's stall guard and the explorer's back-off
-already publish on, so the same three listeners react: the planner's escape
+already publish on, so the same listeners react: the planner's escape
 (stop, 0.20 m in reverse, the goal abandoned; a second contact during an
 escape stops dead), the costmap's contact memory (the band ahead becomes a
-wall) and the sounds (`bump_surprise`, at the impact rather than a second
-later). The stall guard stays on: a contact with the tracks frozen can be
+wall), the sounds (`bump_surprise`, at the impact rather than a second
+later) and the lidar odometry, which drops the shaken revolution that
+follows ([below](#a-contact-and-the-map)). The stall guard stays on: a contact with the tracks frozen can be
 reported twice, by the IMU at the impact and by the encoders a second later.
 
 The cockpit shows each contact in its decision feed
@@ -125,6 +143,90 @@ full-power pivot. Held steady, the high-pass removes it; its onset and its end
 are what the signature must look at, with the gyro columns of the CSV next to
 `hp` (a figure from the geometry, not from a recording).
 
+## A contact and the map
+
+A contact shakes the lidar as well as the chassis. Measured on the robot,
+during the drive into the box turned 45 degrees: in the revolution swept
+during the contact the lidar odometry's yaw jumped +6.4 degrees while the
+gyro integral moved +0.5 degrees, and that revolution carried 97 points where
+its neighbours carried about 300. The revolutions after it registered at the
+wrong heading and kept it: one shaken sweep, one jump of the whole map.
+
+So `LidarOdometry` listens to `bump` too (the same stream, whoever publishes
+on it) and stamps the time of each contact. Then:
+
+1. **The shaken sweep is dropped.** A revolution that arrives within
+   `MOSS_CONTACT_WINDOW_S` (0.4 s) after a contact and carries fewer than
+   `MOSS_CONTACT_DROP_RATIO` (0.5) times the median point count of the last
+   20 registered revolutions is not registered. The pose published for it is
+   the last one turned by the gyro integral since then (prior on), or the
+   last one unchanged (prior off, or no gyro sample since the last
+   revolution: the log then says `pose held (no gyro prior)` or `pose held
+   (no gyro sample since the last revolution)`); kiss-icp's map and adaptive
+   threshold do not see it, and its cloud never reaches the costmap. One line
+   in the log:
+
+   ```
+   lidar odom contact: revolution dropped (97 pts, median 300), pose carried by the gyro; dropped by contacts so far: 1
+   ```
+
+   A full revolution inside the window is registered as usual: only a thin
+   one counts as shaken.
+
+2. **The relocation.** The next `MOSS_RELOC_SWEEPS` (5) registered
+   revolutions search wider: their sigma (the kernel, and the correspondence
+   distance of 3 sigma) is the adaptive one times `MOSS_RELOC_SIGMA_GAIN`
+   (2.0). The prior stays what it is: the gyro's rotation with the prior on,
+   the constant-velocity translation. The registration starts from the
+   gyro's heading and has room to pull the map back into place. Two lines
+   frame it:
+
+   ```
+   lidar odom contact: relocating over 5 revolutions (sigma x2.0)
+   lidar odom contact: relocation done over 5 revolutions, the registration corrected the yaw by +0.6 deg in total
+   ```
+
+   A second contact during a relocation starts its count again.
+
+The knobs are read when the module is imported (a value that does not parse
+keeps the default, a value outside its range takes the nearest bound, both
+said in the log), and the odometry says them at start, on the line after
+`lidar odometry up`:
+
+```
+lidar odometry contacts: a revolution within 0.4 s of a bump under 0.5 x the median point count is dropped; then 5 revolutions register with sigma x2
+```
+
+| Variable | Default | What |
+|---|---|---|
+| `MOSS_CONTACT_WINDOW_S` | 0.4 | seconds after a contact during which a thin revolution counts as shaken, 0 to 5 |
+| `MOSS_CONTACT_DROP_RATIO` | 0.5 | a revolution under this share of the median point count is dropped, 0 to 1; `0` never drops |
+| `MOSS_RELOC_SWEEPS` | 5 | registered revolutions after a contact that search wider, 0 to 50; `0` turns the relocation off |
+| `MOSS_RELOC_SIGMA_GAIN` | 2.0 | their sigma times this, 1 to 10 |
+
+`MOSS_CONTACT_DROP_RATIO=0 MOSS_RELOC_SWEEPS=0`: the odometry ignores `bump`, as before.
+
+The contact lines start with `lidar odom` and so appear in
+`tools/moss-fly.sh log`. `benches/bench_lidar_odometry_cold.py` section G
+holds the mechanism on known numbers: at rest after 10 revolutions of 300
+points, a bump and a revolution of 90 points turned 6 degrees leave the yaw
+at the gyro's +0.40 degrees and log the drop; the next 5 full revolutions
+register with sigma 0.40 m and the 6th with 0.20 m; with no bump, 0.5 s after
+it, or with `MOSS_CONTACT_DROP_RATIO=0`, the same revolution registers at
++6.0 degrees. Reloaded with `MOSS_RELOC_SWEEPS=3 MOSS_RELOC_SIGMA_GAIN=3
+MOSS_CONTACT_WINDOW_S=0.05`, 3 revolutions register at 0.60 m, and a thin
+revolution 0.1 s after the bump registers. `benches/bench_moss_blueprints_cold.py`
+checks that `bump` reaches the odometry in moss-nav and moss-explore, on the
+costmap's stream.
+
+What it does not cover: a shaken sweep that keeps its point count (the drop
+reads the count only); a shaken sweep whose revolution is handled before
+`handle_bump` stamps the contact (the window only looks forward from the
+stamp, so that sweep is registered at the wrong heading, the measured +6.4
+degree case, and the relocation the late stamp arms starts from that
+heading); and a contact nothing publishes on `bump`. The robot replay will
+show how often a sweep beats its bump.
+
 ## Knobs
 
 | Variable | Default | What |
@@ -134,7 +236,8 @@ are what the signature must look at, with the gyro columns of the CSV next to
 | `MOSS_BUMP_AXIS` | `+z` | the forward axis of the camera's frame, x, y or z with a sign |
 | `MOSS_BUMP_DEBOUNCE_S` | 0.7 | seconds of silence after a contact, 0 to 10 |
 | `MOSS_IMU_LOG` | unset | a CSV path: every sample is appended (below) |
-| `MOSS_GYRO` | off | the gyro prior of the lidar odometry; with `MOSS_IMU=1` it reads the in-process IMU |
+| `MOSS_GYRO` | on with `MOSS_IMU` | the gyro prior of the lidar odometry from the in-process IMU (above); `0` turns it off; with `MOSS_IMU=0`, `1` is refused with a warning |
+| `MOSS_GYRO_FORCE` | off | `1` with `MOSS_IMU=0 MOSS_GYRO=1`: the prior on dimOS's second IMU pipeline, an experiment |
 
 They are read when the blueprint is built (the build log says
 `MOSS blueprint: IMU contacts on bump, forward axis +z, threshold 4 m/s^2, ...`);

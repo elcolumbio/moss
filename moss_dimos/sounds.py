@@ -21,7 +21,12 @@ Environment: MOSS_SOUNDS (on by default; 0 = the blueprint leaves the module
 out), MOSS_SOUND_VOLUME (0..1, default from assets/sounds/config.json),
 MOSS_SOUND_SINK (a PulseAudio sink name or index; default = the session's
 default sink, which is the Bluetooth speaker once it is connected),
-MOSS_SOUND_BACKEND (paplay or pw-play; default: paplay when present).
+MOSS_SOUND_BACKEND (paplay or pw-play; default: paplay when present),
+MOSS_SOUND_KEEP_AWAKE_S (a silent clip every this many seconds, default 15,
+0 = off), MOSS_SOUND_PREROLL_S (silence played in front of every cue, default
+0.3 s, 0 = off), MOSS_SOUND_CACHE (where the pre-rolled copies are written,
+default <tempdir>/moss_sound_cache). The keep-awake period is read when the
+module starts and said in its first log line, with the pre-roll.
 
 The player needs the user's audio session: a stack launched from a login
 shell or over ssh as the robot's user finds it (XDG_RUNTIME_DIR); a system
@@ -46,6 +51,7 @@ from dimos.utils.logging_config import setup_logger
 from dimos_lcm.std_msgs import Bool
 
 from moss_dimos import robot_profile
+from moss_dimos.sound_pack.player import env_seconds
 
 logger = setup_logger()
 
@@ -59,8 +65,10 @@ BATTERY_CRITICAL_MV = 10400     # the flight check refuses to launch below 10.8 
 BATTERY_SAMPLES = 6             # consecutive telemetry lines (3 s at 2 Hz) below a threshold before it counts
 RECOVERY_WINDOW_S = 20.0        # a stall followed by motion inside this window = a recovery
 RECOVERY_MIN_TICKS = 100        # encoder ticks that count as "moving again" after a stall
-KEEP_AWAKE_S = 240.0            # a Bluetooth speaker sleeps after minutes of silence and the cues are rare: a silent
-                                # 0.6 s clip every KEEP_AWAKE_S keeps it on (assets/sounds/keep_awake.wav); 0 = off
+KEEP_AWAKE_S = 15.0             # default of MOSS_SOUND_KEEP_AWAKE_S: a Bluetooth speaker sleeps its link after a few tens
+                                # of seconds of silence and the cues are rare: a short silent clip this often, meant to keep it on
+                                # (assets/sounds/keep_awake.wav); 0 = off
+KEEP_AWAKE_MAX_S = 3600.0       # a longer period is clamped to this
 
 
 def sound_volume(default: float, env: dict | None = None) -> float:
@@ -73,6 +81,12 @@ def sound_volume(default: float, env: dict | None = None) -> float:
     if v != v:
         return default
     return max(0.0, min(1.0, v))
+
+
+def keep_awake_period(env: dict | None = None) -> float:
+    """MOSS_SOUND_KEEP_AWAKE_S in seconds: unset or not a number -> KEEP_AWAKE_S,
+    0 or below -> 0 (off), above KEEP_AWAKE_MAX_S -> KEEP_AWAKE_MAX_S."""
+    return env_seconds("MOSS_SOUND_KEEP_AWAKE_S", KEEP_AWAKE_S, KEEP_AWAKE_MAX_S, env)
 
 
 def playback_backend(env: dict | None = None) -> str | None:
@@ -178,10 +192,12 @@ class MossSounds(Module):
         self._player = None
         self._mapper = EventMapper()
         self._silent_reason: str | None = None
+        self._keep_awake_s = KEEP_AWAKE_S
 
     @rpc
     def start(self) -> None:
         super().start()
+        self._keep_awake_s = keep_awake_period()
         backend = playback_backend()
         if backend is None:
             self._silent_reason = f"no playback backend on the PATH ({' / '.join(BACKENDS)})"
@@ -192,7 +208,8 @@ class MossSounds(Module):
             config = {"backend": backend}
             if self._sink:
                 config["target"] = self._sink
-            self._player = MossSoundPlayer(root=self._assets_dir, config=config)
+            self._player = MossSoundPlayer(root=self._assets_dir, config=config,
+                                           log=lambda text: logger.warning(f"MOSS sounds: {text}"))
             vol = sound_volume(self._player.volume) if self._volume is None else self._volume
             self._player.set_volume(vol)
         except Exception as exc:  # noqa: BLE001 - a broken pack never stops the stack
@@ -200,23 +217,27 @@ class MossSounds(Module):
             logger.warning(f"MOSS sounds: player not started ({self._silent_reason}) - the rover stays silent")
             self._player = None
             return
+        awake = f"every {self._keep_awake_s:g} s" if self._keep_awake_s > 0 else "off"
+        preroll = f"{self._player.preroll_s:.2f} s" if self._player.preroll_s > 0 else "off"
         logger.info(f"MOSS sounds: up, {len(self._player.rules)} event families, backend {backend}, "
-                    f"sink {self._sink or 'default'}, volume {self._player.volume:.2f}, assets {self._assets_dir}")
+                    f"sink {self._sink or 'default'}, volume {self._player.volume:.2f}, keep-awake {awake}, "
+                    f"pre-roll {preroll}, assets {self._assets_dir}")
         self._play(["boot_ready"])
         self._keep_awake(backend)
 
     def _keep_awake(self, backend: str) -> None:
-        """A silent clip every KEEP_AWAKE_S on the same output, so a Bluetooth speaker in the
-        bin never goes to sleep between two cues (it did on the floor, and the cues after
-        that went nowhere). A daemon thread, stopped with the module."""
+        """A silent clip every MOSS_SOUND_KEEP_AWAKE_S seconds on the same output, so a
+        Bluetooth speaker in the bin does not go to sleep between two cues (it did on the
+        floor, and the cues after that went nowhere). A daemon thread, stopped with the module."""
         clip = self._assets_dir / "keep_awake.wav"
-        if KEEP_AWAKE_S <= 0 or not clip.is_file():
+        period = self._keep_awake_s
+        if period <= 0 or not clip.is_file():
             return
         self._awake_stop = threading.Event()
 
         def loop() -> None:
             from moss_dimos.sound_pack.player import playback_command
-            while not self._awake_stop.wait(KEEP_AWAKE_S):
+            while not self._awake_stop.wait(period):
                 if self._player is None:
                     return
                 try:

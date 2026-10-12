@@ -42,6 +42,14 @@ Known input -> known output in physical units. Groups:
                     coordinator, no stream type conflict; refused without the
                     camera; both classes pickle by reference into a clean
                     interpreter; importing the blueprints imports neither
+  K. MOSS_GYRO    - the odometry's rotation prior: on by default with the
+                    in-process IMU (MossRealSense, enable_imu True), off with
+                    MOSS_GYRO=0 (the contacts stay) or MOSS_IMU=0 (quietly);
+                    MOSS_IMU=0 MOSS_GYRO=1 refused with one warning (dimOS's
+                    camera keeps enable_imu False); MOSS_GYRO_FORCE=1 on top
+                    builds dimOS's camera with enable_imu True and the prior
+                    on, its imu wired to the odometry, with a warning; FORCE
+                    alone changes nothing; no camera, no prior
   I. the worker   - what a dimOS forkserver worker does: unpickle the
                     coordinator class in a clean interpreter -> the module is
                     imported, 'moss' is registered, the registry builds a
@@ -462,7 +470,7 @@ check("lidar on the CP2102N by-id at 460800, frame lidar_link",
 hw = atom(nav, "MossControlCoordinator").kwargs["hardware"][0]
 check("base: adapter 'moss' on the QT Py by-id", hw.adapter_type == "moss" and hw.address == os.path.join(byid, QTPY))
 check("pad: the same MOSS envelope as moss-gamepad", atom(nav, "GamepadTeleop").kwargs.get("envelope") == teleop_envelope(g))
-check("odometry without the gyro prior (MOSS_GYRO unset = off)", atom(nav, "LidarOdometry").kwargs.get("use_gyro_prior") is False)
+check("odometry with the gyro prior (MOSS_GYRO unset = on with MOSS_IMU, the default)", atom(nav, "LidarOdometry").kwargs.get("use_gyro_prior") is True)
 check("odometry without deskew (MOSS_DESKEW unset = off: on the rover the deskew thread fails)", atom(nav, "LidarOdometry").kwargs.get("deskew") is False)
 cam = atom(nav, "MossRealSense").kwargs
 check("RealSense 640x480 @ 5 fps, colour + depth (aligned), no point cloud, the IMU in the camera's own process (MOSS_IMU on by default)",
@@ -573,6 +581,12 @@ check("... the sounds read it too when the sound module is in the build",
       "MossSounds" not in names(imu_exp) or ("MossSounds", "in") in bump_side, f"{sorted(names(imu_exp))}")
 check("... no second bump stream of another type",
       [k for k in w if k[0] == "bump"] == [("bump", mb.Bool)], f"{[k for k in w if k[0] == 'bump']}")
+check("... and the lidar odometry's contact In (the shaken revolution dropped), on the costmap's stream, in moss-explore and "
+      "moss-nav; with MOSS_IMU=0 the stall guard's bump still reaches it",
+      ("LidarOdometry", "in") in bump_side
+      and {("LidarOdometry", "in"), ("MossCostMap", "in")} <= wiring(imu_nav).get(("bump", mb.Bool), set())
+      and {("MossControlCoordinator", "out"), ("LidarOdometry", "in")} <= wiring(off_exp).get(("bump", mb.Bool), set()),
+      f"{sorted(wiring(imu_nav).get(('bump', mb.Bool), set()))}")
 check("imu: MossRealSense out -> BumpImu in (and the odometry's In)",
       {("MossRealSense", "out"), ("BumpImu", "in"), ("LidarOdometry", "in")} <= w.get(("imu", Imu), set()),
       f"{sorted(w.get(('imu', Imu), set()))}")
@@ -586,7 +600,7 @@ except ValueError as exc:
     check("dimOS's stream type check accepts both MOSS_IMU builds", False, str(exc)[:300])
 check("moss-nav with MOSS_IMU=1: bump reaches the costmap (no planner there)",
       {("BumpImu", "out"), ("MossCostMap", "in")} <= wiring(imu_nav).get(("bump", mb.Bool), set()))
-check("MOSS_IMU=1 leaves the gyro prior off (MOSS_GYRO unset)", atom(imu_nav, "LidarOdometry").kwargs.get("use_gyro_prior") is False)
+check("MOSS_IMU=1 (MOSS_GYRO unset): the gyro prior on, from the in-process IMU", atom(imu_nav, "LidarOdometry").kwargs.get("use_gyro_prior") is True)
 os.environ.update(MOSS_BUMP_ACCEL="6", MOSS_BUMP_AXIS="-z", MOSS_BUMP_DEBOUNCE_S="0.5", MOSS_IMU_LOG="/data/imu.csv", MOSS_GYRO="1")
 tuned = mb.build_moss_nav()
 for k in ("MOSS_BUMP_ACCEL", "MOSS_BUMP_AXIS", "MOSS_BUMP_DEBOUNCE_S", "MOSS_IMU_LOG", "MOSS_GYRO"):
@@ -602,6 +616,115 @@ os.environ.pop("MOSS_CAMERA")
 check("MOSS_IMU=1 MOSS_CAMERA=0: no camera, so no BumpImu either (refused with a warning)",
       not ({"MossRealSense", "RealSenseCamera", "BumpImu"} & names(nocam)), f"{sorted(names(nocam))}")
 os.environ.pop("MOSS_IMU")
+
+# ── K. MOSS_GYRO: the gyro as the rotation prior ──────────────────────────
+print("K. MOSS_GYRO: the odometry's rotation prior from the in-process IMU")
+
+
+class BuildLog:
+    """Stands in for the blueprint module's logger while one build runs: one (level, text) per line,
+    so a warning that slides to debug (hidden on the robot) is seen."""
+
+    def __init__(self):
+        self.lines = []
+
+    def _at(level):
+        def record(self, msg, *args, **kwargs):
+            self.lines.append((level, str(msg) % args if args else str(msg)))
+        return record
+
+    info, warning, error, debug, exception = _at("info"), _at("warning"), _at("error"), _at("debug"), _at("exception")
+    del _at
+
+
+def build_logged(builder, **env):
+    """(blueprint, log lines): built with these MOSS_* set (removed afterwards),
+    the blueprint module's logger captured."""
+    spy, real = BuildLog(), mb._logger
+    os.environ.update(env)
+    mb._logger = spy
+    try:
+        return builder(), spy.lines
+    finally:
+        mb._logger = real
+        for k in env:
+            os.environ.pop(k, None)
+
+
+def find(bp, cls_name):
+    return next((b for b in bp.active_blueprints if b.module.__name__ == cls_name), None)
+
+
+def prior(bp):
+    return find(bp, "LidarOdometry").kwargs.get("use_gyro_prior")
+
+
+def gyro_lines(lines, level="warning"):
+    """The texts of the MOSS_GYRO lines logged at `level` (None = at any level)."""
+    return [text for lvl, text in lines if "MOSS_GYRO" in text and level in (None, lvl)]
+
+
+for builder, label, default_bp in ((mb.build_moss_nav, "moss-nav", nav), (mb.build_moss_explore, "moss-explore", exp)):
+    bp, log = build_logged(builder)
+    cam_k = find(bp, "MossRealSense")
+    check(f"{label}, every switch unset: use_gyro_prior True on MossRealSense with enable_imu True, no MOSS_GYRO line",
+          prior(bp) is True and cam_k is not None and cam_k.kwargs.get("enable_imu") is True
+          and "RealSenseCamera" not in names(bp) and not gyro_lines(log, None), f"{prior(bp)} {gyro_lines(log, None)}")
+    check(f"{label}: the same blueprint as built in G, kwarg for kwarg", blueprint_text(bp) == blueprint_text(default_bp))
+for spelled_off, builder in (("0", mb.build_moss_nav), ("off", mb.build_moss_explore)):
+    bp, log = build_logged(builder, MOSS_GYRO=spelled_off)
+    cam_k = find(bp, "MossRealSense")
+    check(f"MOSS_GYRO={spelled_off}: use_gyro_prior False, and the contacts stay (MossRealSense enable_imu True, BumpImu)",
+          prior(bp) is False and cam_k is not None and cam_k.kwargs.get("enable_imu") is True
+          and "BumpImu" in names(bp) and not gyro_lines(log, None), f"{prior(bp)} {sorted(names(bp))}")
+bp, log = build_logged(mb.build_moss_nav, MOSS_IMU="0")
+cam_k = find(bp, "RealSenseCamera")
+check("MOSS_IMU=0 alone: use_gyro_prior False, dimOS's camera with enable_imu False, no MOSS_GYRO line (the default follows quietly)",
+      prior(bp) is False and cam_k is not None and cam_k.kwargs.get("enable_imu") is False
+      and "MossRealSense" not in names(bp) and not gyro_lines(log, None), f"{prior(bp)} {gyro_lines(log, None)}")
+bp, log = build_logged(mb.build_moss_nav, MOSS_IMU="0", MOSS_GYRO="1")
+cam_k = find(bp, "RealSenseCamera")
+warned = gyro_lines(log)
+check("MOSS_IMU=0 MOSS_GYRO=1: refused, use_gyro_prior False, dimOS's camera keeps enable_imu False",
+      prior(bp) is False and cam_k is not None and cam_k.kwargs.get("enable_imu") is False, f"{prior(bp)}")
+check("... with one line at warning level that says refused and names MOSS_IMU=1 and MOSS_GYRO_FORCE=1",
+      len(warned) == 1 == len(gyro_lines(log, None)) and "refused" in warned[0] and "MOSS_IMU=1" in warned[0]
+      and "MOSS_GYRO_FORCE=1" in warned[0],
+      f"{warned}")
+for builder, label in ((mb.build_moss_nav, "moss-nav"), (mb.build_moss_explore, "moss-explore")):
+    bp, log = build_logged(builder, MOSS_IMU="0", MOSS_GYRO="1", MOSS_GYRO_FORCE="1")
+    cam_k = find(bp, "RealSenseCamera")
+    warned = gyro_lines(log)
+    check(f"{label}, MOSS_IMU=0 MOSS_GYRO=1 MOSS_GYRO_FORCE=1: dimOS's own camera with enable_imu True, use_gyro_prior True, no BumpImu",
+          cam_k is not None and cam_k.module is RealSenseCamera and cam_k.kwargs.get("enable_imu") is True
+          and "imu_hz" not in cam_k.kwargs and prior(bp) is True
+          and not ({"MossRealSense", "BumpImu"} & names(bp)), f"{prior(bp)} {sorted(names(bp))}")
+    check(f"{label}: ... its imu reaches the odometry's In, and one line at warning level calls it an experiment",
+          {("RealSenseCamera", "out"), ("LidarOdometry", "in")} <= wiring(bp).get(("imu", Imu), set())
+          and len(warned) == 1 == len(gyro_lines(log, None)) and "experiment" in warned[0],
+          f"{sorted(wiring(bp).get(('imu', Imu), set()))} {warned}")
+    try:
+        _verify_no_name_conflicts(bp)
+        check(f"{label}: dimOS's stream type check accepts the forced build", True)
+    except ValueError as exc:
+        check(f"{label}: dimOS's stream type check accepts the forced build", False, str(exc)[:300])
+bp, log = build_logged(mb.build_moss_nav, MOSS_GYRO_FORCE="1")
+check("MOSS_GYRO_FORCE=1 alone changes nothing: the default blueprint, no MOSS_GYRO line",
+      blueprint_text(bp) == blueprint_text(nav) and not gyro_lines(log, None), f"{gyro_lines(log, None)}")
+bp, log = build_logged(mb.build_moss_nav, MOSS_IMU="0", MOSS_GYRO="0", MOSS_GYRO_FORCE="1")
+check("MOSS_IMU=0 MOSS_GYRO=0 MOSS_GYRO_FORCE=1: the force never turns the prior on by itself (enable_imu False)",
+      prior(bp) is False and find(bp, "RealSenseCamera").kwargs.get("enable_imu") is False and not gyro_lines(log, None))
+for force in ("0", "1"):
+    bp, log = build_logged(mb.build_moss_nav, MOSS_CAMERA="0", MOSS_GYRO="1", MOSS_GYRO_FORCE=force)
+    warned = gyro_lines(log)
+    check(f"MOSS_CAMERA=0 MOSS_GYRO=1 MOSS_GYRO_FORCE={force}: no camera, no prior, one line at warning level: MOSS_GYRO needs the RealSense",
+          prior(bp) is False and not ({"RealSenseCamera", "MossRealSense"} & names(bp))
+          and len(warned) == 1 == len(gyro_lines(log, None)) and "needs the RealSense" in warned[0], f"{prior(bp)} {warned}")
+bp, log = build_logged(mb.build_moss_nav, MOSS_CAMERA="0")
+check("MOSS_CAMERA=0 alone: no prior, and no MOSS_GYRO line (nothing was asked)", prior(bp) is False and not gyro_lines(log, None))
+check("every MOSS_GYRO* variable is gone from the environment after the builds",
+      not [k for k in os.environ if k.startswith("MOSS_GYRO") or k in ("MOSS_IMU", "MOSS_CAMERA")])
+
 pick = run_child("""
     import json, pickle, sys
     import moss_dimos.blueprints as b

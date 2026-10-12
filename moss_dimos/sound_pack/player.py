@@ -2,11 +2,21 @@
 
 emit() queues a cue, never drives the robot, and never waits for playback.
 Backend completion means the playback process exited, not proof of audibility.
+
+Pre-roll: every cue is played with MOSS_SOUND_PREROLL_S of silence glued in
+front of it (default 0.3 s, 0 = off), meant to let a Bluetooth link that went
+to sleep wake on the silence rather than on the cue's first milliseconds. The glued
+copies are WAV files written once per asset into MOSS_SOUND_CACHE (default
+<tempdir>/moss_sound_cache) by the worker before it plays anything; an asset
+whose copy cannot be written plays as it is, said once through the log.
 """
 import argparse
 from collections import OrderedDict
+import hashlib
 import json
+import logging
 import math
+import os
 from pathlib import Path
 import queue
 import random
@@ -15,8 +25,50 @@ import subprocess
 import tempfile
 import threading
 import time
+import wave
 
 ROOT=Path(__file__).resolve().parent
+PREROLL_S=.3        # silence in front of every cue (MOSS_SOUND_PREROLL_S); 0 = off
+PREROLL_MAX_S=2.0   # the longest pre-roll (every cue starts that much later): a larger MOSS_SOUND_PREROLL_S is clamped
+
+def env_seconds(name, default, hi, env=None):
+    """A duration in seconds from the environment: unset, empty, not a number or
+    nan -> default; zero or below -> 0 (off); above hi -> hi."""
+    raw=str((os.environ if env is None else env).get(name,'')).strip()
+    try:value=float(raw)
+    except ValueError:return float(default)
+    if value!=value:return float(default)
+    return max(0.0,min(float(hi),value))
+
+def sound_cache_dir(env=None):
+    """MOSS_SOUND_CACHE when set, else <tempdir>/moss_sound_cache."""
+    raw=str((os.environ if env is None else env).get('MOSS_SOUND_CACHE','')).strip()
+    return Path(raw).expanduser() if raw else Path(tempfile.gettempdir())/'moss_sound_cache'
+
+def preroll_wav(src, seconds, cache_dir):
+    """The path of `src` with `seconds` of silence in front of it, same channels, rate
+    and sample width, written into cache_dir when it is not there already (the name
+    carries the source's path, size and mtime, so an edited asset gets a new copy).
+    Written to a temporary name then renamed: a reader never sees half a file.
+    Raises OSError, EOFError or wave.Error when it cannot."""
+    src=Path(src);st=src.stat()
+    tag=hashlib.sha1(f'{src.resolve()}|{st.st_size}|{st.st_mtime_ns}'.encode()).hexdigest()[:12]
+    out=Path(cache_dir)/f'{src.stem}-{tag}-pre{round(seconds*1000)}ms.wav'
+    if out.is_file():return out
+    with wave.open(str(src),'rb') as w:
+        channels,width,rate=w.getnchannels(),w.getsampwidth(),w.getframerate()
+        frames=w.readframes(w.getnframes())
+    silence=(b'\x80' if width==1 else b'\x00')*(round(seconds*rate)*channels*width)   # 8-bit WAV is unsigned: its zero is 0x80
+    Path(cache_dir).mkdir(parents=True,exist_ok=True)
+    tmp=out.with_name(f'{out.name}.{os.getpid()}.{threading.get_ident()}.tmp')
+    try:
+        with wave.open(str(tmp),'wb') as w:
+            w.setnchannels(channels);w.setsampwidth(width);w.setframerate(rate)
+            w.writeframes(silence+frames)
+        os.replace(tmp,out)
+    finally:
+        if tmp.exists():tmp.unlink()
+    return out
 
 def playback_command(path, backend='auto', target=None, volume=.65):
     if not math.isfinite(volume) or not 0 <= volume <= 1:
@@ -37,7 +89,7 @@ def playback_command(path, backend='auto', target=None, volume=.65):
     return cmd+[str(path)]
 
 class MossSoundPlayer:
-    def __init__(self, root=ROOT, config=None, dry_run=False):
+    def __init__(self, root=ROOT, config=None, dry_run=False, log=None):
         self.root=Path(root).resolve()
         self.manifest=json.loads((self.root/'manifest.json').read_text())
         self.config=json.loads((self.root/'config.json').read_text())
@@ -49,6 +101,12 @@ class MossSoundPlayer:
             rule=dict(rule);rule.update(self.config.get('events',{}).get(name,{}))
             self.rules[name]=rule
         self.dry_run=dry_run;self.muted=bool(self.config['mute']);self.closed=False
+        pre=self.config.get('preroll_s')
+        self.preroll_s=env_seconds('MOSS_SOUND_PREROLL_S',PREROLL_S,PREROLL_MAX_S) if pre is None else float(pre)
+        if not math.isfinite(self.preroll_s) or not 0<=self.preroll_s<=PREROLL_MAX_S:raise ValueError('Invalid pre-roll')
+        self.cache_dir=Path(self.config['cache_dir']) if self.config.get('cache_dir') else sound_cache_dir()
+        self.playable={}   # asset path -> its pre-rolled copy; filled by the worker before it plays anything
+        self.log=log or logging.getLogger(__name__).warning
         self.lock=threading.Condition();self.pending=[];self.current=None
         self.last_started={};self.last_variant={};self.last_end=-float('inf')
         self.ids=OrderedDict();self.status=queue.Queue(maxsize=128)
@@ -124,8 +182,25 @@ class MossSoundPlayer:
         self._status(state,event=current['event'],sound=current['sound'],returncode=p.poll(),error=error)
         self.current=None;self.last_end=time.monotonic()
 
+    def _prepare(self):
+        """Write the pre-rolled copy of every asset, outside the lock (emit never waits
+        on it). The dry run plays nothing and writes nothing."""
+        if self.dry_run or self.preroll_s<=0:return
+        failed=None
+        for asset in self.manifest['assets'].values():
+            if self.closed:return
+            path=(self.root/asset['path']).resolve()
+            if self.root not in path.parents or not path.is_file():continue
+            try:self.playable[path]=preroll_wav(path,self.preroll_s,self.cache_dir)
+            except Exception as exc:   # a cue without its pre-roll still plays
+                failed=failed or f'{path.name}: {type(exc).__name__}: {exc}'
+        if failed:
+            self.log(f'pre-roll copies not written in {self.cache_dir} ({failed}): those cues play without the pre-roll')
+            self._status('preroll_failed',error=failed)
+
     def _run(self):
         try:
+            self._prepare()
             while True:
                 with self.lock:
                     now=time.monotonic()
@@ -160,15 +235,16 @@ class MossSoundPlayer:
                     if self.dry_run:
                         self._status('simulated',event=name,sound=sound)
                         self.last_variant[name]=sound;self.last_started[name]=now;self.last_end=now;continue
-                    err=None
+                    err=None;play=self.playable.get(path,path)
                     try:
-                        cmd=playback_command(path,self.config['backend'],self.config.get('target'),self.volume)
+                        cmd=playback_command(play,self.config['backend'],self.config.get('target'),self.volume)
                         err=tempfile.TemporaryFile()
                         proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=err)
                     except (OSError,ValueError,RuntimeError) as exc:
                         if err:err.close()
                         self._status('failed',event=name,error=str(exc));continue
-                    self.current={**item,'sound':sound,'process':proc,'stderr':err,'deadline':time.monotonic()+asset['duration_s']+4}
+                    self.current={**item,'sound':sound,'process':proc,'stderr':err,
+                                  'deadline':time.monotonic()+asset['duration_s']+(self.preroll_s if play!=path else 0)+4}
                     self.last_variant[name]=sound;self.last_started[name]=now
                     self._status('started',event=name,sound=sound)
         except Exception as exc:

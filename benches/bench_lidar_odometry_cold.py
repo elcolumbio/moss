@@ -14,10 +14,19 @@ the dimOS messages are real. Known input -> known output, in metres and degrees:
      points (float32 on the wire) exactly when both read the same height.
   D. the gyro prior: a yaw rate of 0.5 rad/s for 0.2 s (gyro y = -0.5 on the
      default "-y" axis) -> the next revolution turns 5.73 deg; with the prior
-     off, kiss-icp's constant-velocity model is used instead.
+     off, kiss-icp's constant-velocity model is used instead. start() with the
+     prior on (the MOSS default) says "prior: gyro=True" in its up line.
   E. the optional depth path: 1.000 m of depth at the principal point, rover
      at the origin -> a camera point at (1.156, 0, 0.075) m on the next lidar
      cloud, which costmap2d.lidar_returns does NOT tag as lidar.
+  G. a contact (`bump`): at rest after 10 revolutions of 300 points, a
+     revolution of 90 points turned 6 deg right after a bump is dropped (the
+     yaw moves by the gyro's +0.40 deg only, the log says so); the next 5 full
+     revolutions register with sigma x2 and the 6th with the plain sigma; with
+     no bump, outside the 0.4 s window or MOSS_CONTACT_DROP_RATIO=0 the same
+     revolution registers at +6.0 deg. MOSS_RELOC_SWEEPS=3
+     MOSS_RELOC_SIGMA_GAIN=3 give 3 revolutions at x3; MOSS_CONTACT_WINDOW_S=0.05
+     lets a thin revolution 0.1 s after the bump register.
 
 Needs dimOS (kiss-icp is not needed: faked through sys.modules).
 
@@ -50,6 +59,7 @@ from dimos.msgs.sensor_msgs.Imu import Imu  # noqa: E402
 from dimos.msgs.sensor_msgs.JointState import JointState  # noqa: E402
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2  # noqa: E402
 from dimos.msgs.tf2_msgs.TFMessage import TFMessage  # noqa: E402
+from dimos_lcm.std_msgs import Bool  # noqa: E402
 
 from moss_dimos import costmap2d  # noqa: E402
 from moss_dimos import lidar_odometry as LO  # noqa: E402
@@ -201,13 +211,13 @@ SCAN_FLAT = np.stack([np.cos(np.linspace(0, 2 * math.pi, 360, endpoint=False)) *
 print("A. streams, rpcs, defaults, start()")
 streams = {(s.name, s.type): s.direction for s in BlueprintAtom.create(LO.LidarOdometry, {}).streams}
 want = {("pointcloud", PointCloud2): "in", ("imu", Imu): "in", ("coordinator_joint_state", JointState): "in",
-        ("depth_image", Image): "in", ("camera_info", CameraInfo): "in",
+        ("depth_image", Image): "in", ("camera_info", CameraInfo): "in", ("bump", Bool): "in",
         ("odom", PoseStamped): "out", ("lidar", PointCloud2): "out", ("camera_floor", PointCloud2): "out",
         ("tf", TFMessage): "out"}
-check("the stream table: 5 Ins, 4 Outs, names and types as wired by the MOSS blueprints",
+check("the stream table: 6 Ins, 4 Outs, names and types as wired by the MOSS blueprints",
       streams == want, f"extra {set(streams) - set(want)}, missing {set(want) - set(streams)}")
-check("no reloc_frame, bump or bump_rear stream",
-      not any(n in ("reloc_frame", "bump", "bump_rear") for n, _ in streams))
+check("bump is an In of dimos_lcm's Bool (the class BumpImu, the coordinator and the costmap use); no reloc_frame or bump_rear stream",
+      streams.get(("bump", Bool)) == "in" and not any(n in ("reloc_frame", "bump_rear") for n, _ in streams))
 check("LidarOdometry.rpcs carries start and stop", {"start", "stop"} <= set(LO.LidarOdometry.rpcs))
 check("dimOS instance name 'lidarodometry'", LO.LidarOdometry.name == "lidarodometry")
 
@@ -340,7 +350,7 @@ q = odometry(Kiss(0.10, 0.0, math.radians(2.0)), use_gyro_prior=False)
 for i in range(11):
     LOOP.run_until_complete(q.handle_imu(imu(-0.5, t0 + 0.02 * i)))
 drive(q, 1, SCAN_FLAT)
-check("use_gyro_prior=False (the MOSS blueprint): the same gyro is ignored, 2.0 deg from the motion model",
+check("use_gyro_prior=False (MOSS_GYRO=0 in the blueprint): the same gyro is ignored, 2.0 deg from the motion model",
       abs(yaw_of(q.odom.msgs[-1].orientation) - 2.0) < 0.01 and q._prior_used == "cv")
 js = types.SimpleNamespace(name=["base/vx", "base/vy", "base/wz"], position=[0.5, 0.0, 0.1])
 LOOP.run_until_complete(q.handle_coordinator_joint_state(js))
@@ -352,6 +362,19 @@ check("wheel odometry is read for the log only: the pose follows the motion mode
       and abs(q.odom.msgs[-1].position.y - 0.10 * math.sin(step)) < 1e-9
       and abs(yaw_of(q.odom.msgs[-1].orientation) - 4.0) < 0.01,
       f"({q.odom.msgs[-1].position.x:.4f}, {q.odom.msgs[-1].position.y:.4f})")
+gyro_spy, gyro_on = LogSpy(), LO.LidarOdometry(use_gyro_prior=True)
+REAL.append(gyro_on)
+_real_logger, _real_start = LO.logger, LO.Module.start
+LO.logger, LO.Module.start = gyro_spy, (lambda self: None)   # the dimOS runtime is not under test here
+try:
+    gyro_on.start()
+finally:
+    LO.logger, LO.Module.start = _real_logger, _real_start
+up_on = [line for line in gyro_spy.lines if line.startswith("lidar odometry up")]
+check("start() with the prior on (the MOSS default) logs 'prior: gyro=True' in its 'lidar odometry up' line "
+      "(and section A's, prior off, said 'prior: gyro=False')",
+      len(up_on) == 1 and "prior: gyro=True axis -y" in up_on[0] and len(up) == 1 and "prior: gyro=False" in up[0],
+      up_on[0] if up_on else "no line")
 
 
 # --- E. the optional depth path -------------------------------------------------
@@ -413,6 +436,236 @@ try:
     check(len(o6.odom.msgs) == 2, "the next revolution publishes again")
 finally:
     _kiss_mod.KissICP = lambda cfg: Kiss(cfg=cfg)
+
+# --- G. a contact and the map ---------------------------------------------------
+print()
+print("G. a contact: the shaken revolution dropped, the relocation after it")
+
+
+class MarkerRegistration(Registration):
+    """The registration as a scan matcher on one feature: the revolution's
+    marker (its farthest return) lies at bearing 0 in the world, so the
+    heading the registration finds is minus the marker's bearing in the scan;
+    the position stays the prediction's. A shaken sweep turned by 6 degrees
+    registers 6 degrees off, as the real one did."""
+
+    def align_points_to_map(self, points, voxel_map, initial_guess, max_correspondance_distance, kernel):
+        guess = super().align_points_to_map(points, voxel_map, initial_guess, max_correspondance_distance, kernel)
+        p = np.asarray(points)
+        m = p[int(np.argmax(np.hypot(p[:, 0], p[:, 1])))]
+        out = np.array(guess, dtype=float)
+        out[:3, :3] = LO._se2(0.0, 0.0, -math.atan2(m[1], m[0]))[:3, :3]
+        return out
+
+
+def marker_ring(n, heading_deg):
+    """One revolution of n returns on a 2 m circle, the first one a marker at
+    3 m, as the lidar sees them from a rover heading heading_deg."""
+    a = np.linspace(0.0, 2.0 * math.pi, n, endpoint=False) - math.radians(heading_deg)
+    r = np.full(n, 2.0)
+    r[0] = 3.0
+    return np.stack([r * np.cos(a), r * np.sin(a), np.zeros(n)], 1)
+
+
+_imu_clock = [5000.0]
+
+
+def rev(o, pts, gyro_deg=0.0, n=1):
+    """n revolutions, each after 0.1 s of gyro (6 samples at 50 Hz) turning the
+    rover by gyro_deg degrees: the robot's 200 Hz IMU, thinned."""
+    rate = math.radians(gyro_deg) / 0.1
+    for _ in range(n):
+        t = _imu_clock[0]
+        _imu_clock[0] += 1.0                # a gap the integration skips: each revolution starts its own integral
+        for i in range(6):
+            LOOP.run_until_complete(o.handle_imu(imu(-rate, t + 0.02 * i)))
+        drive(o, 1, pts)
+
+
+def contact_rover(use_gyro_prior):
+    """A rover at rest that has registered 10 revolutions of 300 points at
+    heading 0, with a spy on the sigma each registration gets."""
+    k = Kiss()
+    k.registration = MarkerRegistration()
+    o = odometry(k, use_gyro_prior=use_gyro_prior)
+    sigmas = []
+    real_register = LO.LidarOdometry._register
+
+    def spy_register(kiss, source, guess, sigma, where="scan"):
+        sigmas.append(sigma)
+        return real_register(kiss, source, guess, sigma, where)
+
+    o._register = spy_register
+    rev(o, marker_ring(300, 0.0), n=10)
+    return o, sigmas
+
+
+def bump(o, data=True):
+    LOOP.run_until_complete(o.handle_bump(Bool(data=data)))
+
+
+def heading(o):
+    return yaw_of(o.odom.msgs[-1].orientation)
+
+
+def contact_section(spy):
+    import importlib
+    SHAKEN = marker_ring(90, 6.0)           # the lidar shaken: 90 returns, 6 degrees off
+    check("the knobs at their defaults: window 0.4 s, drop ratio 0.5, 5 relocation revolutions, sigma x2.0",
+          (LO.CONTACT_WINDOW_S, LO.CONTACT_DROP_RATIO, LO.RELOC_SWEEPS, LO.RELOC_SIGMA_GAIN) == (0.4, 0.5, 5, 2.0))
+
+    # (a) the contact, the gyro prior on and fed
+    spy.lines.clear()
+    o, sig = contact_rover(True)
+    before = heading(o)
+    bump(o)
+    rev(o, SHAKEN, gyro_deg=0.4)
+    check("(a) at rest, 10 revolutions of 300 points, a bump, a revolution of 90 points turned 6 deg: "
+          "the yaw moves +0.40 deg (the gyro's), not 6",
+          abs(before) < 1e-9 and abs(heading(o) - before - 0.4) < 0.01 and abs(heading(o) - before) <= 0.5,
+          f"{before:+.3f} -> {heading(o):+.3f} deg")
+    dropped = [line for line in spy.lines if "revolution dropped" in line]
+    check("... one log line: 'contact: revolution dropped (90 pts, median 300), pose carried by the gyro'",
+          len(dropped) == 1 and "contact: revolution dropped (90 pts, median 300), pose carried by the gyro" in dropped[0],
+          dropped[0] if dropped else "no line")
+    check("... counted (1), no registration for it, kiss-icp's map and threshold untouched",
+          o._dropped_contact == 1 and len(sig) == 10 and o._kiss.local_map.updates == 10
+          and o._kiss.adaptive_threshold.deviations == 10, f"{o._dropped_contact} dropped, {len(sig)} registrations")
+    check("... the pose goes out (11 odom, 11 tf), the shaken cloud never reaches the map (10 clouds)",
+          len(o.odom.msgs) == len(o.tf.msgs) == 11 and len(o.lidar.msgs) == 10)
+    check("... the gyro integral consumed, kiss-icp's last pose at +0.40 deg (the next prior starts there)",
+          o._gyro_acc == 0.0 and o._gyro_seen is False
+          and abs(math.degrees(math.atan2(o._kiss.last_pose[1, 0], o._kiss.last_pose[0, 0])) - 0.4) < 0.01)
+
+    # (c) the relocation: the rover truly heads +1.0 deg, the gyro said +0.4
+    rev(o, marker_ring(300, 1.0), n=6)
+    check("(c) after the bump, the next 5 full revolutions register with sigma x2 (0.40), the 6th with the plain 0.20",
+          [round(s, 9) for s in sig[10:]] == [0.4] * 5 + [0.2], f"{sig[10:]}")
+    reloc = [line for line in spy.lines if "relocat" in line]
+    check("... one line at the first, 'contact: relocating over 5 revolutions (sigma x2.0)', one at the end: "
+          "the registration corrected the yaw by +0.6 deg in total",
+          len(reloc) == 2 and "contact: relocating over 5 revolutions (sigma x2.0)" in reloc[0]
+          and "relocation done over 5 revolutions" in reloc[1] and "+0.6 deg in total" in reloc[1], f"{reloc}")
+    check("... the heading the full revolutions show: +1.00 deg, the shaken +6 never published",
+          abs(heading(o) - 1.0) < 0.01 and max(abs(yaw_of(m.orientation)) for m in o.odom.msgs) < 1.01, f"{heading(o):+.3f} deg")
+
+    # (a) again, the gyro prior off: the pose is held
+    spy.lines.clear()
+    o, sig = contact_rover(False)
+    bump(o)
+    rev(o, SHAKEN, gyro_deg=0.4)
+    check("(a) the prior off: dropped too, the pose held at 0.00 deg, the log says so",
+          abs(heading(o)) < 1e-9 and o._dropped_contact == 1 and len(sig) == 10
+          and any("revolution dropped (90 pts, median 300), pose held (no gyro prior)" in line for line in spy.lines),
+          f"{heading(o):+.3f} deg")
+
+    # (a) the prior on, but the imu stream quiet: no gyro sample since the last revolution
+    spy.lines.clear()
+    o, sig = contact_rover(True)
+    bump(o)
+    drive(o, 1, SHAKEN)                     # no imu message before this revolution
+    dropped = [line for line in spy.lines if "revolution dropped" in line]
+    check("(a) the prior on but no gyro sample since the last revolution: dropped, the pose held at 0.00 deg, the log says "
+          "'pose held (no gyro sample since the last revolution)', not 'no gyro prior'",
+          abs(heading(o)) < 1e-9 and o._dropped_contact == 1 and len(sig) == 10 and len(dropped) == 1
+          and "pose held (no gyro sample since the last revolution)" in dropped[0] and "no gyro prior" not in dropped[0],
+          dropped[0] if dropped else "no line")
+
+    # (b) the control: no bump
+    o, sig = contact_rover(True)
+    bump(o, data=False)
+    rev(o, SHAKEN, gyro_deg=0.4)
+    check("(b) the same shaken revolution with no bump before it (a Bool False is none): registered, the yaw jumps to +6.0 deg",
+          o._contact_t is None and abs(heading(o) - 6.0) < 0.01 and o._dropped_contact == 0
+          and len(sig) == 11 and len(o.lidar.msgs) == 11, f"{heading(o):+.3f} deg")
+    check("... with the plain sigma (no contact, no relocation)", abs(sig[-1] - 0.2) < 1e-12, f"{sig[-1]}")
+
+    # (e) outside the window
+    o, sig = contact_rover(True)
+    bump(o)
+    o._contact_t -= LO.CONTACT_WINDOW_S + 0.1         # the revolution comes 0.5 s after the contact
+    rev(o, SHAKEN, gyro_deg=0.4)
+    check("(e) the same revolution 0.5 s after the bump (window 0.4 s): registered as usual, +6.0 deg, nothing dropped",
+          abs(heading(o) - 6.0) < 0.01 and o._dropped_contact == 0 and len(sig) == 11, f"{heading(o):+.3f} deg")
+
+    # the running median follows the last 20 registered revolutions
+    o, sig = contact_rover(True)
+    rev(o, marker_ring(300, 0.0), n=15)
+    rev(o, marker_ring(120, 0.0), n=20)
+    bump(o)
+    rev(o, SHAKEN, gyro_deg=0.4)
+    check("the median is the last 20 revolutions': after 25 of 300 points then 20 of 120, 90 points is not shaken (>= 0.5 x 120)",
+          o._dropped_contact == 0 and abs(heading(o) - 6.0) < 0.01, f"{o._dropped_contact} dropped")
+
+    # start() says the knobs
+    spy.lines.clear()
+    up_mod = LO.LidarOdometry(use_gyro_prior=True)
+    REAL.append(up_mod)
+    real_start = LO.Module.start
+    LO.Module.start = lambda self: None          # the dimOS runtime is not under test here
+    try:
+        up_mod.start()
+    finally:
+        LO.Module.start = real_start
+    said = [line for line in spy.lines if line.startswith("lidar odometry contacts:")]
+    check("start() says the contact knobs in a line of its own",
+          len(said) == 1 and "within 0.4 s of a bump under 0.5 x the median" in said[0]
+          and "then 5 revolutions register with sigma x2" in said[0], said[0] if said else "no line")
+
+    # (d) the knobs, read at import: bad values fall back, a drop ratio of 0 never drops
+    knobs = {"MOSS_CONTACT_DROP_RATIO": "0", "MOSS_CONTACT_WINDOW_S": "soon",
+             "MOSS_RELOC_SWEEPS": "3", "MOSS_RELOC_SIGMA_GAIN": "0.5"}
+    tuned = {"MOSS_RELOC_SWEEPS": "3", "MOSS_RELOC_SIGMA_GAIN": "3", "MOSS_CONTACT_WINDOW_S": "0.05"}
+    os.environ.update(knobs)
+    try:
+        importlib.reload(LO)
+        LO.logger = spy
+        check("MOSS_CONTACT_DROP_RATIO=0, MOSS_RELOC_SWEEPS=3 read at import; 'soon' -> the 0.4 s default, gain 0.5 -> its floor 1.0",
+              (LO.CONTACT_WINDOW_S, LO.CONTACT_DROP_RATIO, LO.RELOC_SWEEPS, LO.RELOC_SIGMA_GAIN) == (0.4, 0.0, 3, 1.0),
+              f"{(LO.CONTACT_WINDOW_S, LO.CONTACT_DROP_RATIO, LO.RELOC_SWEEPS, LO.RELOC_SIGMA_GAIN)}")
+        o, sig = contact_rover(True)
+        bump(o)
+        rev(o, SHAKEN, gyro_deg=0.4)
+        check("(d) MOSS_CONTACT_DROP_RATIO=0 never drops: the shaken revolution registers, +6.0 deg",
+              o._dropped_contact == 0 and abs(heading(o) - 6.0) < 0.01 and len(sig) == 11, f"{heading(o):+.3f} deg")
+
+        # (d) once more, with values that change the behaviour
+        for name in knobs:
+            os.environ.pop(name, None)
+        os.environ.update(tuned)
+        importlib.reload(LO)
+        LO.logger = spy
+        check("MOSS_RELOC_SWEEPS=3 MOSS_RELOC_SIGMA_GAIN=3 MOSS_CONTACT_WINDOW_S=0.05 read at import (drop ratio 0.5)",
+              (LO.CONTACT_WINDOW_S, LO.CONTACT_DROP_RATIO, LO.RELOC_SWEEPS, LO.RELOC_SIGMA_GAIN) == (0.05, 0.5, 3, 3.0),
+              f"{(LO.CONTACT_WINDOW_S, LO.CONTACT_DROP_RATIO, LO.RELOC_SWEEPS, LO.RELOC_SIGMA_GAIN)}")
+        o, sig = contact_rover(True)
+        bump(o)
+        rev(o, SHAKEN, gyro_deg=0.4)
+        rev(o, marker_ring(300, 0.0), n=4)
+        check("(d) after a bump and the shaken revolution (dropped), 4 full ones register with sigma 0.60, 0.60, 0.60, "
+              "then the plain 0.20: 3 relocation revolutions at x3",
+              o._dropped_contact == 1 and [round(s, 9) for s in sig[10:]] == [0.6] * 3 + [0.2], f"{sig[10:]}")
+        o, sig = contact_rover(True)
+        bump(o)
+        o._contact_t -= 0.1                     # the thin revolution comes 0.1 s after the contact
+        rev(o, SHAKEN, gyro_deg=0.4)
+        check("(d) a thin revolution 0.1 s after the bump registers (the 0.05 s window has closed), +6.0 deg, nothing dropped",
+              o._dropped_contact == 0 and abs(heading(o) - 6.0) < 0.01 and len(sig) == 11, f"{heading(o):+.3f} deg")
+    finally:
+        for name in {**knobs, **tuned}:
+            os.environ.pop(name, None)
+        importlib.reload(LO)
+    check("... unset again: the defaults are back (0.4, 0.5, 5, 2.0)",
+          (LO.CONTACT_WINDOW_S, LO.CONTACT_DROP_RATIO, LO.RELOC_SWEEPS, LO.RELOC_SIGMA_GAIN) == (0.4, 0.5, 5, 2.0))
+
+
+contact_spy, contact_logger = LogSpy(), LO.logger
+LO.logger = contact_spy
+try:
+    contact_section(contact_spy)
+finally:
+    LO.logger = contact_logger
+gc.collect()
 
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")

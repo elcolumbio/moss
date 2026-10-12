@@ -34,9 +34,11 @@ Switches (env, read when moss-nav / moss-explore is built; robot_profile.env_on
 parses them: 0, false, no or off = off, any other value = on, unset = the default):
     MOSS_CAMERA=0     no RealSense (default on: colour 640x480 @ 5 fps, JPEG on the bus, plus depth aligned
                       to colour at the same rate, turned into map obstacles by lidar_odometry)
-    MOSS_GYRO=1       gyro prior for the lidar odometry from the RealSense's IMU (default OFF: alone, it uses
-                      dimOS's second IMU pipeline, which fails to open on the rover and takes the camera down
-                      with it; an experiment. With MOSS_IMU=1 the gyro comes from the in-process motion module)
+    MOSS_GYRO=0       no gyro prior for the lidar odometry (default ON with MOSS_IMU: each registration starts
+                      from the yaw the RealSense's gyro integrated since the last revolution, read in the
+                      camera's own process). With MOSS_IMU=0 the gyro would come from dimOS's second IMU
+                      pipeline, which fails to open on the rover and takes the camera down with it: MOSS_GYRO=1
+                      is then refused with a warning, and MOSS_GYRO_FORCE=1 builds it anyway (an experiment)
     MOSS_IMU=0        no IMU contacts (default ON: the RealSense's IMU is read inside the camera's own
                       process, colour, depth and IMU proven alive together on the robot; a deceleration against
                       the commanded direction publishes bump). Knobs: MOSS_BUMP_ACCEL (default 4.0 m/s^2),
@@ -437,10 +439,25 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
     from moss_dimos.lidar_odometry import LidarOdometry
     from moss_dimos.rplidar_c1 import RPLidarC1
 
-    # MOSS_GYRO=1 is an experiment: dimOS's RealSense module opens a second pipeline for the IMU,
-    # which fails with 'No device connected' on the rover (the colour and depth streams then never
-    # start either), so the gyro prior is OFF unless asked for
-    gyro = robot_profile.env_on("MOSS_GYRO", False) and robot_profile.env_on("MOSS_CAMERA", True)
+    # the rotation prior of the lidar odometry: the RealSense's gyro, read in the camera's own process
+    # with the IMU (MOSS_IMU, on by default), so MOSS_GYRO follows MOSS_IMU unless set. Without MOSS_IMU
+    # the gyro would come from dimOS's second IMU pipeline, which fails with 'No device connected' on the
+    # rover (colour and depth then never start either): refused unless MOSS_GYRO_FORCE=1, an experiment
+    has_camera = robot_profile.env_on("MOSS_CAMERA", True)
+    in_process_imu = has_camera and robot_profile.env_on("MOSS_IMU", True)
+    gyro = robot_profile.env_on("MOSS_GYRO", in_process_imu)
+    if gyro and not has_camera:
+        _logger.warning("MOSS blueprint: MOSS_GYRO needs the RealSense and MOSS_CAMERA is off: no gyro prior")
+        gyro = False
+    elif gyro and not in_process_imu:
+        if robot_profile.env_on("MOSS_GYRO_FORCE", False):
+            _logger.warning("MOSS blueprint: MOSS_GYRO_FORCE=1 with MOSS_IMU=0: the gyro prior on dimOS's second "
+                            "IMU pipeline, an experiment (on the rover it fails to open and takes the camera down)")
+        else:
+            _logger.warning("MOSS blueprint: MOSS_GYRO=1 with MOSS_IMU=0 refused (dimOS's second IMU pipeline "
+                            "fails on the rover and takes the camera down): no gyro prior. MOSS_IMU=1 gives it "
+                            "from the camera's own process; MOSS_GYRO_FORCE=1 is the experiment")
+            gyro = False
     # MOSS_DESKEW=1 is an experiment too: kiss-icp's deskew (each point moved by its share of the motion
     # prior) dies on the rover at its first thread, and the odometry loop with it
     deskew = robot_profile.env_on("MOSS_DESKEW", False)
@@ -448,10 +465,9 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         _coordinator_blueprint(_moss_base(address=ports["base"])),
         _gamepad_part(),
         RPLidarC1.blueprint(port=ports["lidar"], baudrate=LIDAR_BAUDRATE, frame_id="lidar_link"),
-        # no IMU wired: kiss-icp on its constant-velocity prior
-        # the rotation prior: the RealSense's gyro when MOSS_GYRO is on (default), which holds the
-        # registration through a full-power pivot (254 deg/s measured on the floor: 25 deg between
-        # two scans, where the constant-velocity prior let the map drift); constant velocity otherwise
+        # the rotation prior: the RealSense's gyro when MOSS_GYRO is on (default): a full-power pivot
+        # (254 deg/s measured on the floor) turns 25 deg between two scans, more than the constant-velocity
+        # prior follows (the map drifted); constant velocity otherwise
         LidarOdometry.blueprint(use_gyro_prior=gyro, deskew=deskew),
         MossCostMap.blueprint(),
     ]
