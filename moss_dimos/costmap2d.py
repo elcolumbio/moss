@@ -105,6 +105,84 @@ motion). It then stays open for the rest of the run: the end of an
 exploration (`explore_done`, `stop_explore_cmd`) stops the explorer, not the
 map, because a cockpit goal or STOP sends `stop_explore_cmd` mid-run.
 
+The premap (`premap=True`, MOSS_PREMAP=1 on the blueprints; off by default).
+dimOS's relocalization module, run apart from this stack, places this run's
+`world` inside a map saved earlier and publishes two things: the fix, a
+`world` -> `map` transform on `tf` (sent again every few seconds), and the
+saved map's points on `loaded_map`, in `map`. Until BOTH have arrived nothing
+changes: the map runs as it does without a premap, and nothing waits for one;
+the first of the two to arrive says so in the log, so a run where an input
+never comes shows it. Then the premap's points inside PREMAP_Z_BAND_M are
+placed in `world` by the fix's x, y and yaw and written once into the LIDAR
+layer at OCCUPIED_AT, the lowest wall score, flagged premap; a cell the
+lidar has seen free stays free (a score below 0, or a premap wall a lidar
+ray took below OCCUPIED_AT, `premap_carved`), and the camera layer is never
+touched. From there a premap wall is a lidar wall like any other: one lidar
+ray through its cell takes it below OCCUPIED_AT (the room may have changed
+since the premap was made), a lidar hit from a new viewpoint confirms it,
+the body clears it. Rays carve up to RAY_MAX_M only: a premap wall farther
+than that from every place the rover stood stays until the rover comes
+closer. A table top or a shoe in the premap sits above or below the scan
+plane, so a lidar ray passing under or over it carves it too; the camera
+marks it again on its own layer when it sees it. The premap is written again
+only when a fix differs from the one it was written with by more than
+PREMAP_MOVE_M or PREMAP_TURN_DEG (the same fix sent again changes nothing);
+the old premap cells are cleared first, each losing exactly what the premap
+added (what the sensors added since stays), so a corrected fix leaves no
+ghost wall, and a premap wall a lidar ray carved is never written back: it
+stays carved until a lidar hit from a new viewpoint lands on it, or Clear
+map. The write does not wait for the mission gate (the premap is not a
+reading taken from where the rover stands), but the publish does: nothing
+goes out before the mission, as without a premap, and the premap goes out
+with the first grid of the mission. A grid of premap walls with no free
+floor reads to the explorer as a rover walled in at its start: a back-off,
+then an exploration over before it began. Once a grid has gone out (since
+the mission opened, or since Clear map), a write or a re-write publishes at
+once. Clear map takes the premap out with everything else; it comes back
+with a fix that moved, or a different premap.
+
+The rover this stack comes from kept a saved grid, and it went wrong three
+ways, each avoided here. The grid was loaded into both layers at full
+strength, so furniture moved since could not be unlearned by the lidar and
+walled the rover in: here the premap is the lidar's to unlearn, at the
+weakest wall score. The run's own map was saved back as the next run's grid,
+so a run walled in by ghosts handed its prison on: this module never writes
+a premap, so what a run maps never becomes a prior. The map froze while the
+rover looked for itself, and the drive with it: here nothing freezes or
+waits for the premap.
+
+The band is read on the premap's own heights (its floor is z = 0, as in
+`world`), and the fix's z, roll and pitch are dropped: read after a full 3D
+placement, a 1 deg pitch error would lift a floor point 7 m away by 12 cm,
+into the band, as a wall. The band's floor (5 cm) leaves out the bottom layer
+of a 5 cm voxel premap, where a premap made by a 3D lidar holds the floor
+itself, and a floor written as walls is a prison. Its top (1.30 m) is the top
+of the band lidar_odometry turns depth into obstacles (a table top is a
+block).
+
+The explorer sees a premap cell as a wall: 100 in the grid, although no
+sensor of this run looked at it (it is not marked seen). The floor between
+the walls stays unknown, since a point cloud holds where things are, never
+where nothing is, so the rover still has to look at the room to explore it.
+dimOS's frontier is an unknown cell with a free neighbour and no occupied
+one: an unknown cell against a premap wall is never a frontier, and the
+planner routes around premap walls from the first grid of the mission. That
+is the choice made here; left unknown instead, a premap cell would only be a
+hint the explorer drives into. The price: a premap wall that is no longer
+there (a door closed when the map was made) also hides the frontier beside
+it, and beyond RAY_MAX_M of every place the rover stood no ray carves it, so
+it holds that frontier back until the rover comes closer. A premap cell
+carved by a lidar ray turns free (the ray saw it); one cleared by a
+corrected fix turns unknown again unless a sensor saw it.
+
+Logs: "costmap: premap received: M points, K in the band" (each new premap;
+"written when a world -> map fix arrives on tf" while no fix is here),
+"costmap: premap fix received on tf: (x, y, yaw); written when a loaded_map
+arrives" (once, when the fix comes first), "costmap: premap written: N walls
+from M points, tf (x, y, yaw)", "costmap: premap re-written: tf moved by (d
+cm, d deg)", "costmap: premap cleared", and with the premap off, "costmap:
+premap ignored (MOSS_PREMAP=0)", once, at the first loaded_map.
+
 Numbers (HIT_CAP, FREE_FLOOR, OCCUPIED_AT, RAY_MAX_M) are a starting point to
 be tested. HIT_CAP, FREE_FLOOR, OCCUPIED_AT, NEW_VIEWPOINT_M, PUBLISH_EVERY,
 RAY_MAX_M and the contact wall are read once, at import, from MOSS_HIT_CAP,
@@ -130,6 +208,7 @@ from dimos.msgs.geometry_msgs.Pose import Pose
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.nav_msgs.OccupancyGrid import OccupancyGrid
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
+from dimos.msgs.tf2_msgs.TFMessage import TFMessage
 from dimos.utils.logging_config import setup_logger
 from dimos_lcm.std_msgs import Bool
 
@@ -194,6 +273,11 @@ CONTACT_TURN_DEG = 10.0      # ...and turning less than this (3 cm and 10 deg: t
 MISSION_START_M = 0.05       # the map opens when the rover has moved this far from its first pose (or on explore_cmd).
                              # Measuring the displacement needs no clock: the wait accumulates nothing however
                              # long it lasts, and the first useful revolution leaves with the rover.
+PREMAP_Z_BAND_M = (0.05, 1.30)   # premap points strictly between these heights (its own z) become walls: above the
+                             # bottom layer of a 5 cm voxel premap (a 3D lidar's floor), up to the top of the band
+                             # lidar_odometry turns depth into obstacles (module docstring, the premap)
+PREMAP_MOVE_M = 0.02         # a fix this far (or less) from the one the premap was written with changes nothing...
+PREMAP_TURN_DEG = 1.0        # ...nor one turned this much or less; beyond either, the premap is cleared and written again
 
 
 def carve_z_band(camera_z_m: float | None = None) -> tuple[float, float]:
@@ -222,6 +306,23 @@ def camera_xy(pose_xy: tuple[float, float], yaw: float) -> tuple[float, float]:
     return (pose_xy[0] + c * cx - s * cy, pose_xy[1] + s * cx + c * cy)
 
 
+def planar_fix(transform: Any) -> tuple[float, float, float]:
+    """(x, y, yaw) of a `world` -> `map` transform: where the premap's origin
+    sits in `world` and how it is turned. A point (mx, my) of the premap lands
+    at (x + cos(yaw) mx - sin(yaw) my, y + sin(yaw) mx + cos(yaw) my), the
+    convention dimOS's own ray tracer places a loaded map by. The transform's
+    z, roll and pitch are dropped (module docstring, the premap)."""
+    q = transform.rotation
+    yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+    return float(transform.translation.x), float(transform.translation.y), yaw
+
+
+def fix_moved(a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float]:
+    """How far fix `b` is from fix `a`: (metres in the plane, degrees of yaw, wrapped)."""
+    turn = (b[2] - a[2] + math.pi) % (2 * math.pi) - math.pi
+    return math.hypot(b[0] - a[0], b[1] - a[1]), abs(math.degrees(turn))
+
+
 class ScoredGrid:
     """Two int8 score layers over a fixed world grid, plus where each cell was last hit from."""
 
@@ -240,6 +341,12 @@ class ScoredGrid:
         # monotonic clock means nothing in another process.
         self._last_low_hit = np.full((self.n, self.n), -np.inf, dtype=np.float64)
         self._cam_prev = np.zeros((self.n, self.n), dtype=bool)   # camera obstacle cells of the PREVIOUS depth frame (moving-object gate)
+        self.premap = np.zeros((self.n, self.n), dtype=bool)          # cells the premap made (or found) a lidar wall
+        self._premap_added = np.zeros((self.n, self.n), dtype=np.int8)  # ...and what it added to their lidar score
+        # premap walls a lidar ray took below OCCUPIED_AT: seen free, so a
+        # re-write never paints them back; a lidar hit from a new viewpoint
+        # lifts the mark (the sensor sees something there again)
+        self.premap_carved = np.zeros((self.n, self.n), dtype=bool)
 
     # ---- coordinates -------------------------------------------------------
     def cell(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -274,6 +381,8 @@ class ScoredGrid:
         layer[gy, gx] = new
         self._last_hit_xy[gy[moved], gx[moved]] = from_xy
         self.seen[gy, gx] = True
+        if layer is self.lidar:
+            self.premap_carved[gy[moved], gx[moved]] = False
         return int(moved.sum())
 
     def _miss(self, layer: np.ndarray, gx: np.ndarray, gy: np.ndarray) -> None:
@@ -283,6 +392,8 @@ class ScoredGrid:
         new = np.maximum(cur - 1, FREE_FLOOR).astype(np.int8)
         layer[gy, gx] = new
         self.seen[gy, gx] = True
+        if layer is self.lidar:
+            self.premap_carved[gy, gx] |= self.premap[gy, gx] & (new < OCCUPIED_AT)
 
     _revs: int = 0
 
@@ -434,6 +545,46 @@ class ScoredGrid:
         self.seen[gy, gx] = True
         return int(len(gx))
 
+    def write_premap(self, xy: np.ndarray) -> tuple[int, int]:
+        """The premap's walls, already placed in `world` (x, y): each cell
+        becomes a lidar wall at OCCUPIED_AT (a cell already above keeps its
+        score), flagged premap, and remembers what the premap added to it.
+        A cell the lidar has seen free (score below 0, or a premap wall a
+        lidar ray carved, `premap_carved`) stays as it is: the live map wins
+        over the prior. Not marked seen, and the camera layer is never touched
+        (module docstring, the premap). A premap already in the grid is
+        cleared first. Returns (cells flagged, cells left free)."""
+        self.clear_premap()
+        gx, gy = self.cell(xy[:, 0], xy[:, 1])
+        if len(gx) == 0:
+            return 0, 0
+        flat = np.unique(gy * self.n + gx)
+        gx, gy = flat % self.n, flat // self.n
+        cur = self.lidar[gy, gx].astype(np.int16)
+        free = (cur < 0) | self.premap_carved[gy, gx]
+        gx, gy, cur = gx[~free], gy[~free], cur[~free]
+        added = np.maximum(OCCUPIED_AT - cur, 0)
+        self.lidar[gy, gx] = (cur + added).astype(np.int8)
+        self._premap_added[gy, gx] = added.astype(np.int8)
+        self.premap[gy, gx] = True
+        return int(len(gx)), int(free.sum())
+
+    def clear_premap(self) -> int:
+        """Take the premap out: every flagged cell loses exactly what the
+        premap added to its lidar score, so what the sensors did since stays
+        (a live hit from a new viewpoint, a ray's miss, the body) and a
+        corrected fix leaves no ghost wall. A cell no sensor saw goes back to
+        unknown. The carved marks stay: what a lidar ray saw free is still
+        free for the next write. Returns the cells cleared."""
+        gy, gx = np.nonzero(self.premap)
+        if len(gx) == 0:
+            return 0
+        back = self.lidar[gy, gx].astype(np.int16) - self._premap_added[gy, gx]
+        self.lidar[gy, gx] = np.clip(back, FREE_FLOOR, HIT_CAP).astype(np.int8)
+        self._premap_added[gy, gx] = 0
+        self.premap[gy, gx] = False
+        return int(len(gx))
+
     def _ray_cells(self, from_xy: tuple[float, float], hits_xy: np.ndarray):
         """Cells crossed by the rays from `from_xy` to each hit (capped at
         RAY_MAX_M), stopping one cell short of the hit; one sample per cell."""
@@ -492,10 +643,12 @@ class ScoredGrid:
         return int(self.occupancy()[gy[0], gx[0]]) if len(gx) else -1
 
     def cropped(self, margin_cells: int = 20) -> tuple[np.ndarray, float, float] | None:
-        """The occupancy grid cropped to the observed area (+ margin): (grid, origin_x, origin_y)."""
-        if not self.seen.any():
+        """The occupancy grid cropped to the observed area and the premap's
+        walls (+ margin): (grid, origin_x, origin_y)."""
+        known = self.seen | self.premap
+        if not known.any():
             return None
-        ys, xs = np.nonzero(self.seen)
+        ys, xs = np.nonzero(known)
         y0, y1 = max(0, ys.min() - margin_cells), min(self.n, ys.max() + margin_cells + 1)
         x0, x1 = max(0, xs.min() - margin_cells), min(self.n, xs.max() + margin_cells + 1)
         return self.occupancy()[y0:y1, x0:x1], self.ox + x0 * self.res, self.oy + y0 * self.res
@@ -525,7 +678,9 @@ class MossCostMap(Module):
     z = 0), `odom` (base pose in world), `explore_cmd` (the order that opens
     the map), `explore_done` and `stop_explore_cmd` (logged; the map keeps
     writing), `clear_map_cmd` (a fresh grid), `bump` (a front contact: a wall
-    ahead only with MOSS_CONTACT_WALL=1, module docstring).
+    ahead only with MOSS_CONTACT_WALL=1, module docstring), `loaded_map` and
+    `tf` (a relocalization's premap and its `world` -> `map` fix: lidar walls
+    with `premap=True`, ignored otherwise; module docstring, the premap).
     Out: `global_costmap` (the stream name the planner and the explorer
     listen to)."""
 
@@ -537,11 +692,25 @@ class MossCostMap(Module):
     explore_cmd: In[Bool]           # the order to explore: opens the map before the first motion
     clear_map_cmd: In[Bool]         # the cockpit's Clear map (explore_ctl.py clear): a fresh grid, the mission gate as it is
     bump: In[Bool]                  # a front contact: logged; with MOSS_CONTACT_WALL=1 and the rover driving straight forward, the band ahead becomes a wall
+    loaded_map: In[PointCloud2]     # a relocalization's premap, in `map`: lidar walls once a fix places it (premap=True)
+    tf: In[TFMessage]               # the tf stream: only a `world` -> `map` transform (the relocalization's fix) is read
     global_costmap: Out[OccupancyGrid]
 
-    def __init__(self, world_frame: str = "world", **kwargs: Any) -> None:
+    def __init__(self, world_frame: str = "world", premap: bool = False, map_frame: str = "map",
+                 **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.world_frame = world_frame
+        # the premap (module docstring): off, every loaded_map is ignored
+        # (said once); on, it becomes lidar walls once a fix places it
+        self.premap_on = bool(premap)
+        self.map_frame = map_frame
+        self._premap_xy: np.ndarray | None = None      # the premap's points inside PREMAP_Z_BAND_M, (x, y) in `map`
+        self._premap_points = 0                        # ...out of this many in the loaded cloud
+        self._premap_key: bytes | None = None          # the loaded cloud's points as bytes: the same premap sent again is no news
+        self._premap_fix: tuple[float, float, float] | None = None       # the latest `world` -> `map` fix (x, y, yaw)
+        self._premap_written: tuple[float, float, float] | None = None   # the fix the premap was last written with
+        self._premap_ignored_said = False
+        self._premap_fix_said = False                  # "fix received" is said once, when the fix comes first
         self._grid: ScoredGrid | None = None
         self._pose_xy: tuple[float, float] | None = None
         self._pose_yaw = 0.0                   # the camera rides on the nose: its rays need the heading
@@ -570,7 +739,8 @@ class MossCostMap(Module):
         lo, hi = carve_z_band()
         logger.info(f"costmap up: {RESOLUTION_M} m cells, hit cap {HIT_CAP}, free floor {FREE_FLOOR}, "
                     f"occupied at {OCCUPIED_AT} (new viewpoint {NEW_VIEWPOINT_M:g} m), rays carved to {RAY_MAX_M:g} m, "
-                    f"camera rays carve {lo:.3f}-{hi:.3f} m up, contact wall {'on' if CONTACT_WALL else 'off'}")
+                    f"camera rays carve {lo:.3f}-{hi:.3f} m up, contact wall {'on' if CONTACT_WALL else 'off'}, "
+                    f"premap {'on' if self.premap_on else 'off'}")
 
     async def handle_odom(self, msg: PoseStamped) -> None:
         self._pose_xy = (float(msg.position.x), float(msg.position.y))
@@ -583,6 +753,7 @@ class MossCostMap(Module):
         if self._grid is None:
             self._grid = ScoredGrid(centre=self._pose_xy)
             logger.info(f"costmap: grid centred on ({self._pose_xy[0]:+.2f}, {self._pose_xy[1]:+.2f})")
+            self._premap_update()       # a premap and its fix that came before the first pose
         self._check_departure()
         if self._write_frozen():
             return                  # before the mission: not even body_clear
@@ -694,12 +865,104 @@ class MossCostMap(Module):
         a run that has not started still waits for its order or its 5 cm."""
         if not bool(getattr(msg, "data", False)) or self._pose_xy is None:
             return
+        had_premap = self._grid is not None and bool(self._grid.premap.any())
         self._grid = ScoredGrid(centre=self._pose_xy)
         self._revolutions = 0
         self._cam_key = None
         self._camera_pts = self._camera_cells = self._camera_held = self._camera_frames = self._camera_repeats = 0
         logger.info(f"costmap: map CLEARED on request - fresh grid centred on ({self._pose_xy[0]:+.2f}, "
                     f"{self._pose_xy[1]:+.2f}), mission {'open' if not self._mission_frozen else 'not started'}")
+        if had_premap:
+            # the premap goes with the rest: a premap that walls the rover in
+            # must have a way out. It comes back with a fix that moved.
+            logger.info(f"costmap: premap cleared with the map - written again on a fix that moves more than "
+                        f"{PREMAP_MOVE_M * 100:g} cm or {PREMAP_TURN_DEG:g} deg")
+
+    async def handle_loaded_map(self, msg: PointCloud2) -> None:
+        """A relocalization's premap, in `map`. Off: ignored, said once. On:
+        its points inside PREMAP_Z_BAND_M are kept, and written once a fix
+        places them (_premap_update). The same premap sent again changes
+        nothing; another one replaces it (the old walls cleared first)."""
+        if not self.premap_on:
+            if not self._premap_ignored_said:
+                self._premap_ignored_said = True
+                logger.info("costmap: premap ignored (MOSS_PREMAP=0)")
+            return
+        pts = np.asarray(msg.as_numpy()[0], dtype=np.float64).reshape(-1, 3)
+        key = pts.tobytes()
+        if key == self._premap_key:
+            return
+        lo, hi = PREMAP_Z_BAND_M
+        self._premap_key = key
+        self._premap_points = len(pts)
+        self._premap_xy = pts[(pts[:, 2] > lo) & (pts[:, 2] < hi), :2]
+        # said for each new premap: a run on MOSS_PREMAP=1 without this line
+        # received none (the relocalization on another transport, or its one
+        # publish lost)
+        logger.info(f"costmap: premap received: {len(pts)} points, {len(self._premap_xy)} in the {lo:g}-{hi:g} m band"
+                    + ("" if self._premap_fix is not None else "; written when a world -> map fix arrives on tf"))
+        if self._premap_written is not None:
+            self._premap_clear()
+            self._premap_written = None
+        self._premap_update()
+
+    async def handle_tf(self, msg: TFMessage) -> None:
+        """The tf stream. Only a `world` -> `map` transform is read (the
+        relocalization's fix, sent again every few seconds); the odometry's
+        and the cameras' transforms pass by. Off: nothing is read."""
+        if not self.premap_on:
+            return
+        fix = None
+        for t in getattr(msg, "transforms", ()):
+            if t.frame_id == self.world_frame and t.child_frame_id == self.map_frame:
+                fix = planar_fix(t)
+        if fix is None:
+            return
+        if self._premap_xy is None and not self._premap_fix_said:
+            self._premap_fix_said = True
+            logger.info(f"costmap: premap fix received on tf: ({fix[0]:+.2f}, {fix[1]:+.2f}, "
+                        f"{math.degrees(fix[2]):+.1f} deg); written when a loaded_map arrives")
+        self._premap_fix = fix
+        self._premap_update()
+
+    def _premap_update(self) -> None:
+        """Write the premap once the grid, the premap and a fix are all here;
+        write it again only when the fix moved more than PREMAP_MOVE_M or
+        turned more than PREMAP_TURN_DEG from the one it was written with
+        (the same fix sent again changes nothing, and a fix creeping by small
+        steps is measured against the written one, so it cannot drift away
+        unnoticed). Published at once only when the map has already put a
+        grid out since the mission opened (or since Clear map); before that,
+        the premap goes out with the map's first grid (module docstring)."""
+        if self._grid is None or self._premap_xy is None or self._premap_fix is None:
+            return
+        fix = self._premap_fix
+        if self._premap_written is not None:
+            moved_m, turned_deg = fix_moved(self._premap_written, fix)
+            if moved_m <= PREMAP_MOVE_M and turned_deg <= PREMAP_TURN_DEG:
+                return
+            logger.info(f"costmap: premap re-written: tf moved by ({moved_m * 100:.1f} cm, {turned_deg:.1f} deg)")
+            self._premap_clear()
+        self._premap_written = fix
+        x, y, yaw = fix
+        c, s = math.cos(yaw), math.sin(yaw)
+        mx, my = self._premap_xy[:, 0], self._premap_xy[:, 1]
+        walls, kept_free = self._grid.write_premap(np.column_stack([x + c * mx - s * my, y + s * mx + c * my]))
+        lo, hi = PREMAP_Z_BAND_M
+        logger.info(f"costmap: premap written: {walls} walls from {self._premap_points} points, "
+                    f"tf ({x:+.2f}, {y:+.2f}, {math.degrees(yaw):+.1f} deg); {len(self._premap_xy)} points in the "
+                    f"{lo:g}-{hi:g} m band, {kept_free} cells the lidar has seen free left free")
+        # _revolutions counts the revolutions written since the mission opened
+        # (or since Clear map), and the first grid leaves at PUBLISH_EVERY: a
+        # grid of premap walls alone would read to explorer2 as a walled-in start
+        if self._revolutions >= PUBLISH_EVERY:
+            self._publish()
+
+    def _premap_clear(self) -> None:
+        """Take the premap's walls out of the grid (ScoredGrid.clear_premap), said in the log."""
+        n = self._grid.clear_premap() if self._grid is not None else 0
+        if n:
+            logger.info(f"costmap: premap cleared: {n} cells")
 
     def _camera_xy(self) -> tuple[float, float]:
         """The ray origin for everything the camera saw (see camera_xy)."""

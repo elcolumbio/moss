@@ -59,6 +59,9 @@ parses them: 0, false, no or off = off, any other value = on, unset = the defaul
     MOSS_RS_SERIAL    pick the RealSense by serial number
     MOSS_RECORD=0     no recording (default on: MossRecorder, <MOSS_STATE_DIR>/recordings/moss.db)
     MOSS_RERUN=1      add the stock Rerun/websocket viewers (default off: no 7779/9877/3030 on MOSS)
+    MOSS_PREMAP=1     the costmap takes a premap (default off: every loaded_map is ignored, said once): the
+                      points a relocalization module run apart publishes on loaded_map, placed by its world ->
+                      map fix on tf, become lidar walls (moss_dimos/costmap2d.py, the premap)
 
 Why the coordinator is a subclass defined HERE. An out-of-tree drive train
 needs two things, and the second one is not obvious:
@@ -518,6 +521,11 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
     # MOSS_DESKEW=1 is an experiment too: kiss-icp's deskew (each point moved by its share of the motion
     # prior) dies on the rover at its first thread, and the odometry loop with it
     deskew = robot_profile.env_on("MOSS_DESKEW", False)
+    # MOSS_PREMAP=1: a relocalization's premap becomes lidar walls in the costmap (off: ignored, said once)
+    premap = robot_profile.env_on("MOSS_PREMAP", False)
+    if premap:
+        _logger.info("MOSS blueprint: costmap premap ON (MOSS_PREMAP=1): loaded_map, placed by the world -> map "
+                     "fix on tf, becomes lidar walls")
     parts = [
         _coordinator_blueprint(_moss_base(address=ports["base"])),
         _gamepad_part(),
@@ -526,7 +534,7 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         # on the floor, turns 25 deg between two scans, more than the constant-velocity prior follows);
         # constant velocity otherwise, the default until the gyro's sign is measured (above)
         LidarOdometry.blueprint(use_gyro_prior=gyro, deskew=deskew),
-        MossCostMap.blueprint(),
+        MossCostMap.blueprint(premap=premap),
     ]
     # MOSS_IMU=1: the IMU is opened inside the camera's own process (MossRealSense) and BumpImu turns
     # its decelerations into contacts on `bump` (in front) and `bump_rear` (behind); the IMU lives on

@@ -177,6 +177,51 @@ The switches `MOSS_CAMERA`, `MOSS_WRIST`, `MOSS_RECORD` and `MOSS_RERUN` read
 `0`, `false`, `no` and `off` (any case) as off, anything else as on, and unset
 or empty as their default. The flight check reads `MOSS_CAMERA` the same way.
 
+### A premap in the costmap
+
+`MOSS_PREMAP=1` lets the costmap start from a map saved on an earlier run. It
+takes two inputs, both published by dimOS's relocalization module: `loaded_map`,
+the saved map's points in its own `map` frame, and the fix, a `world` -> `map`
+transform on `tf` that places this run inside that map (sent again every 10 s).
+Nothing changes until both have arrived: the costmap runs as it does without a
+premap, and nothing waits for one. Then the premap's points between 5 cm and
+1.30 m above the floor are placed by the fix's x, y and yaw and written once
+into the lidar layer as walls, at the lowest wall score (`MOSS_OCCUPIED_AT`); a
+cell the lidar has already seen free stays free, and the camera layer is never
+touched. Nothing is published before the mission, premap or not: the walls go
+out with the first grid of the mission, because a grid of walls with no free
+floor reads to the explorer as a rover walled in at its start. From there a
+premap wall is a lidar wall like any other: one lidar ray through its cell
+clears it, since the room may have changed since the map was saved (a table top
+or a shoe in the premap is cleared by a ray passing under or over it, and the
+camera marks it again when it sees it), and a cleared premap wall is never
+written back until the lidar hits that cell again from a new place. Rays clear
+up to `MOSS_RAY_MAX_M` from where the rover stood: farther than that, a premap
+wall stays. The floor between the walls stays unknown, so the explorer still
+has to look at the room, but a frontier never forms against a premap wall, so a
+wall that is no longer there (a door closed when the map was made) holds back
+the frontier beside it until the rover comes within `MOSS_RAY_MAX_M` of it. A
+fix more than 2 cm or 1 degree away from the one the premap was written with
+clears the premap's cells and writes them again; the same fix sent again does
+nothing. Clear map takes the premap out with the rest, until a fix moves or a
+different premap arrives. The log says `costmap: premap received: M points, K
+in the band` for each new premap, `costmap: premap fix received on tf: (x, y,
+yaw)` once when the fix comes first, then `costmap: premap written: N walls from
+M points, tf (x, y, yaw)`, `costmap: premap re-written: tf moved by (d cm, d
+deg)` and `costmap: premap cleared`; a run on `MOSS_PREMAP=1` without the first
+two lines received neither input. With `MOSS_PREMAP=0`, the default, every
+`loaded_map` is ignored and the log says `costmap: premap ignored
+(MOSS_PREMAP=0)` once. `MOSS_PREMAP` reads its value like the four switches
+above, when `moss-nav` or `moss-explore` is built. The costmap never saves a
+premap of its own. The relocalization that produces the two inputs is a separate
+module from dimOS main, run apart from this stack, a version step the robot has
+not taken. This stack hears it only on LCM, on `/loaded_map` and `/tf`: run the
+relocalization with `DIMOS_TRANSPORT=lcm` (dimOS main's default transport is
+zenoh, which this stack does not hear) and with `republish_loaded_map` above 0,
+for example 10 s, because by default it sends the premap once per accepted fix
+(once per run when it stops at its first fix) and LCM does not resend a lost
+message.
+
 ## The robot profile
 
 `moss_dimos/robot_profile.py` carries MOSS's geometry: lidar height and masks,
@@ -248,6 +293,7 @@ Other variables:
 | `MOSS_RAY_MAX_M` | how far from the rover the lidar's rays clear the costmap's lidar layer (and the camera's rays its own), 4 m by default (0 = never). Anything farther than that from every place the rover stood is never forgotten: 6 forgets somebody who stood 4.5 m away, and longer rays cost more CPU per revolution |
 | `MOSS_PUBLISH_EVERY` | one costmap grid every N lidar revolutions, 2 by default (5 grids a second), 1 to 20. Every subscriber decodes every grid and the recorder writes each one: raise it if the load climbs |
 | `MOSS_CONTACT_WALL` | `1` turns a contact into a wall on the costmap: the band 2 to 20 cm beyond the body's front, across its width, when the rover was driving straight forward (3 cm or more along its heading and less than 10 degrees of turn over the last 0.5 s). Off by default: a contact is a reflex, only the lidar and the camera write the map |
+| `MOSS_PREMAP` | `1` lets the costmap take a premap: the points dimOS's relocalization publishes on `loaded_map`, placed by its `world` -> `map` fix on `tf`, become lidar walls at the lowest wall score, published with the first grid of the mission, cleared by a lidar ray within `MOSS_RAY_MAX_M` like any wall, written again when the fix moves more than 2 cm or 1 degree. The relocalization must publish on LCM (`DIMOS_TRANSPORT=lcm`). Off by default: every `loaded_map` is ignored, said once in the log. Read when `moss-nav` or `moss-explore` is built ([A premap in the costmap](#a-premap-in-the-costmap)) |
 
 ## Recording
 

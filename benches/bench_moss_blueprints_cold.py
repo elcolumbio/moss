@@ -64,6 +64,13 @@ Known input -> known output in physical units. Groups:
                     on top builds dimOS's camera with enable_imu True and the
                     prior on, its imu wired to the odometry, with a warning;
                     FORCE alone changes nothing; no camera, no prior
+  M. MOSS_PREMAP  - unset / 0 / off: MossCostMap(premap=False) in moss-nav and
+                    moss-explore, the same blueprints as without the switch,
+                    no premap line; 1: premap=True, every other kwarg
+                    unchanged, one info line; the costmap's tf In shares the
+                    odometry's tf (one TFMessage class), loaded_map has no
+                    producer in the stack (the relocalization runs apart), and
+                    dimOS's stream type check accepts the build
   I. the worker   - what a dimOS forkserver worker does: unpickle the
                     coordinator class in a clean interpreter -> the module is
                     imported, 'moss' is registered, the registry builds a
@@ -784,6 +791,64 @@ bp, log = build_logged(mb.build_moss_nav, MOSS_CAMERA="0")
 check("MOSS_CAMERA=0 alone: no prior, and no MOSS_GYRO line (nothing was asked)", prior(bp) is False and not gyro_lines(log, None))
 check("every MOSS_GYRO* variable is gone from the environment after the builds",
       not [k for k in os.environ if k.startswith("MOSS_GYRO") or k in ("MOSS_IMU", "MOSS_CAMERA")])
+
+# ── M. MOSS_PREMAP: the costmap's premap ──────────────────────────────────
+print("M. MOSS_PREMAP: the costmap takes a relocalization's premap, or ignores it")
+from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2  # noqa: E402
+from dimos.msgs.tf2_msgs.TFMessage import TFMessage  # noqa: E402
+
+
+def premap_kw(bp):
+    return find(bp, "MossCostMap").kwargs
+
+
+def premap_lines(lines):
+    return [(lvl, text) for lvl, text in lines if "MOSS_PREMAP" in text or "premap" in text]
+
+
+base_nav, base_log = build_logged(mb.build_moss_nav)
+base_exp = mb.build_moss_explore()
+check("MOSS_PREMAP unset: MossCostMap(premap=False) in moss-nav and moss-explore, no premap line at build",
+      premap_kw(base_nav) == {"premap": False} and premap_kw(base_exp) == {"premap": False} and not premap_lines(base_log),
+      f"{premap_kw(base_nav)} {premap_kw(base_exp)} {premap_lines(base_log)}")
+for spelled_off in ("0", "off"):
+    off_nav_p, off_log = build_logged(mb.build_moss_nav, MOSS_PREMAP=spelled_off)
+    os.environ["MOSS_PREMAP"] = spelled_off
+    off_exp_p = mb.build_moss_explore()
+    os.environ.pop("MOSS_PREMAP")
+    check(f"MOSS_PREMAP={spelled_off}: premap=False, the same blueprints as unset, kwarg for kwarg, no premap line",
+          premap_kw(off_nav_p) == {"premap": False} and blueprint_text(off_nav_p) == blueprint_text(base_nav)
+          and blueprint_text(off_exp_p) == blueprint_text(base_exp) and not premap_lines(off_log),
+          f"{premap_kw(off_nav_p)} {premap_lines(off_log)}")
+on_nav, on_log = build_logged(mb.build_moss_nav, MOSS_PREMAP="1")
+os.environ["MOSS_PREMAP"] = "1"
+on_exp = mb.build_moss_explore()
+os.environ.pop("MOSS_PREMAP")
+check("MOSS_PREMAP=1: MossCostMap(premap=True) in moss-nav and moss-explore",
+      premap_kw(on_nav) == {"premap": True} and premap_kw(on_exp) == {"premap": True},
+      f"{premap_kw(on_nav)} {premap_kw(on_exp)}")
+others = lambda bp: [t for t in blueprint_text(bp) if t[0] != "MossCostMap"]  # noqa: E731
+check("... every other module kwarg for kwarg as without the switch",
+      others(on_nav) == others(base_nav) and others(on_exp) == others(base_exp))
+check("... one info line at build: 'MOSS blueprint: costmap premap ON (MOSS_PREMAP=1) ...'",
+      [lvl for lvl, _ in premap_lines(on_log)] == ["info"]
+      and premap_lines(on_log)[0][1].startswith("MOSS blueprint: costmap premap ON (MOSS_PREMAP=1)"),
+      f"{premap_lines(on_log)}")
+pw = wiring(on_exp)
+tf_side = pw.get(("tf", TFMessage), set())
+check("tf: the costmap reads the stack's one tf stream (the odometry writes it), one TFMessage class",
+      {("LidarOdometry", "out"), ("MossCostMap", "in")} <= tf_side
+      and [k for k in pw if k[0] == "tf"] == [("tf", TFMessage)], f"{sorted(tf_side)} {[k for k in pw if k[0] == 'tf']}")
+check("loaded_map: read by the costmap, published by nothing in the stack (the relocalization runs apart)",
+      pw.get(("loaded_map", PointCloud2), set()) == {("MossCostMap", "in")}
+      and [k for k in pw if k[0] == "loaded_map"] == [("loaded_map", PointCloud2)], f"{pw.get(('loaded_map', PointCloud2))}")
+try:
+    _verify_no_name_conflicts(on_exp)
+    _verify_no_name_conflicts(on_nav)
+    check("dimOS's stream type check accepts both MOSS_PREMAP=1 builds", True)
+except ValueError as exc:
+    check("dimOS's stream type check accepts both MOSS_PREMAP=1 builds", False, str(exc)[:300])
+check("MOSS_PREMAP is gone from the environment after the builds", "MOSS_PREMAP" not in os.environ)
 
 # ── L. every camera in a worker of its own ───────────────────────────────
 print("L. own workers: the RealSense with and without the IMU, the wrist camera")

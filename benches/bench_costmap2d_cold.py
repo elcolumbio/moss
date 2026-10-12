@@ -96,6 +96,42 @@ Known input -> known output, in metres, cells and seconds:
      carves 0.75 to 2.50 m)
  26. the carve band follows the camera height: 0.013-0.060 m at 0.075 m,
      the original 0.10-0.45 m at 0.56 m
+ 27. the premap needs both inputs: a loaded_map alone, or a `world` -> `map`
+     fix alone, writes nothing and says it arrived (the fix once); a
+     `map` -> `world` transform is not a fix; both (in either order, or
+     before the first pose) write 20 walls from 100 points with the fix
+     (x 1 m, yaw 90 deg): map (mx, -1.025) lands at world (2.025, mx), on the
+     lidar layer at OCCUPIED_AT; the floor layer (z 0.025) and points above
+     1.30 m are left out; a cell the lidar has seen free stays free; the
+     mission gate does not hold the write and nothing is published before
+     it; a different premap under the same fix replaces the old one; a
+     5 300-point premap is written in one go
+ 28. a lidar ray through a premap wall carves it like any wall: a premap cell
+     and a live wall at the same score both turn free on the same revolution
+ 29. a fix 5 cm away clears the premap (each cell loses what the premap
+     added: a live hit since stays, a ray's miss since stays, an unseen cell
+     goes back to unknown) and writes it 5 cm over; a fix 1 cm away, the same
+     fix again or the same premap again change nothing; a fix creeping by
+     1.5 cm steps is measured against the written one (re-written at 2.5 cm);
+     1.5 deg of turn alone re-writes; +179.6 to -179.6 deg (0.8 deg apart)
+     does not, -178.4 (2 deg) does; a live wall from two viewpoints under the
+     premap is still a wall after the re-write; a cell at HIT_CAP stays at
+     HIT_CAP through the write and the clear; Clear map takes the premap out
+     and the same fix does not bring it back
+ 30. premap off (the default, MOSS_PREMAP=0): loaded_map and the fix write
+     nothing, publish nothing, and "costmap: premap ignored (MOSS_PREMAP=0)"
+     is said once for three loaded_maps
+ 31. the camera layer and the seen mask are untouched by a premap write, a
+     re-write and a clear
+ 32. nothing is published before the mission, premap or not; the first
+     grid of the mission carries the premap walls as 100, the floor the
+     lidar saw as 0 and the floor beside the walls as -1; once a grid has
+     gone out a re-write publishes at once, the old cells -1 again; after
+     Clear map a re-write waits for the map's next grid
+ 33. a premap wall a lidar ray carved stays carved through a re-write, even
+     over a one-viewpoint hit from before the premap (1 + 1 - 1 = 1 would
+     be a wall again): free, not flagged; a lidar hit from a new viewpoint
+     lifts the mark and the next write claims the cell again
 
 Needs dimOS (the messages are real).
 
@@ -669,12 +705,14 @@ def test_the_mission_signals_cross_the_process_boundary() -> None:
     from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
     from dimos.msgs.nav_msgs.OccupancyGrid import OccupancyGrid
     from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
+    from dimos.msgs.tf2_msgs.TFMessage import TFMessage
     from dimos.protocol.pubsub.impl.lcmpubsub import Topic as LCMTopic
 
     cm = {(s.name, s.type): s.direction for s in BlueprintAtom.create(MossCostMap, {}).streams}
     want = {("lidar", PointCloud2): "in", ("camera_floor", PointCloud2): "in", ("odom", PoseStamped): "in", ("explore_cmd", Bool): "in",
             ("clear_map_cmd", Bool): "in", ("bump", Bool): "in",
             ("explore_done", Bool): "in", ("stop_explore_cmd", Bool): "in",
+            ("loaded_map", PointCloud2): "in", ("tf", TFMessage): "in",
             ("global_costmap", OccupancyGrid): "out"}
     assert cm == want, f"stream table: extra {set(cm) - set(want)}, missing {set(want) - set(cm)}"
     assert MossCostMap.name == "mosscostmap", MossCostMap.name
@@ -702,7 +740,7 @@ def test_the_mission_signals_cross_the_process_boundary() -> None:
         for v, val in saved.items():
             if val is not None:
                 os.environ[v] = val
-    print(f"  costmap: 5 Ins + global_costmap, one Bool class; explorer2 agrees; "
+    print(f"  costmap: {len(want) - 1} Ins + global_costmap, one Bool class; explorer2 agrees; "
           f"stop lands on {want_topic} (explore_ctl.py publishes there)")
 
 
@@ -1481,6 +1519,407 @@ def test_the_doctrine_defaults() -> None:
           f"{' '.join(knobs[:4])} (this bench pins 2 / 0.10 / 5)")
 
 
+
+# --- the premap: a relocalization's saved map, placed by its fix, as lidar walls ---
+# The scene in `map`: a wall of 20 cells along x at y = -1.025, each cell at three heights
+# inside the band (60 points), the floor layer of a 5 cm voxel premap (z 0.025) at y = -0.525
+# and points above the band (z 1.325 and 1.5) at y = -1.525: 100 points, 20 wall cells.
+# The fix (x 1 m, yaw 90 deg) puts map (mx, my) at world (1 - my, mx): the wall at x = 2.025.
+PREMAP_XS = 0.025 + 0.05 * np.arange(20)
+PREMAP_WALL = np.array([[mx, -1.025, z] for mx in PREMAP_XS for z in (0.075, 0.375, 1.275)])
+PREMAP_FLOOR = np.array([[mx, -0.525, 0.025] for mx in PREMAP_XS])
+PREMAP_HIGH = np.array([[mx, -1.525, 1.325 if k % 2 else 1.5] for k, mx in enumerate(PREMAP_XS)])
+PREMAP_SCENE = np.vstack([PREMAP_WALL, PREMAP_FLOOR, PREMAP_HIGH])
+FIX = (1.0, 0.0, 90.0)
+
+
+def _premap_cloud(pts: np.ndarray):
+    """A premap as it arrives off the bus: float32, frame `map`, through an LCM round trip."""
+    from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
+    pc = PointCloud2.from_numpy(np.asarray(pts, dtype=np.float32), frame_id="map", timestamp=time.time())
+    return PointCloud2.lcm_decode(pc.lcm_encode())
+
+
+def _tf(x: float, y: float, yaw_deg: float, parent: str = "world", child: str = "map"):
+    """One transform on the tf stream, as dimOS's relocalization sends its fix, through an LCM round trip."""
+    from dimos.msgs.geometry_msgs.Quaternion import Quaternion
+    from dimos.msgs.geometry_msgs.Transform import Transform
+    from dimos.msgs.geometry_msgs.Vector3 import Vector3
+    from dimos.msgs.tf2_msgs.TFMessage import TFMessage
+    h = math.radians(yaw_deg) / 2
+    msg = TFMessage(Transform(translation=Vector3(x, y, 0.0), rotation=Quaternion(0.0, 0.0, math.sin(h), math.cos(h)),
+                              frame_id=parent, child_frame_id=child))
+    return TFMessage.lcm_decode(msg.lcm_encode())
+
+
+def _premap_module(on: bool = True, pose=(0.0, 0.0)) -> MossCostMap:
+    m = MossCostMap(premap=on)
+    m.global_costmap = Sink()
+    MODULES.append(m)
+    if pose is not None:
+        asyncio.run(m.handle_odom(_odom(*pose)))
+    return m
+
+
+def _cells(g: ScoredGrid, xy) -> set:
+    gx, gy = g.cell(np.asarray(xy)[:, 0], np.asarray(xy)[:, 1])
+    return set(zip(gy.tolist(), gx.tolist()))
+
+
+def _nonzero(layer: np.ndarray) -> set:
+    return set(map(tuple, np.argwhere(layer != 0).tolist()))
+
+
+def _wall_world(dx: float = 0.0) -> np.ndarray:
+    """The scene's wall in `world` under FIX, moved dx along world x."""
+    return np.column_stack([np.full(20, 2.025 + dx), PREMAP_XS])
+
+
+def _logged(fn):
+    """Run fn with costmap2d's logger replaced; returns the lines it said."""
+    spy, real = LogSpy(), cmod.logger
+    cmod.logger = spy
+    try:
+        fn()
+    finally:
+        cmod.logger = real
+    return spy.lines
+
+
+def test_the_premap_needs_its_map_and_its_fix() -> None:
+    """Nothing changes until BOTH a loaded_map and a `world` -> `map` fix
+    have arrived; then the premap's points inside the band become walls on
+    the lidar layer, at OCCUPIED_AT, at the cells the fix places them on.
+    The mission gate stays shut through all of it: the premap is not a
+    reading from where the rover stands."""
+    from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
+    from dimos.msgs.tf2_msgs.TFMessage import TFMessage
+    from dimos.protocol.pubsub.impl.lcmpubsub import Topic as LCMTopic
+
+    # the premap alone: kept and said, nothing written; the odometry's own tf and an inverse
+    # map -> world transform change nothing
+    m = _premap_module()
+    lines = _logged(lambda: (asyncio.run(m.handle_loaded_map(_premap_cloud(PREMAP_SCENE))),
+                             asyncio.run(m.handle_tf(_tf(0.3, 0.1, 10.0, child="base_link"))),
+                             asyncio.run(m.handle_tf(_tf(*FIX, parent="map", child="world")))))
+    assert not _nonzero(m._grid.lidar) and not m._grid.premap.any() and not m.global_costmap.msgs, \
+        "a loaded_map without a fix writes nothing (world -> base_link and map -> world are not fixes)"
+    assert lines == ["costmap: premap received: 100 points, 60 in the 0.05-1.3 m band; "
+                     "written when a world -> map fix arrives on tf"], lines
+    assert m._premap_fix is None
+    # the fix alone: said once, nothing written
+    t = _premap_module()
+    lines = _logged(lambda: (asyncio.run(t.handle_tf(_tf(*FIX))), asyncio.run(t.handle_tf(_tf(*FIX)))))
+    assert not _nonzero(t._grid.lidar) and not t._grid.premap.any() and not t.global_costmap.msgs, \
+        "a fix without a loaded_map writes nothing"
+    assert lines == ["costmap: premap fix received on tf: (+1.00, +0.00, +90.0 deg); "
+                     "written when a loaded_map arrives"], lines
+    # both: 20 walls at the placed cells, nothing else on the lidar layer
+    lines = _logged(lambda: asyncio.run(m.handle_tf(_tf(*FIX))))
+    g = m._grid
+    want = _cells(g, _wall_world())
+    assert len(want) == 20 and _nonzero(g.lidar) == want, sorted(_nonzero(g.lidar) ^ want)[:5]
+    assert set(map(tuple, np.argwhere(g.premap).tolist())) == want, "every wall cell is flagged premap"
+    gy, gx = zip(*sorted(want))
+    assert set(g.lidar[list(gy), list(gx)].tolist()) == {OCCUPIED_AT}, "written at OCCUPIED_AT, the lowest wall score"
+    assert all(g.value_at(2.025, y) == 100 for y in PREMAP_XS), "the wall at world x = 2.025"
+    assert not (_cells(g, PREMAP_WALL[:, :2]) & _nonzero(g.lidar)), "the map-frame positions themselves hold nothing"
+    for name, pts in (("the floor layer (z 0.025)", PREMAP_FLOOR), ("above the band (z 1.325, 1.5)", PREMAP_HIGH)):
+        placed = np.column_stack([1.0 - pts[:, 1], pts[:, 0]])
+        assert not (_cells(g, placed) & _nonzero(g.lidar)), f"{name} is left out"
+    assert m._mission_frozen, "the mission gate is still shut: the premap does not need it"
+    assert not m.global_costmap.msgs, "nothing goes out before the mission (test 32)"
+    head = "costmap: premap written: 20 walls from 100 points, tf (+1.00, +0.00, +90.0 deg)"
+    assert len(lines) == 1 and lines[0].startswith(head), lines
+    # the fix first, then the premap: the same 20 cells
+    asyncio.run(t.handle_loaded_map(_premap_cloud(PREMAP_SCENE)))
+    assert np.array_equal(t._grid.lidar, g.lidar) and np.array_equal(t._grid.premap, g.premap), "order does not matter"
+    # both before the first pose: written when the grid is born
+    early = _premap_module(pose=None)
+    asyncio.run(early.handle_loaded_map(_premap_cloud(PREMAP_SCENE)))
+    asyncio.run(early.handle_tf(_tf(*FIX)))
+    assert early._grid is None
+    asyncio.run(early.handle_odom(_odom(0.0, 0.0)))
+    assert np.array_equal(early._grid.lidar, g.lidar), "a premap and a fix that came before the first pose"
+    # a different premap under the same fix replaces the old one: the wall 5 cm further along -y in
+    # `map` is 5 cm further along +x in `world`, and the old cells are empty again
+    other = PREMAP_SCENE.copy()
+    other[:60, 1] -= 0.05
+    lines = _logged(lambda: asyncio.run(t.handle_loaded_map(_premap_cloud(other))))
+    moved = _cells(t._grid, _wall_world(0.05))
+    assert set(map(tuple, np.argwhere(t._grid.premap).tolist())) == moved and _nonzero(t._grid.lidar) == moved, \
+        "a different premap replaces the old one"
+    assert len(lines) == 3 and lines[0] == "costmap: premap received: 100 points, 60 in the 0.05-1.3 m band" \
+        and lines[1] == "costmap: premap cleared: 20 cells" and lines[2].startswith("costmap: premap written: 20 walls"), lines
+    # a cell the lidar has seen free stays free
+    f = _premap_module()
+    fy, fx = sorted(want)[3]
+    f._grid.lidar[fy, fx] = -2
+    f._grid.seen[fy, fx] = True
+    lines = _logged(lambda: (asyncio.run(f.handle_loaded_map(_premap_cloud(PREMAP_SCENE))),
+                             asyncio.run(f.handle_tf(_tf(*FIX)))))
+    assert f._grid.lidar[fy, fx] == -2 and not f._grid.premap[fy, fx] and int(f._grid.premap.sum()) == 19, \
+        "the live map wins over the prior: a cell seen free is not overwritten"
+    assert lines and lines[-1].startswith("costmap: premap written: 19 walls from 100 points") \
+        and "1 cells the lidar has seen free left free" in lines[-1], lines
+    # where they land on the bus: the canonical topics dimOS's relocalization publishes on
+    assert str(LCMTopic("/loaded_map", PointCloud2)) == "/loaded_map#sensor_msgs.PointCloud2"
+    assert str(LCMTopic("/tf", TFMessage)) == "/tf#tf2_msgs.TFMessage"
+    # the cost of a room-sized premap (5 300 points over 15 x 8 m), written and published once
+    rng = np.random.default_rng(1)
+    big = np.column_stack([rng.uniform(-7.5, 7.5, 5300), rng.uniform(-1.5, 6.5, 5300), rng.uniform(0.07, 1.27, 5300)])
+    b = _premap_module()
+    asyncio.run(b.handle_loaded_map(_premap_cloud(big)))
+    t0 = time.perf_counter()
+    asyncio.run(b.handle_tf(_tf(0.3, -0.2, 30.0)))
+    ms = (time.perf_counter() - t0) * 1000
+    n_big = int(b._grid.premap.sum())
+    assert n_big > 4000 and not b.global_costmap.msgs and ms < 100, (n_big, len(b.global_costmap.msgs), ms)
+    print(f"  a premap alone, a fix alone, a map -> world tf: nothing written, each input said; both: 20 walls at "
+          f"world x = 2.025 (score {OCCUPIED_AT}), floor layer and > 1.30 m left out, any order, before the first pose "
+          f"too, gate still shut, nothing published; a cell seen free stays free (19 walls); a different premap "
+          f"replaces the old one; /loaded_map and /tf; 5 300 points -> {n_big} walls written in {ms:.1f} ms")
+
+
+def test_a_lidar_ray_carves_a_premap_wall_like_any_wall() -> None:
+    """A premap wall is a lidar wall at OCCUPIED_AT: the room may have
+    changed since the premap was made, and one lidar ray through the cell
+    takes it out, exactly as it takes out a live wall at the same score."""
+    m = _premap_module()
+    asyncio.run(m.handle_explore_cmd(Bool(data=True)))
+    asyncio.run(m.handle_loaded_map(_premap_cloud(PREMAP_SCENE)))
+    asyncio.run(m.handle_tf(_tf(*FIX)))
+    g = m._grid
+    p, q = (2.025, 0.025), (2.025, -0.025)          # a premap cell, and a live wall right below it
+    g._hit(g.lidar, np.array([q[0]]), np.array([q[1]]), (0.0, -1.0))
+    g._hit(g.lidar, np.array([q[0]]), np.array([q[1]]), (0.0, -0.8))
+    (py, px), = _cells(g, [p])
+    (qy, qx), = _cells(g, [q])
+    assert g.premap[py, px] and not g.premap[qy, qx]
+    assert g.lidar[py, px] == g.lidar[qy, qx] == OCCUPIED_AT and g.value_at(*p) == g.value_at(*q) == 100
+    behind = _lidar_cloud(np.array([[3.0, 0.025], [3.0, -0.025]]))   # returns behind both: each ray crosses one of them
+    trace = []
+    for _ in range(2 * RAY_EVERY):
+        asyncio.run(m.handle_lidar(_cloud(behind)))
+        trace.append((g.value_at(*p), g.value_at(*q)))
+    assert trace[0] == (100, 100), trace
+    assert trace[RAY_EVERY - 1] == (0, 0), f"both freed by the first carving revolution: {trace}"
+    assert g.lidar[py, px] == g.lidar[qy, qx] == OCCUPIED_AT - 2 and g.seen[py, px], (g.lidar[py, px], g.lidar[qy, qx])
+    assert g.value_at(2.025, 0.525) == 100, "a premap cell no ray crossed is still a wall"
+    print(f"  premap cell and live wall at score {OCCUPIED_AT}: {trace} over {2 * RAY_EVERY} revolutions "
+          f"(rays every {RAY_EVERY}): both free on the same one, the uncrossed premap cells stay walls")
+
+
+def test_a_moved_fix_clears_and_rewrites_the_premap() -> None:
+    """The premap is written again only when a fix differs from the one it
+    was written with by more than 2 cm or 1 deg; its old cells lose exactly
+    what the premap added first, so a corrected fix leaves no ghost wall."""
+    m = _premap_module()
+    g = m._grid
+    # before the premap: a live wall from two viewpoints (OCCUPIED_AT, the premap adds nothing to it)
+    # and a cell at HIT_CAP, both under premap points
+    wy, cy_ = PREMAP_XS[2], PREMAP_XS[3]
+    g._hit(g.lidar, np.array([2.025]), np.array([wy]), (0.0, 0.0))
+    g._hit(g.lidar, np.array([2.025]), np.array([wy]), (0.0, 0.3))
+    (wgy, wgx), = _cells(g, [(2.025, wy)])
+    (cgy, cgx), = _cells(g, [(2.025, cy_)])
+    g.lidar[cgy, cgx] = HIT_CAP
+    g.seen[cgy, cgx] = True
+    asyncio.run(m.handle_loaded_map(_premap_cloud(PREMAP_SCENE)))
+    asyncio.run(m.handle_tf(_tf(*FIX)))
+    old = _cells(g, _wall_world())
+    assert g.lidar[wgy, wgx] == OCCUPIED_AT and g.lidar[cgy, cgx] == HIT_CAP and g.premap[wgy, wgx] and g.premap[cgy, cgx], \
+        (g.lidar[wgy, wgx], g.lidar[cgy, cgx])
+    (ay, ax), (by_, bx) = sorted(old)[0], sorted(old)[1]
+    g._hit(g.lidar, np.array([2.025]), np.array([g.oy + (ay + 0.5) * g.res]), (0.0, 0.0))   # a live hit since
+    g._miss(g.lidar, np.array([bx]), np.array([by_]))                                       # a ray through since
+    assert g.lidar[ay, ax] == OCCUPIED_AT + 1 and g.lidar[by_, bx] == OCCUPIED_AT - 1
+    unseen = [c for c in sorted(old) if not g.seen[c]]
+    lines = _logged(lambda: asyncio.run(m.handle_tf(_tf(FIX[0] + 0.05, FIX[1], FIX[2]))))
+    new = _cells(g, _wall_world(0.05))
+    assert len(lines) == 3 and lines[0] == "costmap: premap re-written: tf moved by (5.0 cm, 0.0 deg)" \
+        and lines[1] == "costmap: premap cleared: 20 cells" \
+        and lines[2].startswith("costmap: premap written: 20 walls from 100 points, tf (+1.05, +0.00, +90.0 deg)"), lines
+    assert set(map(tuple, np.argwhere(g.premap).tolist())) == new and not (new & old), "the wall moved 5 cm, one cell"
+    assert g.lidar[ay, ax] == 1 and g.lidar[by_, bx] == -1, \
+        f"what the sensors did stays: the live hit {g.lidar[ay, ax]} (1), the ray's miss {g.lidar[by_, bx]} (-1)"
+    assert all(g.lidar[c] == 0 and g.value_at(g.ox + (c[1] + 0.5) * g.res, g.oy + (c[0] + 0.5) * g.res) == -1
+               for c in unseen), "a cell no sensor saw is unknown again: no ghost wall, no ghost floor"
+    assert len(unseen) == 16
+    assert g.lidar[wgy, wgx] == OCCUPIED_AT and g.value_at(2.025, wy) == 100, \
+        f"the live wall seen from two viewpoints is still a wall: {g.lidar[wgy, wgx]}"
+    assert g.lidar[cgy, cgx] == HIT_CAP, f"HIT_CAP through the write and the clear: {g.lidar[cgy, cgx]}"
+    snap = g.lidar.copy()
+    quiet = _logged(lambda: (asyncio.run(m.handle_tf(_tf(FIX[0] + 0.06, FIX[1], FIX[2]))),     # 1 cm from the written fix
+                             asyncio.run(m.handle_tf(_tf(FIX[0] + 0.05, FIX[1], FIX[2]))),     # the same fix again
+                             asyncio.run(m.handle_tf(_tf(FIX[0] + 0.065, FIX[1], FIX[2] + 0.5))),  # 1.5 cm, 0.5 deg
+                             asyncio.run(m.handle_loaded_map(_premap_cloud(PREMAP_SCENE)))))   # the same premap again
+    assert not quiet and np.array_equal(g.lidar, snap) and set(map(tuple, np.argwhere(g.premap).tolist())) == new, quiet
+    creep = _logged(lambda: asyncio.run(m.handle_tf(_tf(FIX[0] + 0.075, FIX[1], FIX[2]))))   # 1 cm from the last one received
+    assert creep and creep[0] == "costmap: premap re-written: tf moved by (2.5 cm, 0.0 deg)", \
+        f"measured against the WRITTEN fix: {creep}"
+    turn = _logged(lambda: asyncio.run(m.handle_tf(_tf(FIX[0] + 0.075, FIX[1], FIX[2] + 1.5))))
+    assert turn and turn[0] == "costmap: premap re-written: tf moved by (0.0 cm, 1.5 deg)", turn
+    # Clear map: the premap goes with the rest, and the same fix does not bring it back
+    cleared = _logged(lambda: asyncio.run(m.handle_clear_map_cmd(Bool(data=True))))
+    assert any(ln.startswith("costmap: premap cleared with the map") for ln in cleared), cleared
+    assert not m._grid.premap.any() and not _nonzero(m._grid.lidar)
+    again = _logged(lambda: asyncio.run(m.handle_tf(_tf(FIX[0] + 0.075, FIX[1], FIX[2] + 1.5))))
+    assert not again and not m._grid.premap.any(), again
+    back = _logged(lambda: asyncio.run(m.handle_tf(_tf(FIX[0] + 0.105, FIX[1], FIX[2] + 1.5))))
+    assert back[0] == "costmap: premap re-written: tf moved by (3.0 cm, 0.0 deg)" and int(m._grid.premap.sum()) == 20, back
+    # across +-180 deg: 0.8 deg apart is no move, 2 deg is
+    w = _premap_module()
+    asyncio.run(w.handle_loaded_map(_premap_cloud(PREMAP_SCENE)))
+    asyncio.run(w.handle_tf(_tf(0.0, 0.0, 179.6)))
+    wrap = _logged(lambda: asyncio.run(w.handle_tf(_tf(0.0, 0.0, -179.6))))
+    turned = _logged(lambda: asyncio.run(w.handle_tf(_tf(0.0, 0.0, -178.4))))
+    assert not wrap and turned and turned[0] == "costmap: premap re-written: tf moved by (0.0 cm, 2.0 deg)", (wrap, turned)
+    print("  5 cm: re-written, 20 cells cleared (live hit 3 -> 1, ray's miss 1 -> -1, a two-viewpoint wall still "
+          "100, HIT_CAP kept, 16 unseen cells unknown again), 20 written one cell over; 1 cm, the same fix, "
+          "1.5 cm + 0.5 deg, the same premap: nothing; creeping to 2.5 cm from the written fix: re-written; 1.5 deg "
+          "alone: re-written; +179.6 -> -179.6 deg: nothing, -178.4: re-written; Clear map: gone until a fix moves 3 cm")
+
+
+def test_the_premap_off_ignores_and_says_so_once() -> None:
+    """premap=False (MOSS_PREMAP=0, the blueprints' default and the
+    module's): the In exists, every loaded_map is ignored, and the log says
+    so once."""
+    m = _premap_module(on=False)
+    assert MossCostMap().premap_on is False, "the module's own default is off"
+    lines = _logged(lambda: [asyncio.run(f) for f in (m.handle_loaded_map(_premap_cloud(PREMAP_SCENE)),
+                                                       m.handle_tf(_tf(*FIX)),
+                                                       m.handle_loaded_map(_premap_cloud(PREMAP_SCENE)),
+                                                       m.handle_tf(_tf(FIX[0] + 0.5, 0.0, 0.0)),
+                                                       m.handle_loaded_map(_premap_cloud(PREMAP_SCENE[:10])))])
+    assert lines == ["costmap: premap ignored (MOSS_PREMAP=0)"], lines
+    assert not _nonzero(m._grid.lidar) and not m._grid.premap.any() and not m.global_costmap.msgs
+    assert m._premap_xy is None and m._premap_fix is None
+    print("  premap off: 3 loaded_maps and 2 fixes -> nothing written, nothing published, one line: "
+          "'costmap: premap ignored (MOSS_PREMAP=0)'")
+
+
+def test_the_premap_never_touches_the_camera_layer() -> None:
+    """The premap writes the lidar layer only, and leaves `seen` alone: a
+    write, a re-write and a clear leave the camera layer and the seen mask
+    byte for byte as they were."""
+    m = _premap_module()
+    asyncio.run(m.handle_explore_cmd(Bool(data=True)))
+    g = m._grid
+    shoe = np.array([[2.025, 0.125]])                   # a camera wall on a premap cell, and one beside the wall
+    _armed(g, np.vstack([shoe, [[1.525, 0.325]]]), t=100.0, viewpoints=((0.0, 0.0), (0.0, 0.15)))
+    g.body_clear((0.0, 0.0, 0.0))
+    cam0, seen0 = g.camera.copy(), g.seen.copy()
+    assert _cells(g, shoe) <= _nonzero(cam0) and int((cam0 > 0).sum()) == 2
+    asyncio.run(m.handle_loaded_map(_premap_cloud(PREMAP_SCENE)))
+    asyncio.run(m.handle_tf(_tf(*FIX)))
+    after_write = (np.array_equal(g.camera, cam0), np.array_equal(g.seen, seen0))
+    asyncio.run(m.handle_tf(_tf(FIX[0] + 0.05, FIX[1], FIX[2])))
+    after_rewrite = (np.array_equal(g.camera, cam0), np.array_equal(g.seen, seen0))
+    n = g.clear_premap()
+    after_clear = (np.array_equal(g.camera, cam0), np.array_equal(g.seen, seen0))
+    assert after_write == after_rewrite == after_clear == (True, True) and n == 20, (after_write, after_rewrite, after_clear)
+    print("  a camera wall on a premap cell and one beside: camera layer and seen mask identical after the write, "
+          "the re-write and the clear (20 cells)")
+
+
+def test_the_published_grid_carries_the_premap() -> None:
+    """Nothing goes out before the mission, premap or not: a grid of premap
+    walls with no free floor reads to explorer2 as a walled-in start (a
+    back-off, then "no reachable frontier left"). The premap goes out with
+    the map's first grid of the mission: walls 100, the floor the lidar saw
+    0, the floor beside the walls -1 (no sensor saw it). Once a grid has gone
+    out, a re-write publishes at once, the old cells -1 again; after Clear
+    map, a re-write waits for the map's next grid."""
+    m = _premap_module()
+    asyncio.run(m.handle_loaded_map(_premap_cloud(PREMAP_SCENE)))
+    asyncio.run(m.handle_tf(_tf(*FIX)))
+    for _ in range(3):
+        asyncio.run(m.handle_odom(_odom(0.0, 0.0)))
+    assert int(m._grid.premap.sum()) == 20 and not m.global_costmap.msgs, "written, not published, before the mission"
+    asyncio.run(m.handle_explore_cmd(Bool(data=True)))
+    # the mission is open and the body's footprint is seen free, but the map has put no grid out:
+    # a re-write still waits (a grid of walls and one footprint of floor is a walled-in start too)
+    asyncio.run(m.handle_odom(_odom(0.0, 0.0)))
+    asyncio.run(m.handle_tf(_tf(FIX[0] - 0.05, FIX[1], FIX[2])))
+    assert m._grid.seen.any() and int(m._grid.premap.sum()) == 20 and not m.global_costmap.msgs, \
+        "no grid before the map's own first one, even with the footprint seen"
+    asyncio.run(m.handle_tf(_tf(*FIX)))
+    # lidar returns behind the rover (x = -1 m): their rays never cross the premap wall at x = 2.025
+    behind = _lidar_cloud(np.array([[-1.0, y] for y in np.arange(-0.5, 0.55, 0.1)]))
+    for k in range(PUBLISH_EVERY):
+        assert not m.global_costmap.msgs, f"nothing before the map's first grid (revolution {k})"
+        asyncio.run(m.handle_lidar(_cloud(behind)))
+    out = m.global_costmap.msgs
+    assert len(out) == 1, len(out)
+
+    def at(og, x, y):
+        grid = np.asarray(og.grid)
+        ox, oy = og.origin.position.x, og.origin.position.y
+        return int(grid[int(math.floor((y - oy) / RESOLUTION_M)), int(math.floor((x - ox) / RESOLUTION_M))])
+
+    og = out[0]
+    grid = np.asarray(og.grid)
+    assert og.frame_id == "world" and abs(og.resolution - RESOLUTION_M) < 1e-9
+    assert [at(og, 2.025, y) for y in PREMAP_XS] == [100] * 20, "the premap walls are 100"
+    assert at(og, 1.975, 0.475) == -1 and at(og, 2.075, 0.475) == -1, "the floor on both sides of the wall is unknown"
+    assert at(og, -0.475, 0.025) == 0, "the floor the lidar's rays crossed is free"
+    n_wall, n_free = int((grid == 100).sum()), int((grid == 0).sum())
+    assert n_wall == 20 and n_free > 0, (n_wall, n_free)
+    asyncio.run(m.handle_tf(_tf(FIX[0] + 0.05, FIX[1], FIX[2])))
+    assert len(m.global_costmap.msgs) == 2, "once a grid has gone out, a re-write publishes at once"
+    og2 = m.global_costmap.msgs[-1]
+    assert [at(og2, 2.075, y) for y in PREMAP_XS] == [100] * 20 and [at(og2, 2.025, y) for y in PREMAP_XS] == [-1] * 20
+    # Clear map: a re-write waits for the map's next grid, which carries it
+    asyncio.run(m.handle_clear_map_cmd(Bool(data=True)))
+    asyncio.run(m.handle_tf(_tf(FIX[0] + 0.10, FIX[1], FIX[2])))
+    assert int(m._grid.premap.sum()) == 20 and len(m.global_costmap.msgs) == 2, "after Clear map: written, not published"
+    for _ in range(PUBLISH_EVERY):
+        asyncio.run(m.handle_lidar(_cloud(behind)))
+    og3 = m.global_costmap.msgs[-1]
+    assert len(m.global_costmap.msgs) == 3 and [at(og3, 2.125, y) for y in PREMAP_XS] == [100] * 20
+    print(f"  before the mission: written, 0 grids; mission open, footprint seen, a re-write: 0 grids; first grid "
+          f"of the mission (revolution {PUBLISH_EVERY}): 20 cells at "
+          f"100 along x = 2.025, {n_free} free cells, -1 beside the wall; a 5 cm fix: published at once, 100 along "
+          "x = 2.075, -1 where the wall was; after Clear map a re-write goes out with the next grid")
+
+
+def test_a_carved_premap_wall_stays_carved_through_a_rewrite() -> None:
+    """A premap wall a lidar ray took below OCCUPIED_AT was seen free: a
+    re-write never paints it back. The case that needs the mark: the cell
+    held a one-viewpoint hit (1) before the premap landed, the premap made it
+    a wall (2), a ray carved it (1), and the clear takes the premap's share
+    back (0): written again, it would be a wall the lidar removed. A lidar
+    hit from a new viewpoint lifts the mark, and the next write claims the
+    cell again."""
+    m = _premap_module()
+    asyncio.run(m.handle_explore_cmd(Bool(data=True)))
+    g = m._grid
+    p = (2.01, 0.01)
+    (cy, cx), = _cells(g, [p])
+    g._hit(g.lidar, np.array([p[0]]), np.array([p[1]]), (0.0, 0.0))     # one sighting from one place: 1
+    asyncio.run(m.handle_loaded_map(_premap_cloud(np.array([[p[0], p[1], 0.4]]))))
+    asyncio.run(m.handle_tf(_tf(0.0, 0.0, 0.0)))
+    assert g.lidar[cy, cx] == OCCUPIED_AT and g.premap[cy, cx] and g.value_at(*p) == 100
+    behind = _lidar_cloud(np.array([[3.0, 0.01]]))                     # a return behind it: the ray crosses the cell
+    for _ in range(RAY_EVERY):
+        asyncio.run(m.handle_lidar(_cloud(behind)))
+    assert g.lidar[cy, cx] == OCCUPIED_AT - 1 and g.premap_carved[cy, cx] and g.value_at(*p) == 0, g.lidar[cy, cx]
+    assert _cells(g, [(p[0], p[1] + 0.025)]) == {(cy, cx)}, "the moved fix keeps the point in its cell"
+    lines = _logged(lambda: asyncio.run(m.handle_tf(_tf(0.0, 0.025, 0.0))))
+    assert lines[0] == "costmap: premap re-written: tf moved by (2.5 cm, 0.0 deg)" \
+        and lines[-1].startswith("costmap: premap written: 0 walls from 1 points") \
+        and "1 cells the lidar has seen free left free" in lines[-1], lines
+    assert g.value_at(*p) == 0 and not g.premap[cy, cx] and g.premap_carved[cy, cx], (g.lidar[cy, cx], g.value_at(*p))
+    g._hit(g.lidar, np.array([p[0]]), np.array([p[1]]), (0.0, 0.5))     # seen again, from a new viewpoint
+    assert not g.premap_carved[cy, cx]
+    asyncio.run(m.handle_tf(_tf(0.0, 0.0, 0.0)))
+    assert g.premap[cy, cx] and g.value_at(*p) == 100, (g.lidar[cy, cx], g.value_at(*p))
+    print(f"  one hit (1) + premap -> {OCCUPIED_AT} -> a ray -> {OCCUPIED_AT - 1}, carved -> a 2.5 cm fix in the same "
+          "cell: 0 walls, 1 left free, the cell free; a hit from a new viewpoint lifts the mark: the next write "
+          "makes it a wall again")
+
+
 TESTS = (test_the_doctrine_defaults, test_leg_needs_two_viewpoints_and_ray_is_free, test_ramp_hit_from_one_spot_never_becomes_a_wall,
          test_chair_moved_is_forgotten_by_lidar_rays, test_reinforcement_is_capped_and_unlearning_bounded,
          test_parked_rover_never_erases_an_established_wall, test_body_clear_is_the_moss_footprint,
@@ -1494,7 +1933,11 @@ TESTS = (test_the_doctrine_defaults, test_leg_needs_two_viewpoints_and_ray_is_fr
          test_the_carve_stays_in_the_cameras_view, test_body_clear_frees_the_camera_layer,
          test_thin_leg_survives_the_floor_sampled_beside_it, test_moving_object_never_writes_the_map,
          test_the_cameras_rays_carve_the_camera_layer_only, test_camera_rays_start_at_the_camera_not_the_base,
-         test_the_carve_band_follows_the_camera_height)
+         test_the_carve_band_follows_the_camera_height,
+         test_the_premap_needs_its_map_and_its_fix, test_a_lidar_ray_carves_a_premap_wall_like_any_wall,
+         test_a_moved_fix_clears_and_rewrites_the_premap, test_the_premap_off_ignores_and_says_so_once,
+         test_the_premap_never_touches_the_camera_layer, test_the_published_grid_carries_the_premap,
+         test_a_carved_premap_wall_stays_carved_through_a_rewrite)
 
 if __name__ == "__main__":
     OK = KO = 0
