@@ -72,12 +72,14 @@
        ok        = mint text
        attention = salmon text
        failure   = salmon badge with navy text
+       caution   = amber text
        unknown   = white at 0.6 */
   --ui-ok: var(--moss-mint);
   --ui-attention: var(--moss-salmon);
   --ui-fail-bg: var(--moss-salmon);
   --ui-fail-fg: var(--moss-navy);
   --ui-unknown: rgba(234, 240, 239, .6);
+  --ui-caution: #FFC15E;   /* the depth camera's dots on the map; obstacle / replan in the decision feed */
   --ui-dim: rgba(234, 240, 239, .78);       /* secondary text: 4.74:1 on studio */
   --ui-control-line: rgba(234, 240, 239, .5); /* button borders: >= 3:1 on studio */
 }

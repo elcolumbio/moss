@@ -34,8 +34,18 @@ Switches (env, read when moss-nav / moss-explore is built; robot_profile.env_on
 parses them: 0, false, no or off = off, any other value = on, unset = the default):
     MOSS_CAMERA=0     no RealSense (default on: colour 640x480 @ 5 fps, JPEG on the bus, plus depth aligned
                       to colour at the same rate, turned into map obstacles by lidar_odometry)
-    MOSS_GYRO=1       gyro prior for the lidar odometry from the RealSense's IMU (default OFF: the IMU
-                      pipeline fails to open on the rover and takes the camera down with it; an experiment)
+    MOSS_GYRO=1       gyro prior for the lidar odometry from the RealSense's IMU (default OFF: alone, it uses
+                      dimOS's second IMU pipeline, which fails to open on the rover and takes the camera down
+                      with it; an experiment. With MOSS_IMU=1 the gyro comes from the in-process motion module)
+    MOSS_IMU=1        contacts from the RealSense's IMU (default OFF: opt-in until a stationary launch on the
+                      robot shows colour, depth and IMU alive together). The camera becomes MossRealSense
+                      (moss_dimos/realsense_imu.py: the motion module opened in the camera's process on the
+                      device its pipeline holds, accel + gyro at 200 Hz on `imu`) and BumpImu
+                      (moss_dimos/bump_imu.py) publishes `bump` - the stream of the stall guard: the planner's
+                      escape, the costmap's contact memory, the sounds - on a hard deceleration against the
+                      track command. MOSS_BUMP_ACCEL (m/s^2, default 4.0), MOSS_BUMP_AXIS (default +z),
+                      MOSS_BUMP_DEBOUNCE_S (default 0.7), MOSS_IMU_LOG=<csv> (every sample); docs/imu.md.
+                      Needs the camera: with MOSS_CAMERA=0 it is refused with a warning
     MOSS_DESKEW=1     kiss-icp straightens each lidar revolution by the motion prior (default OFF: on the
                       rover its first thread fails and the odometry stops; an experiment)
     MOSS_SOUNDS=0     no sound module (default on when pw-play or paplay is on the PATH: the sound pack
@@ -258,6 +268,7 @@ def _coordinator_blueprint(base: HardwareComponent):
 
 LIDAR_BAUDRATE = 460800
 CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS = 640, 480, 5
+IMU_HZ = 200                   # MOSS_IMU: gyro rate, and so the rate of `imu` (the accel runs at its highest)
 EXPLORER_MIN_FRONTIER_PERIMETER_M = 0.3   # doorway-sized frontiers stay visible
 EXPLORER_GOAL_TIMEOUT_S = 45.0
 # Where the explorer sends the rover, set for the room (docs/cockpit.md):
@@ -448,6 +459,12 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         LidarOdometry.blueprint(use_gyro_prior=gyro, deskew=deskew),
         MossCostMap.blueprint(),
     ]
+    # MOSS_IMU=1: the IMU is opened inside the camera's own process (MossRealSense) and BumpImu turns
+    # its decelerations into contacts on `bump`; the IMU lives on the RealSense, so no camera, no IMU
+    imu = robot_profile.env_on("MOSS_IMU", False)
+    if imu and not robot_profile.env_on("MOSS_CAMERA", True):
+        _logger.warning("MOSS blueprint: MOSS_IMU needs the RealSense and MOSS_CAMERA is off: no IMU contacts")
+        imu = False
     if robot_profile.env_on("MOSS_CAMERA", True):
         from dimos.hardware.sensors.camera.realsense.camera import RealSenseCamera
         from dimos.msgs.geometry_msgs.Quaternion import Quaternion
@@ -464,7 +481,19 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         serial = os.environ.get("MOSS_RS_SERIAL", "").strip()
         if serial:
             cam_kwargs["serial_number"] = serial
-        parts.append(RealSenseCamera.blueprint(**cam_kwargs))
+        if imu:
+            from moss_dimos.realsense_imu import MossRealSense
+            cam_kwargs.update(enable_imu=True, imu_hz=IMU_HZ)
+            parts.append(MossRealSense.blueprint(**cam_kwargs))
+        else:
+            parts.append(RealSenseCamera.blueprint(**cam_kwargs))
+    if imu:
+        from moss_dimos.bump_imu import BumpImu, bump_settings
+        knobs = bump_settings()
+        _logger.info(f"MOSS blueprint: IMU contacts on bump, forward axis {knobs['axis']}, "
+                     f"threshold {knobs['threshold']:g} m/s^2, debounce {knobs['debounce_s']:g} s, "
+                     f"csv {knobs['log_path'] or 'off'}")
+        parts.append(BumpImu.blueprint(**knobs))
     if robot_profile.env_on("MOSS_SOUNDS", True):
         from moss_dimos.sounds import MossSounds, playback_backend
         if playback_backend() is None:

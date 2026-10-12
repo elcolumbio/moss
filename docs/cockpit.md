@@ -242,7 +242,8 @@ temperatures, disk), the live map (occupancy grid + lidar scan + pose + path +
 goal; drag to pan, wheel or pinch to zoom, tap to send a goal), the two cameras
 under the map (nose = RealSense colour, wrist = the arm's camera; MJPEG, 5 fps
 each, one "Pause video" for both), controls (launch map / explore, stop stack,
-start / stop exploration, record episode, STOP) and the log tail.
+start / stop exploration, record episode, STOP), what it decides (below) and
+the log tail.
 
 STOP on the page is a soft stop: it publishes `stop_explore_cmd`,
 `stop_movement` and a zero twist. The hard stops are the firmware deadman
@@ -260,8 +261,9 @@ always allowed. Commands that publish on the bus need the stack on LCM
 `X-Requested-With: moss-cockpit` (the page does, a cross-site form cannot).
 
 Endpoints, for anything else that wants the data: `/state.json`, `/map.png`,
-`/map_meta`, `/scan.json`, `/path.json`, `/log.json`, `/preflight.json`,
-`/launch.json`, `/camera.mjpg` (`?cam=nose`, the default, or `?cam=wrist`), and
+`/map_meta`, `/scan.json`, `/path.json`, `/log.json`, `/decisions.json` (below),
+`/preflight.json`, `/launch.json`, `/camera.mjpg` (`?cam=nose`, the default, or
+`?cam=wrist`), and `POST /cmd/{explore,goal,stop,episode,stack}`.
 
 `/scan.json` splits the latest `lidar` cloud by height: `points` (and `n`) are the lidar returns, at
 the profile's lidar height; `camera` (and `camera_n`) are the depth camera's obstacle points, at
@@ -275,9 +277,115 @@ the next revolution. The base panel shows a STALLED badge for at least 4 s whene
 base adapter's stall guard fires (a commanded track whose encoder did not move for
 1 s: the tracks stop and the planner backs off), and a `stalls` row counts them
 over the run.
-`POST /cmd/{explore,goal,stop,episode,stack}`.
 `tools/moss_cockpit.py --demo` serves synthetic data for working on the page
 without a robot.
+
+## What it decides
+
+The map shows what the rover sees; the "What it decides." panel says what it
+made of it and what it did as a consequence. Nothing new runs on the robot for
+this: the explorer, the planners, the base adapter, the costmap and the contact
+sources already write each of their decisions into the run's log (`main.jsonl`
+in the run's log directory). The cockpit reads that file and turns every
+decision line into one short line, in the order the stack wrote them, and
+keeps one word on top for the state now.
+
+| Kind | Who says it | The line in the log | On the page |
+|---|---|---|---|
+| `goal` | explorer | `goal 3: (-1.67, -0.12) 3.9 m away (beyond the cap: ...), 110 frontier cells, ...` | Goal 3: 3.9 m away (110 cells, beyond the cap) |
+| `goal_dropped` | explorer | `planner gave up on that goal: ...`, `goal timeout after 30 s having closed 0.05 m of 2.40 m: ...` | Goal dropped: the planner gave up / 0.05 of 2.40 m closed in 30 s |
+| `goal_dropped` | global planner | `No path found to the goal.`, `No safe goal found near requested target.` | Goal dropped: no path to (1.03, -2.72) / no safe spot near it |
+| `goal_dropped` | recovering planner | `Goal abandoned, no recovery motion` (stuck) | Stuck: goal abandoned |
+| `waiting` | explorer | `10 of 20 clusters are on a recently failed goal: waiting ...` | Waiting: 10 of 20 frontiers are failed goals |
+| `retry` | explorer | `starvation escape: ... reopening the oldest failed goal at (-1.27, 1.28)` | Retrying an old goal at (-1.27, 1.28) |
+| `obstacle` | local planner | `Obstacle detected ahead, stopping local planner.` | Obstacle ahead: stop |
+| `obstacle` | explorer | `born cornered: 0.40 m2 of reachable floor and no frontier - one 0.20 m back-off ...` | Cornered (0.40 m2 of floor, no frontier): backing off 0.20 m |
+| `replan` | global planner | a reason, then `Replanning.` (see below) | Replanning / Stuck: replanning / Off track: replanning / Navigation failed: replanning |
+| `new_goal` | global planner | `Got new goal`, `Found safe goal.`, `Travelling to goal 1.29m away from requested goal.` | Planner: new goal / safe goal found / safe goal 1.29 m from the requested one |
+| `reached` | local planner | `Reached goal position, starting final rotation` | Goal reached |
+| `contact` | base adapter | `STALL #1: tracks commanded L=+76% R=+64% but the encoders moved L=+1 R=+0 ticks in 1.0 s` | Contact #1: both tracks blocked (commanded ..., encoders moved ...) |
+| `contact` | recovering planner | `BUMP received`, `Contact during an escape: stopping dead`, `Contact escape` | Bump: backing off / Contact during an escape: stop dead / Escape done: 0.20 m in 2.1 s, Escape timed out: only 0.05 m in 5.0 s, Escape aborted after 0.05 m |
+| `contact` | costmap | `costmap: contact at (-0.88, +0.73) heading +147 deg: 32 cells ahead marked as a wall` | Wall remembered ahead (32 cells) |
+| `push` | base adapter | `tracks frozen at L=+56% R=+50% - pushing at 75 % for 1 s ...` | Tracks frozen at L=+56% R=+50%: pushing at 75 % |
+| `pivot_fallback` | base adapter | `pivot L=+100% R=-100%: the right track did not turn ...` | Right track did not turn in reverse (...): pivoting on the left track from now on |
+| `imu` | IMU contact detector | `IMU contact: forward -4.8 m/s^2 (threshold 4.0) while commanded L=+70% R=+60%` | the line itself |
+| `mission` | explorer | `exploration start: ...`, the stop lines, `exploration complete: ...` | Exploration started (cap 3 m, radius 4 m) / stopped (stop button or pad) / complete |
+
+A contact names the track that did not move: a track counts as blocked when it
+was commanded and its encoder moved fewer than 20 ticks over the stall window
+(the base adapter's own rule). Some decisions read the record's fields as well
+as its text: how far an escape went and how long it took (`travelled_m`,
+`seconds`), whether it was cut short (`aborted`), whether a bump moved anything
+(`acted`), what made the planner give a goal up (`trigger`), the spot it could
+not reach (`x`, `y`). Every other line (twists, telemetry, the camera's obstacle
+counts, sounds, transport) is not a decision and does not appear.
+
+A replan is shown only when the planner really replans. The global planner
+first logs why it might (`Robot is stuck. Replanning.`, `Replanning path due to
+obstacle found.`, `Robot veered off track. Replanning.`, `Failure in
+navigation.`), then decides. dimOS logs `Replanning.` when it replans, and that
+line is what shows the reason. MOSS's planner logs `Goal abandoned, no recovery
+motion` when it gives the goal up, and that line is shown instead. Two cases
+drop the reason: `Replan requested without a goal; ignoring.`, and no answer
+within 0.5 s. The second happens when MOSS's planner ignores a stuck verdict
+while the rover turns in place, waits, or backs off from a contact. A turn in
+place is not being stuck. A stuck verdict the planner ignored is therefore not
+in the feed: the rover is still heading for its goal.
+
+A line that only repeats the decision just before it is left out (within one
+second, unless said otherwise). That covers:
+- the planner taking the explorer's goal;
+- the planner's second `No safe goal found.`;
+- the explorer's "planner gave up" right after the planner gave its own reason, so the reason stays;
+- the bump the explorer publishes when it backs out of a corner;
+- the second of the two stop lines a STOP produces;
+- the explorer's "stay here" goal and its arrival, within 0.2 s of its stop.
+
+A goal tapped after that is a new decision. A `BUMP received` during an escape
+moves nothing: the line before it says the rover stopped dead, and the bump
+gets no row. Identical lines one after the other, such as the explorer saying
+every second that it waits, make one row ending in a count such as `(x10)`, so
+a long wait never pushes the contacts out of the page's 30 rows.
+
+| Word | When |
+|---|---|
+| IDLE | no stack is running (the last run's lines stay below it until the next run) |
+| READY | a stack and no decision yet; a tapped goal reached, dropped, or an escape over while nothing explores |
+| HEADING | a goal chosen (by the explorer or tapped on the map), a goal reached while exploring, a replan that keeps the goal (off track, a navigation failure) |
+| OBSTACLE | the local planner stopped on an obstacle, or the planner replans around it: 3 s |
+| STUCK | the planner's stuck replan or its giving a goal up when stuck (3 s), the base pushing harder on frozen tracks (4 s) |
+| BACKING OFF | a contact (an encoder stall, the bump, the wall remembered, an IMU contact) or the explorer backing out of a corner: until the escape's end line, at most 6 s (the escape's 5 s timeout plus one second for a lost line) |
+| WAITING | the explorer waits (every frontier left is a failed goal), dropped a goal, has just started, or an escape is over |
+| STOPPED | exploration stopped (STOP, the pad, a stop command); an escape ending after the STOP leaves it |
+| DONE | exploration complete |
+
+OBSTACLE, STUCK and BACKING OFF are held for their time even when the next line
+comes a millisecond later, so they can be seen; while several run the strongest
+shows (BACKING OFF, then STUCK, then OBSTACLE). The end of an escape and the
+end of the mission end every hold. Outside a hold the word is what the last
+other line said. Under the word, the detail is the goal being driven to or the
+text of the line that set the word.
+
+`GET /decisions.json?n=40` serves it: `{"now": {"word", "detail", "since"},
+"events": [...], "run"}`, where each event is `{"ts", "kind", "text", "src",
+"seq"}`: `ts` the log's own timestamp (ISO, UTC, with a Z), `src` one of
+explorer, planner, base, costmap, recovery, imu and mission, `seq` one more per
+decision, never going back while the cockpit runs. The cockpit reads
+`main.jsonl` incrementally (its last MiB at first, then only what was
+appended), at most twice a second whoever asks, and keeps the last 500 rows.
+When the stack stops, its rows and its run name stay, under IDLE "No stack
+running (last run: ...)", as its map does; the next run's log starts a new
+feed. A `dimos run` with no registry entry (run in the foreground, or a
+registry swept by `dimos status`) has no log the cockpit can find: the word is
+READY, "Stack running, its log is not found", and the feed is empty. `--demo`
+plays a scripted cycle through the same parser: goal, obstacle, replan,
+contact, escape, goal dropped, next goal, arrival.
+
+The feed says what the stack decided, not everything the sensors saw: an
+obstacle the camera saw and the planner never acted on is on the map, in amber,
+not in the feed.
+
+Contacts from the RealSense's IMU, which do not depend on the tracks gripping: [imu.md](imu.md).
 
 ## The cockpit as a service
 

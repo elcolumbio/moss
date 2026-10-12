@@ -7,6 +7,7 @@
  *   (both state and scan carry the pose: the robot marker takes the younger one, 3 Hz)
  *   GET  /map_meta    1 Hz, then /map.png only when map_meta.stamp changed
  *   GET  /log.json    0.5 Hz      GET /preflight.json on load and after a check
+ *   GET  /decisions.json?n=30  1 Hz  (the stack's decisions read from its log, and the word for now)
  *   GET  /launch.json while a stack command runs
  *   POST /cmd/<explore|goal|stop|episode|stack>
  *
@@ -15,7 +16,7 @@
  */
 "use strict";
 
-var POLL = { state: 1000, meta: 1000, scan: 333, path: 1000, log: 2000, launch: 1000 };
+var POLL = { state: 1000, meta: 1000, scan: 333, path: 1000, log: 2000, launch: 1000, decisions: 1000 };
 var FETCH_TIMEOUT_MS = 2500;
 var TAP_SLOP_PX = 6;          // a pointer that moved less than this is a tap, not a drag
 var STALE_S = 3;              // a topic older than this is shown as stale
@@ -27,6 +28,27 @@ var CAM_RETRY_MS = 3000;      // reconnect the MJPEG stream this long after it e
 var CAM_GRACE_MS = 6000;      // a stream younger than this is not judged dead (first frame wait + a state poll)
 var STALL_HOLD_S = 4;         // the STALLED badge stays up at least this long after the stall count goes up
 var DEPTH_COLOR = "rgba(255,193,94,.95)";   // amber: depth-camera obstacles, apart from the mint lidar scan
+var DECISION_ROWS = 30;       // the decision feed shows this many, newest on top
+// The commanded-motion arrow at the robot: the path a constant (vx, wz) drives in CMD_ARROW_S,
+// so 0.45 m/s is 0.6 m on the map, drawn from the marker's edge (its nose, its tail in reverse)
+// and never shorter on screen than CMD_MIN_RUN; a pivot is an arc around the robot sweeping the
+// turn of PIVOT_ARROW_S, between PIVOT_MIN_RAD and PIVOT_MAX_RAD.
+var CMD_ARROW_S = 0.6 / 0.45;
+var PIVOT_ARROW_S = 3;
+var PIVOT_MIN_RAD = Math.PI / 4, PIVOT_MAX_RAD = 1.5 * Math.PI;
+var CMD_VX_EPS = 0.02;        // m/s: slower than this the command does not translate (a pivot, or nothing)
+var CMD_WZ_EPS = 0.02;        // rad/s: slower than this the command does not turn
+var PIVOT_RADIUS_M = 0.1;     // a turn about a centre this close (under the robot) is drawn as a pivot
+var CMD_STEPS = 16;           // segments of a drawn path
+var CMD_W = 4;                // px: the arrow's line, thicker than the 2.25 px path
+var CMD_HEAD = 10;            // px: arrowhead length (its half width is 0.5 of it)
+var CMD_MIN_RUN = 22;         // px past the marker's edge, at least: the head and 12 px of line. At the
+                              // fitted zoom (~37 px/m) 0.2 m/s is 10 px of map, which the marker would hide
+var PIVOT_R_PX = 17;          // px: the pivot arc's radius, just outside the robot marker
+var MARK_L = 15, MARK_B = 8;  // px: the robot marker's length and half width; nose .62 L ahead, tail .38 L behind
+var MINT = "#6CF8C7";
+var HALO = "#080F1A";         // navy (--moss-navy) outline round the arrow: it reads over white walls, and
+                              // over the mint path (2.25 px, no outline) it is a separate, outlined shape
 
 var S = {
   online: false, state: null,
@@ -34,7 +56,8 @@ var S = {
   preflight: null, launchBusy: false, launchAction: null,
   view: { scale: 40, x: -3, y: 3 }, fitted: false,
   pendingGoal: null, camPaused: false, camOk: false, camAt: 0, camLost: null, pfAll: false,
-  stateAt: 0, stallLatch: { count: null, until: 0 }
+  stateAt: 0, stallLatch: { count: null, until: 0 },
+  decisions: null, decHtml: null, decKeys: null
 };
 
 function $(id) { return document.getElementById(id); }
@@ -133,6 +156,9 @@ function exploring() { return !!(S.state && S.state.nav && S.state.nav.exploring
 
 // seconds since the last state the cockpit answered: the server's ages froze then
 function offlineFor() { return S.online || !S.stateAt ? 0 : Math.max(0, (Date.now() - S.stateAt) / 1000); }
+
+// seconds since the last state answer, online or not: what to add to an age the state carries
+function sinceState() { return S.stateAt ? Math.max(0, (Date.now() - S.stateAt) / 1000) : 0; }
 
 // a bus topic's age as the server measured it now, or null when it is silent or unknown
 function topicAge(name) {
@@ -624,8 +650,12 @@ function draw() {
 
   // pose: white triangle pointing along yaw (the younger of the two poses, freshestPose)
   var p = pose();
+  // commanded motion: what the planner asks of the tracks now, out of the marker's nose (tail in reverse);
+  // drawn first so the marker stays whole where the line's round cap meets it
+  var cmd = cmdArrow(nav && nav.last_cmd_vel, p, sinceState());
+  if (cmd) drawCmd(cmd);
   if (p && typeof p.x === "number") {
-    var cx = sx(p.x), cy = sy(p.y), a = -(p.yaw || 0), L = 15, B = 8;
+    var cx = sx(p.x), cy = sy(p.y), a = -(p.yaw || 0), L = MARK_L, B = MARK_B;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(a);
     ctx.beginPath(); ctx.moveTo(L * .62, 0); ctx.lineTo(-L * .38, B); ctx.lineTo(-L * .2, 0); ctx.lineTo(-L * .38, -B); ctx.closePath();
     ctx.fillStyle = (typeof p.age_s === "number" && p.age_s > STALE_S) ? "rgba(234,240,239,.5)" : "#EAF0EF";
@@ -642,6 +672,103 @@ function ring(x, y, dashed) {
   ctx.beginPath(); ctx.arc(sx(x), sy(y), 9, 0, 2 * Math.PI); ctx.stroke();
   ctx.setLineDash([]);
   ctx.beginPath(); ctx.arc(sx(x), sy(y), 2, 0, 2 * Math.PI); ctx.fillStyle = "#FF947E"; ctx.fill();
+  ctx.restore();
+}
+
+// The commanded motion (nav.last_cmd_vel: vx m/s, forward positive; wz rad/s, left positive;
+// age_s on the server's clock) as a shape in the world frame at pose p ({x, y, yaw}), or null
+// when there is nothing to draw: no pose, no command, a command LIVE_S old or more once
+// extraAge (s since the server answered) is added, or a zero command.
+//   {kind: "path", x, y, yaw, sign, len, pts: [[x, y], ...], tip: {x, y, ux, uy}}: the path a
+//       constant (vx, wz) drives in CMD_ARROW_S from the pose, straight or bent (an arc), behind the
+//       robot in reverse (sign -1); len = its length, m; tip = its end and the unit direction the
+//       robot moves there. drawCmd moves it to the marker's edge on screen.
+//   {kind: "pivot", x, y, yaw, dir, sweep}: a turn on the spot (|vx| under CMD_VX_EPS, or a turn
+//       radius |vx / wz| under PIVOT_RADIUS_M), dir 1 = left (counterclockwise), -1 = right;
+//       sweep = the turn of PIVOT_ARROW_S, rad, kept between PIVOT_MIN_RAD and PIVOT_MAX_RAD
+function cmdArrow(c, p, extraAge) {
+  if (!c || !p || typeof p.x !== "number" || typeof p.y !== "number") return null;
+  var vx = c.vx, wz = c.wz;
+  if (typeof vx !== "number" || typeof wz !== "number" || !isFinite(vx) || !isFinite(wz)) return null;
+  var age = (typeof c.age_s === "number" ? c.age_s : Infinity) + (extraAge || 0);
+  if (!(age < LIVE_S)) return null;
+  var yaw = typeof p.yaw === "number" && isFinite(p.yaw) ? p.yaw : 0;
+  if (Math.abs(vx) < CMD_VX_EPS || (Math.abs(wz) >= CMD_WZ_EPS && Math.abs(vx / wz) < PIVOT_RADIUS_M)) {
+    if (Math.abs(wz) < CMD_WZ_EPS) return null;
+    return { kind: "pivot", x: p.x, y: p.y, yaw: yaw, dir: wz > 0 ? 1 : -1,
+             sweep: Math.max(PIVOT_MIN_RAD, Math.min(PIVOT_MAX_RAD, Math.abs(wz) * PIVOT_ARROW_S)) };
+  }
+  var c0 = Math.cos(yaw), s0 = Math.sin(yaw), pts = [];
+  for (var i = 0; i <= CMD_STEPS; i++) {
+    var t = CMD_ARROW_S * i / CMD_STEPS, fx, fy;     // robot frame at the pose: x forward, y left
+    if (Math.abs(wz) < 1e-9) { fx = vx * t; fy = 0; }
+    else { fx = vx / wz * Math.sin(wz * t); fy = vx / wz * (1 - Math.cos(wz * t)); }
+    pts.push([p.x + c0 * fx - s0 * fy, p.y + s0 * fx + c0 * fy]);
+  }
+  var h = yaw + wz * CMD_ARROW_S, sg = vx > 0 ? 1 : -1, end = pts[CMD_STEPS];
+  return { kind: "path", x: p.x, y: p.y, yaw: yaw, sign: sg, len: Math.abs(vx) * CMD_ARROW_S, pts: pts,
+           tip: { x: end[0], y: end[1], ux: sg * Math.cos(h), uy: sg * Math.sin(h) } };
+}
+
+// A screen polyline ([[x, y], ...], px) without its last `cut` px, [] when it is not longer.
+function trimEnd(sp, cut) {
+  var total = 0, run = 0, i, d;
+  for (i = 1; i < sp.length; i++) total += Math.hypot(sp[i][0] - sp[i - 1][0], sp[i][1] - sp[i - 1][1]);
+  var keep = total - cut, out = [sp[0]];
+  if (!(keep > 0)) return [];
+  for (i = 1; i < sp.length; i++) {
+    d = Math.hypot(sp[i][0] - sp[i - 1][0], sp[i][1] - sp[i - 1][1]);
+    if (run + d >= keep) {
+      var f = d > 0 ? (keep - run) / d : 0;
+      out.push([sp[i - 1][0] + f * (sp[i][0] - sp[i - 1][0]), sp[i - 1][1] + f * (sp[i][1] - sp[i - 1][1])]);
+      return out;
+    }
+    run += d; out.push(sp[i]);
+  }
+  return out;
+}
+
+// Draws cmdArrow's shape at the robot: a navy outline, the mint line, then the arrowhead, whose
+// tip is the end of the path (or of the pivot arc) and which points the way the robot moves.
+// A path starts at the marker's edge, its nose (its tail in reverse), not under the marker, and
+// runs its metres at the map's scale past that edge, or CMD_MIN_RUN px when that is longer: the
+// same shape scaled, so the turn over it stays wz * CMD_ARROW_S. The line stops under the head.
+// Screen angles turn clockwise (y down): a world angle a is -a.
+function drawCmd(a) {
+  var line = null, tip;          // line() builds the shaft; tip = [x, y, ux, uy], screen px and direction
+  if (a.kind === "pivot") {
+    var cx = sx(a.x), cy = sy(a.y), a0 = -a.yaw, a1 = a0 - a.dir * a.sweep, back = CMD_HEAD / PIVOT_R_PX;
+    var aEnd = a1 + a.dir * back * .7;
+    line = function () { ctx.beginPath(); ctx.arc(cx, cy, PIVOT_R_PX, a0, aEnd, a.dir > 0); };
+    var tx = cx + PIVOT_R_PX * Math.cos(a1), ty = cy + PIVOT_R_PX * Math.sin(a1);
+    var bx = cx + PIVOT_R_PX * Math.cos(a1 + a.dir * back), by = cy + PIVOT_R_PX * Math.sin(a1 + a.dir * back);
+    var l = Math.hypot(tx - bx, ty - by) || 1;      // the head lies along the chord, on the arc
+    tip = [tx, ty, (tx - bx) / l, (ty - by) / l];
+  } else {
+    var c0 = sx(a.x), c1 = sy(a.y), edge = a.sign > 0 ? MARK_L * .62 : MARK_L * .38;
+    var px = a.len * S.view.scale, k = px > 0 ? Math.max(CMD_MIN_RUN, px) / px : 1;
+    var ox = c0 + a.sign * edge * Math.cos(a.yaw), oy = c1 - a.sign * edge * Math.sin(a.yaw);
+    var sp = a.pts.map(function (q) { return [ox + k * (sx(q[0]) - c0), oy + k * (sy(q[1]) - c1)]; });
+    tip = [sp[sp.length - 1][0], sp[sp.length - 1][1], a.tip.ux, -a.tip.uy];
+    sp = trimEnd(sp, CMD_HEAD * .7);
+    if (sp.length > 1) line = function () {
+      ctx.beginPath(); ctx.moveTo(sp[0][0], sp[0][1]);
+      for (var i = 1; i < sp.length; i++) ctx.lineTo(sp[i][0], sp[i][1]);
+    };
+  }
+  var hx = tip[0] - tip[2] * CMD_HEAD, hy = tip[1] - tip[3] * CMD_HEAD;
+  var nx = -tip[3] * CMD_HEAD * .5, ny = tip[2] * CMD_HEAD * .5;
+  function head() {
+    ctx.beginPath(); ctx.moveTo(tip[0], tip[1]); ctx.lineTo(hx + nx, hy + ny); ctx.lineTo(hx - nx, hy - ny); ctx.closePath();
+  }
+  ctx.save();
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.strokeStyle = HALO;
+  if (line) { ctx.lineWidth = CMD_W + 4; line(); ctx.stroke(); }
+  ctx.lineWidth = 4; head(); ctx.stroke();
+  ctx.strokeStyle = MINT; ctx.fillStyle = MINT;
+  if (line) { ctx.lineWidth = CMD_W; line(); ctx.stroke(); }
+  head(); ctx.fill();
   ctx.restore();
 }
 
@@ -977,6 +1104,138 @@ function pollLog() {
   }, function () {});
 }
 
+// ---------------------------------------------------------------- decisions
+
+// What the stack decides, read by the server from the stack's own log (/decisions.json): the
+// events {ts, kind, text, src, seq}, oldest first, and the word for now {word, detail, since}.
+// A kind's colour says what happened: the robot touched something (warn), something is in the
+// planner's way (caution), it heads somewhere (accent), it waits or gives a goal up (dim).
+var KIND_CLASS = {
+  contact: "warn", push: "warn", imu: "warn",
+  obstacle: "caution", replan: "caution", pivot_fallback: "caution",
+  goal: "accent", new_goal: "accent", reached: "accent",
+  waiting: "dim", goal_dropped: "dim", retry: "dim",
+  mission: ""
+};
+var KIND_LABEL = {
+  goal: "GOAL", new_goal: "NEW GOAL", reached: "REACHED", obstacle: "OBSTACLE", replan: "REPLAN",
+  contact: "CONTACT", push: "PUSH", imu: "IMU", pivot_fallback: "PIVOT", waiting: "WAITING",
+  goal_dropped: "DROPPED", retry: "RETRY", mission: "MISSION"
+};
+var WORD_CLASS = {
+  "OBSTACLE": "warn", "BACKING OFF": "warn", "STUCK": "warn", "HEADING": "accent",
+  "IDLE": "dim", "READY": "dim", "WAITING": "dim", "DONE": "dim", "STOPPED": "dim"
+};
+var WORD_DETAIL = { "IDLE": "No stack running.", "READY": "Stack up. Exploration not armed." };
+
+// A log time as epoch seconds: a number as it is, an ISO string parsed (dimOS writes UTC with
+// a "Z"; without a zone it is the browser's local time), anything else null.
+function tsSeconds(ts) {
+  if (typeof ts === "number") return isFinite(ts) ? ts : null;
+  if (typeof ts !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(ts)) return null;
+  var t = Date.parse(ts);
+  return isFinite(t) ? t / 1000 : null;
+}
+
+// minutes and seconds on the local clock: the log's hh:mm:ss without the hour
+function minSec(ts) {
+  var t = tsSeconds(ts);
+  if (t === null) { var m = /\d{2}:(\d{2}:\d{2})/.exec(String(ts == null ? "" : ts)); return m ? m[1] : "--:--"; }
+  var d = new Date(t * 1000);
+  return pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+}
+
+// The server's events as the feed's rows, newest on top, at most n: {seq, time, cls, label, text}.
+// Ordered by seq when every event has one, else by position (the server sends oldest first).
+// Anything that is not an object is dropped.
+function decisionRows(events, n) {
+  var list = (Array.isArray(events) ? events : []).filter(function (e) { return e && typeof e === "object"; });
+  var bySeq = list.every(function (e) { return typeof e.seq === "number" && isFinite(e.seq); });
+  var rows = list.map(function (e, i) {
+    var k = String(e.kind == null ? "" : e.kind);
+    return { at: bySeq ? e.seq : i, seq: bySeq ? e.seq : null, time: minSec(e.ts), cls: KIND_CLASS[k] || "",
+             label: KIND_LABEL[k] || k.replace(/_/g, " ").toUpperCase() || "--",
+             text: e.text == null ? "" : String(e.text) };
+  });
+  rows.sort(function (a, b) { return b.at - a.at; });
+  return rows.slice(0, n).map(function (r) { delete r.at; return r; });
+}
+
+// Which rows are new since the previous answer, by what they say (time, kind, text; a repeat of
+// the same line counted from the oldest), not by seq: {keys, fresh: [bool per row]}. prevKeys
+// null (the first answer) flashes nothing; an answer with nothing in common with a non-empty
+// previous one is a new run or a restarted server, and flashes nothing either.
+function freshRows(rows, prevKeys) {
+  var seen = {}, keys = [], fresh = [], i;
+  for (i = rows.length - 1; i >= 0; i--) {
+    var k = rows[i].time + "|" + rows[i].label + "|" + rows[i].text;
+    seen[k] = (seen[k] || 0) + 1;
+    keys[i] = k + "#" + seen[k];
+  }
+  var prev = {}, common = 0;
+  (prevKeys || []).forEach(function (k) { prev[k] = true; });
+  keys.forEach(function (k) { if (prev[k]) common++; });
+  var flash = Array.isArray(prevKeys) && (prevKeys.length === 0 || common > 0);
+  keys.forEach(function (k, j) { fresh[j] = flash && !prev[k]; });
+  return { keys: keys, fresh: fresh };
+}
+
+// The feed's html; fresh[i] true makes row i flash once.
+function decisionsHtml(rows, fresh) {
+  return rows.map(function (r, i) {
+    var cls = (r.cls + (fresh && fresh[i] ? " fresh" : "")).trim();
+    return "<li" + (cls ? ' class="' + cls + '"' : "") + '><span class="t">' + esc(r.time) + '</span><span class="k">'
+         + esc(r.label) + '</span><span class="x">' + esc(r.text) + "</span></li>";
+  }).join("");
+}
+
+// The word for now as the page shows it: {word, cls, detail, since}. nowS is the server's clock
+// now (epoch s), so the time since the word was set reads on the clock that stamped it.
+function nowView(now, nowS) {
+  if (!now || typeof now !== "object" || !now.word) return { word: "--", cls: "dim", detail: "", since: "" };
+  var word = String(now.word).toUpperCase(), t = tsSeconds(now.since);
+  return { word: word, cls: WORD_CLASS[word] || "",
+           detail: now.detail ? String(now.detail) : (WORD_DETAIL[word] || ""),
+           since: t !== null && typeof nowS === "number" && isFinite(nowS) ? "for " + dur(Math.max(0, nowS - t)) : "" };
+}
+
+// the server's clock now (no NTP in the field): its last state's ts plus the time since that answer
+function serverNow() {
+  return S.state && typeof S.state.ts === "number" ? S.state.ts + sinceState() : Date.now() / 1000;
+}
+
+function pollDecisions() {
+  return fetchJSON("/decisions.json?n=" + DECISION_ROWS).then(function (d) {
+    S.decisions = d || null;
+    renderDecisions();
+  }, function () {});
+}
+
+// An answer with an error and no events ({error}, the server's 500) says nothing about the
+// decisions: the feed and its keys stay as they were, only the word and its detail say so.
+function renderDecisions() {
+  var d = S.decisions, nv, html = null;
+  if (!d) return;
+  if (d.__missing) {
+    nv = { word: "--", cls: "dim", detail: "This cockpit server has no decision feed.", since: "" };
+    html = '<li class="empty">No /decisions.json on this cockpit server.</li>';
+  } else {
+    nv = nowView(d.now, serverNow());
+    if (d.error && !d.now) nv.detail = "Decision feed error: " + String(d.error);
+    if (!d.error || Array.isArray(d.events)) {
+      var rows = decisionRows(d.events, DECISION_ROWS), fr = freshRows(rows, S.decKeys);
+      html = decisionsHtml(rows, fr.fresh);
+      S.decKeys = fr.keys;
+      if (!html) html = '<li class="empty">' + (stack().running ? "No decision yet." : "No stack, no decisions.") + "</li>";
+    }
+  }
+  setText("now-word", nv.word);
+  $("now-word").className = nv.cls;
+  setText("now-detail", nv.detail);
+  setText("now-since", nv.since);
+  if (html !== null && html !== S.decHtml) { $("decisions").innerHTML = html; S.decHtml = html; }
+}
+
 // ---------------------------------------------------------------- go
 
 if ("ResizeObserver" in window) new ResizeObserver(function () { resize(); if (!S.fitted) fitView(); }).observe(wrap);
@@ -991,3 +1250,4 @@ poller(pollMeta, POLL.meta);
 poller(pollScan, POLL.scan);
 poller(pollPath, POLL.path);
 poller(pollLog, POLL.log);
+poller(pollDecisions, POLL.decisions);

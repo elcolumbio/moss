@@ -45,6 +45,22 @@ Every check feeds a value we know and reads back a value in physical units
                       page's own pose choice (state vs scan, the younger wins), stall view
                       and stall latch (a stall the 1 Hz read misses still holds the badge
                       4 s) run in node
+  I. decisions      - every decision line of the catalogue (the run's own text) -> its kind,
+                      source and a short text that keeps the line's numbers; twenty other
+                      lines -> nothing; the planner's replan reasons shown only with their
+                      consequence ("Replanning.", "Goal abandoned"), the run's three stuck
+                      verdicts the planner ignored -> nothing; one whole real exploration
+                      replayed (goal 10, contact 30, waiting 44, no event from its 181 twist /
+                      telemetry lines; its 11-line wait folded into one row) and its first
+                      contact with every module's lines -> the expected events and words;
+                      the state word on known sequences (the 3 s / 4 s holds, BACKING OFF
+                      until the escape ends, rank, stop, escape, tapped goals the planner
+                      drops, ISO times); echoes; bad records never raise; /decisions.json
+                      live on a 1.1 MB main.jsonl (the 1 MiB window, at most 2 Hz, a torn
+                      last line, a reason and its consequence in two reads, a rewritten
+                      file, the stack gone and its events kept, the next run, a stack with
+                      no registry entry) and in the demo (the scripted cycle, STOP, explore,
+                      a goal 3 s after the stop, UTC times, the stop keeping the feed)
   F. hygiene        - no dimos/serial/torch import, no LAN address in the server
 
 C, D and the run-change checks of G need dimos_lcm (pure python, installed with
@@ -1368,6 +1384,1098 @@ console.log(JSON.stringify({
           "T+4 s; stalled true without a hold -> badge",
           jr.get("holdEdge") == [True, False] and jr.get("stalledNoHold") is True,
           json.dumps({k: jr.get(k) for k in ("holdEdge", "stalledNoHold")}))
+
+# ---------------------------------------------------------------------------
+# One real exploration, every line its decision-making modules printed, in order: minutes:seconds on the
+# run's clock, the module, the event text (lines cut where the run's export cut them; the board's serial
+# id zeroed). Twists and telemetry included: they must make no event.
+RUN_NAV = r"""
+0:27.040 moss_adapter.py MOSS base: firmware ramp set to 5 5 ms per % (rise fall)
+0:27.041 moss_adapter.py MOSS base: connected on /dev/serial/by-id/usb-Adafruit_QT_Py_ESP32-S3_No_PSRAM_00:00:00:00:00:00-if00, firmware mode=0 geometry=MossGeom
+1:25.257 wavefront_frontier Received exploration start command via LCM
+1:25.259 explorer2.py exploration start: distance exp 2, cap 3 m, radius 4 m (0 = no limit; the radius is centred on the first pose)
+1:25.260 wavefront_frontier Started autonomous frontier exploration
+1:25.928 explorer2.py goal 1: (-1.27, 1.28) 2.0 m away, 35 frontier cells, 12 clusters, chosen in 114 ms
+1:25.929 global_planner.py Got new goal
+1:25.929 global_planner.py Cancelling goal.
+1:26.039 global_planner.py Found safe goal.
+1:26.104 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+1:26.111 local_planner.py changed state
+1:26.214 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: stop) - re-arming once
+1:26.216 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.385 -> tracks L=-100% R=+100% (limit 100%)
+1:26.311 moss_adapter.py MOSS telemetry: out=[0, 0] target=[0, 0] bus=10972 mV ticks=[387605, 451441] mode=0
+1:27.525 local_planner.py changed state
+1:27.532 moss_adapter.py MOSS base: twist vx=+0.282 vy=+0.000(ignored) wz=+0.211 -> tracks L=+56% R=+69% (limit 100%)
+1:27.633 moss_adapter.py MOSS base: twist vx=+0.307 vy=+0.000(ignored) wz=+0.200 -> tracks L=+62% R=+74% (limit 100%)
+1:27.734 moss_adapter.py MOSS base: twist vx=+0.329 vy=+0.000(ignored) wz=+0.200 -> tracks L=+67% R=+79% (limit 100%)
+1:27.835 moss_adapter.py MOSS base: twist vx=+0.352 vy=+0.000(ignored) wz=+0.200 -> tracks L=+72% R=+84% (limit 100%)
+1:27.937 moss_adapter.py MOSS base: twist vx=+0.359 vy=+0.000(ignored) wz=+0.200 -> tracks L=+74% R=+86% (limit 100%)
+1:28.038 moss_adapter.py MOSS base: twist vx=+0.370 vy=+0.000(ignored) wz=+0.200 -> tracks L=+76% R=+88% (limit 100%)
+1:28.130 moss_adapter.py MOSS base: twist vx=+0.378 vy=+0.000(ignored) wz=+0.200 -> tracks L=+78% R=+90% (limit 100%)
+1:28.231 moss_adapter.py MOSS base: twist vx=+0.381 vy=+0.000(ignored) wz=-0.200 -> tracks L=+91% R=+79% (limit 100%)
+1:28.340 moss_adapter.py MOSS base: twist vx=+0.370 vy=+0.000(ignored) wz=-0.200 -> tracks L=+88% R=+76% (limit 100%)
+1:28.358 moss_adapter.py MOSS telemetry: out=[36, 79] target=[91, 79] bus=10804 mV ticks=[386244, 454604] mode=2
+1:28.441 moss_adapter.py MOSS base: twist vx=+0.363 vy=+0.000(ignored) wz=-0.200 -> tracks L=+87% R=+75% (limit 100%)
+1:28.534 moss_adapter.py MOSS base: twist vx=+0.367 vy=+0.000(ignored) wz=+0.200 -> tracks L=+76% R=+88% (limit 100%)
+1:28.636 moss_adapter.py MOSS base: twist vx=+0.372 vy=+0.000(ignored) wz=+0.200 -> tracks L=+77% R=+89% (limit 100%)
+1:28.853 moss_adapter.py MOSS base: twist vx=+0.331 vy=+0.000(ignored) wz=+0.200 -> tracks L=+68% R=+79% (limit 100%)
+1:28.929 local_planner.py Obstacle detected ahead, stopping local planner.
+1:28.929 local_planner.py changed state
+1:28.930 global_planner.py Replanning path due to obstacle found.
+1:28.932 global_planner.py Replanning.
+1:28.932 global_planner.py Cancelling goal.
+1:28.936 global_planner.py Found safe goal.
+1:28.937 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+1:28.973 local_planner.py changed state
+1:28.978 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.385 -> tracks L=-100% R=+100% (limit 100%)
+1:30.380 moss_adapter.py MOSS telemetry: out=[-100, 100] target=[-100, 100] bus=10492 mV ticks=[387720, 460484] mode=2
+1:31.415 local_planner.py changed state
+1:31.424 moss_adapter.py MOSS base: twist vx=+0.276 vy=+0.000(ignored) wz=-0.223 -> tracks L=+68% R=+55% (limit 100%)
+1:31.518 moss_adapter.py MOSS base: twist vx=+0.256 vy=+0.000(ignored) wz=-0.262 -> tracks L=+65% R=+50% (limit 100%)
+1:31.620 moss_adapter.py MOSS base: twist vx=+0.240 vy=+0.000(ignored) wz=-0.295 -> tracks L=+62% R=+50% (limit 100%)
+1:31.719 moss_adapter.py MOSS base: twist vx=+0.227 vy=+0.000(ignored) wz=-0.322 -> tracks L=+60% R=+50% (limit 100%)
+1:31.820 moss_adapter.py MOSS base: twist vx=+0.217 vy=+0.000(ignored) wz=-0.342 -> tracks L=+58% R=+50% (limit 100%)
+1:31.924 moss_adapter.py MOSS base: twist vx=+0.218 vy=+0.000(ignored) wz=-0.341 -> tracks L=+59% R=+50% (limit 100%)
+1:32.129 moss_adapter.py MOSS base: twist vx=+0.214 vy=+0.000(ignored) wz=-0.348 -> tracks L=+58% R=+50% (limit 100%)
+1:32.331 moss_adapter.py MOSS base: twist vx=+0.212 vy=+0.000(ignored) wz=-0.353 -> tracks L=+57% R=+50% (limit 100%)
+1:32.399 moss_adapter.py MOSS telemetry: out=[58, 50] target=[58, 50] bus=10816 mV ticks=[385182, 463840] mode=2
+1:32.530 moss_adapter.py MOSS base: twist vx=+0.204 vy=+0.000(ignored) wz=-0.370 -> tracks L=+56% R=+50% (limit 100%)
+1:34.429 moss_adapter.py MOSS telemetry: out=[56, 50] target=[56, 50] bus=10800 mV ticks=[388105, 466783] mode=2
+1:35.142 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+1:35.935 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+56% R=+50% (limit 100%)
+1:36.464 moss_adapter.py MOSS telemetry: out=[56, -9] target=[56, 50] bus=10828 mV ticks=[391710, 468411] mode=2
+1:37.848 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+1:38.490 moss_adapter.py MOSS telemetry: out=[100, -25] target=[100, -100] bus=10728 mV ticks=[395223, 471199] mode=2
+1:38.658 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+56% R=+50% (limit 100%)
+1:40.511 moss_adapter.py MOSS telemetry: out=[56, 50] target=[56, 50] bus=10720 mV ticks=[396064, 471064] mode=2
+1:40.814 moss_adapter.py MOSS base: tracks frozen at L=+56% R=+50% - pushing at 75 % for 1 s before calling it a contact
+1:40.815 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+75% R=+75% (limit 100%)
+1:41.833 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+56% R=+50% (limit 100%)
+1:42.537 moss_adapter.py MOSS telemetry: out=[56, 50] target=[56, 50] bus=10708 mV ticks=[396196, 471761] mode=2
+1:42.947 moss_adapter.py MOSS base: tracks frozen at L=+56% R=+50% - pushing at 75 % for 1 s before calling it a contact
+1:42.953 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+75% R=+75% (limit 100%)
+1:43.962 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+56% R=+50% (limit 100%)
+1:44.270 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+1:44.565 moss_adapter.py MOSS telemetry: out=[100, 0] target=[100, -100] bus=10548 mV ticks=[396329, 472266] mode=2
+1:44.668 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+56% R=+50% (limit 100%)
+1:45.171 moss_adapter.py MOSS base: tracks frozen at L=+56% R=+50% - pushing at 75 % for 1 s before calling it a contact
+1:45.177 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+75% R=+75% (limit 100%)
+1:45.371 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+1:46.171 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+56% R=+50% (limit 100%)
+1:46.589 moss_adapter.py MOSS telemetry: out=[56, 0] target=[56, 50] bus=10808 mV ticks=[396507, 472231] mode=2
+1:47.396 moss_adapter.py MOSS base: tracks frozen at L=+56% R=+50% - pushing at 75 % for 1 s before calling it a contact
+1:47.398 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+75% R=+75% (limit 100%)
+1:48.416 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+56% R=+50% (limit 100%)
+1:48.611 moss_adapter.py MOSS telemetry: out=[56, 53] target=[56, 50] bus=10712 mV ticks=[396707, 472992] mode=2
+1:48.707 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+1:50.018 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+56% R=+50% (limit 100%)
+1:50.631 moss_adapter.py MOSS telemetry: out=[56, 0] target=[56, 50] bus=10812 mV ticks=[397813, 471591] mode=2
+1:50.825 moss_adapter.py MOSS base: twist vx=+0.343 vy=+0.000(ignored) wz=+0.200 -> tracks L=+70% R=+82% (limit 100%)
+1:50.929 moss_adapter.py MOSS base: twist vx=+0.345 vy=+0.000(ignored) wz=+0.200 -> tracks L=+71% R=+82% (limit 100%)
+1:51.027 moss_adapter.py MOSS base: twist vx=+0.343 vy=+0.000(ignored) wz=+0.200 -> tracks L=+70% R=+82% (limit 100%)
+1:51.224 moss_adapter.py MOSS base: twist vx=+0.349 vy=+0.000(ignored) wz=+0.200 -> tracks L=+72% R=+83% (limit 100%)
+1:51.325 moss_adapter.py MOSS base: twist vx=+0.355 vy=+0.000(ignored) wz=+0.200 -> tracks L=+73% R=+85% (limit 100%)
+1:51.427 moss_adapter.py MOSS base: twist vx=+0.363 vy=+0.000(ignored) wz=+0.200 -> tracks L=+75% R=+87% (limit 100%)
+1:51.529 moss_adapter.py MOSS base: twist vx=+0.369 vy=+0.000(ignored) wz=+0.200 -> tracks L=+76% R=+88% (limit 100%)
+1:51.629 moss_adapter.py MOSS base: twist vx=+0.372 vy=+0.000(ignored) wz=+0.200 -> tracks L=+77% R=+89% (limit 100%)
+1:51.721 moss_adapter.py MOSS base: twist vx=+0.378 vy=+0.000(ignored) wz=+0.200 -> tracks L=+78% R=+90% (limit 100%)
+1:51.823 moss_adapter.py MOSS base: twist vx=+0.384 vy=+0.000(ignored) wz=-0.200 -> tracks L=+91% R=+79% (limit 100%)
+1:51.922 moss_adapter.py MOSS base: twist vx=+0.375 vy=+0.000(ignored) wz=-0.200 -> tracks L=+89% R=+77% (limit 100%)
+1:52.024 moss_adapter.py MOSS base: twist vx=+0.370 vy=+0.000(ignored) wz=-0.200 -> tracks L=+88% R=+76% (limit 100%)
+1:52.130 moss_adapter.py MOSS base: twist vx=+0.363 vy=+0.000(ignored) wz=-0.200 -> tracks L=+87% R=+75% (limit 100%)
+1:52.229 moss_adapter.py MOSS base: twist vx=+0.359 vy=+0.000(ignored) wz=-0.200 -> tracks L=+86% R=+74% (limit 100%)
+1:52.332 moss_adapter.py MOSS base: twist vx=+0.356 vy=+0.000(ignored) wz=-0.200 -> tracks L=+85% R=+73% (limit 100%)
+1:52.433 moss_adapter.py MOSS base: twist vx=+0.347 vy=+0.000(ignored) wz=-0.200 -> tracks L=+83% R=+71% (limit 100%)
+1:52.524 moss_adapter.py MOSS base: twist vx=+0.340 vy=+0.000(ignored) wz=-0.200 -> tracks L=+82% R=+70% (limit 100%)
+1:52.627 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+1:52.667 moss_adapter.py MOSS telemetry: out=[82, 70] target=[82, 70] bus=10456 mV ticks=[398810, 474169] mode=2
+1:53.930 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=-0.385 -> tracks L=+56% R=+50% (limit 100%)
+1:54.435 moss_adapter.py MOSS base: twist vx=+0.374 vy=+0.000(ignored) wz=+0.200 -> tracks L=+77% R=+89% (limit 100%)
+1:54.534 moss_adapter.py MOSS base: twist vx=+0.377 vy=+0.000(ignored) wz=+0.200 -> tracks L=+78% R=+90% (limit 100%)
+1:54.636 moss_adapter.py MOSS base: twist vx=+0.375 vy=+0.000(ignored) wz=+0.200 -> tracks L=+77% R=+89% (limit 100%)
+1:54.691 moss_adapter.py MOSS telemetry: out=[75, 0] target=[77, 89] bus=10688 mV ticks=[399405, 473685] mode=2
+1:54.730 moss_adapter.py MOSS base: twist vx=+0.375 vy=+0.000(ignored) wz=+0.200 -> tracks L=+78% R=+89% (limit 100%)
+1:54.937 moss_adapter.py MOSS base: twist vx=+0.377 vy=+0.000(ignored) wz=+0.200 -> tracks L=+78% R=+90% (limit 100%)
+1:55.038 moss_adapter.py MOSS base: twist vx=+0.381 vy=+0.000(ignored) wz=+0.200 -> tracks L=+79% R=+91% (limit 100%)
+1:55.133 moss_adapter.py MOSS base: twist vx=+0.384 vy=+0.000(ignored) wz=-0.200 -> tracks L=+91% R=+79% (limit 100%)
+1:55.234 moss_adapter.py MOSS base: twist vx=+0.378 vy=+0.000(ignored) wz=-0.200 -> tracks L=+90% R=+78% (limit 100%)
+1:55.336 moss_adapter.py MOSS base: twist vx=+0.369 vy=+0.000(ignored) wz=-0.200 -> tracks L=+88% R=+76% (limit 100%)
+1:55.437 moss_adapter.py MOSS base: twist vx=+0.363 vy=+0.000(ignored) wz=-0.200 -> tracks L=+87% R=+75% (limit 100%)
+1:55.531 moss_adapter.py MOSS base: twist vx=+0.354 vy=+0.000(ignored) wz=-0.200 -> tracks L=+84% R=+73% (limit 100%)
+1:55.632 moss_adapter.py MOSS base: twist vx=+0.344 vy=+0.000(ignored) wz=-0.200 -> tracks L=+82% R=+71% (limit 100%)
+1:55.733 moss_adapter.py MOSS base: twist vx=+0.340 vy=+0.000(ignored) wz=-0.200 -> tracks L=+81% R=+70% (limit 100%)
+1:55.834 moss_adapter.py MOSS base: twist vx=+0.333 vy=+0.000(ignored) wz=-0.200 -> tracks L=+80% R=+68% (limit 100%)
+1:55.937 moss_adapter.py MOSS base: twist vx=+0.330 vy=+0.000(ignored) wz=-0.200 -> tracks L=+79% R=+67% (limit 100%)
+1:56.044 moss_adapter.py MOSS base: twist vx=+0.321 vy=+0.000(ignored) wz=-0.200 -> tracks L=+77% R=+65% (limit 100%)
+1:56.132 moss_adapter.py MOSS base: twist vx=+0.310 vy=+0.000(ignored) wz=-0.200 -> tracks L=+75% R=+63% (limit 100%)
+1:56.233 moss_adapter.py MOSS base: twist vx=+0.303 vy=+0.000(ignored) wz=-0.200 -> tracks L=+73% R=+61% (limit 100%)
+1:56.335 moss_adapter.py MOSS base: twist vx=+0.299 vy=+0.000(ignored) wz=-0.200 -> tracks L=+72% R=+60% (limit 100%)
+1:56.439 moss_adapter.py MOSS base: twist vx=+0.299 vy=+0.000(ignored) wz=-0.200 -> tracks L=+72% R=+61% (limit 100%)
+1:56.638 moss_adapter.py MOSS base: twist vx=+0.304 vy=+0.000(ignored) wz=-0.200 -> tracks L=+73% R=+62% (limit 100%)
+1:56.713 moss_adapter.py MOSS telemetry: out=[72, 61] target=[72, 61] bus=10560 mV ticks=[400033, 475192] mode=2
+1:56.740 moss_adapter.py MOSS base: twist vx=+0.308 vy=+0.000(ignored) wz=-0.200 -> tracks L=+74% R=+63% (limit 100%)
+1:56.849 moss_adapter.py MOSS base: twist vx=+0.311 vy=+0.000(ignored) wz=-0.200 -> tracks L=+75% R=+63% (limit 100%)
+1:56.934 moss_adapter.py MOSS base: twist vx=+0.313 vy=+0.000(ignored) wz=-0.200 -> tracks L=+75% R=+64% (limit 100%)
+1:57.036 moss_adapter.py MOSS base: twist vx=+0.315 vy=+0.000(ignored) wz=-0.200 -> tracks L=+76% R=+64% (limit 100%)
+1:57.220 moss_adapter.py MOSS base: STALL #1: tracks commanded L=+76% R=+64% but the encoders moved L=+1 R=+0 ticks in 1.0 s - stopped (the encoders are the bump
+1:57.225 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+1:57.445 moss_adapter.py MOSS base: twist vx=+0.313 vy=+0.000(ignored) wz=-0.200 -> tracks L=+75% R=+64% (limit 100%)
+1:57.503 recovering_planner BUMP received
+1:57.505 local_planner.py changed state
+1:57.505 local_planner.py Local planner loop exited due to stop event.
+1:57.509 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+1:57.570 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+1:58.752 moss_adapter.py MOSS telemetry: out=[-50, -50] target=[-50, -50] bus=10764 mV ticks=[399100, 474264] mode=2
+1:59.605 recovering_planner Contact escape
+1:59.606 global_planner.py Cancelling goal.
+1:59.615 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+1:59.663 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+1:59.835 explorer2.py goal 2: (0.18, -1.47) 2.6 m away, 20 frontier cells, 19 clusters, chosen in 170 ms
+1:59.836 global_planner.py Got new goal
+1:59.837 global_planner.py Cancelling goal.
+1:59.840 global_planner.py Found safe goal.
+1:59.934 local_planner.py changed state
+1:59.949 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+2:00.772 moss_adapter.py MOSS telemetry: out=[100, -100] target=[100, -100] bus=10260 mV ticks=[398571, 472912] mode=2
+2:00.974 moss_adapter.py MOSS base: STALL #2: tracks commanded L=+100% R=-100% but the encoders moved L=+1259 R=+6 ticks in 1.0 s - stopped (the encoders are the
+2:00.977 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+2:01.015 recovering_planner BUMP received
+2:01.017 local_planner.py changed state
+2:01.018 local_planner.py Local planner loop exited due to stop event.
+2:01.024 latest_only.py twist_command: consumer behind, executing the newest command only (1 stale dropped so far)
+2:01.029 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:01.079 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+2:02.793 moss_adapter.py MOSS telemetry: out=[-50, -50] target=[-50, -50] bus=10784 mV ticks=[396941, 470728] mode=2
+2:03.199 recovering_planner Contact escape
+2:03.200 global_planner.py Cancelling goal.
+2:03.203 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+2:03.204 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:03.360 explorer2.py goal 3: (-1.67, -0.12) 3.9 m away (beyond the cap: nothing safe within it), 110 frontier cells, 19 clusters, chosen in 156 ms
+2:03.361 global_planner.py Got new goal
+2:03.361 global_planner.py Cancelling goal.
+2:03.372 global_planner.py Found safe goal.
+2:03.412 local_planner.py changed state
+2:03.425 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+2:04.615 moss_adapter.py MOSS base: STALL #3: tracks commanded L=+100% R=-100% but the encoders moved L=+1001 R=-19 ticks in 1.0 s - stopped (the encoders are th
+2:04.618 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+2:04.819 moss_adapter.py MOSS telemetry: out=[21, -21] target=[100, -100] bus=10828 mV ticks=[397164, 469780] mode=2
+2:05.032 recovering_planner BUMP received
+2:05.032 local_planner.py changed state
+2:05.033 local_planner.py Local planner loop exited due to stop event.
+2:05.039 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:05.100 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+2:06.862 moss_adapter.py MOSS telemetry: out=[-50, -50] target=[-50, -50] bus=10776 mV ticks=[395591, 468248] mode=2
+2:07.299 recovering_planner Contact escape
+2:07.301 global_planner.py Cancelling goal.
+2:07.304 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+2:07.306 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:07.507 explorer2.py goal 4: (1.58, 3.53) 5.1 m away (beyond the cap: nothing safe within it), 27 frontier cells, 20 clusters, chosen in 201 ms
+2:07.508 global_planner.py Got new goal
+2:07.508 global_planner.py Cancelling goal.
+2:07.512 global_planner.py Found safe goal.
+2:07.620 local_planner.py changed state
+2:07.630 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+2:08.680 moss_adapter.py MOSS base: STALL #4: tracks commanded L=+100% R=-100% but the encoders moved L=+1051 R=+8 ticks in 1.0 s - stopped (the encoders are the
+2:08.688 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+2:08.883 moss_adapter.py MOSS telemetry: out=[7, -7] target=[100, -100] bus=10852 mV ticks=[395707, 467024] mode=2
+2:09.044 local_planner.py changed state
+2:09.045 recovering_planner BUMP received
+2:09.045 local_planner.py Local planner loop exited due to stop event.
+2:09.058 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+2:09.068 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:09.106 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+2:10.907 moss_adapter.py MOSS telemetry: out=[-50, -50] target=[-50, -50] bus=10748 mV ticks=[394273, 465582] mode=2
+2:11.399 recovering_planner Contact escape
+2:11.400 global_planner.py Cancelling goal.
+2:11.406 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+2:11.406 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:11.547 explorer2.py goal 5: (1.03, -2.72) 7.6 m away (beyond the cap: nothing safe within it), 184 frontier cells, 20 clusters, chosen in 139 ms
+2:11.575 global_planner.py Got new goal
+2:11.576 global_planner.py Cancelling goal.
+2:11.581 global_planner.py Found safe goal.
+2:11.637 global_planner.py Robot is stuck. Replanning.
+2:11.654 local_planner.py changed state
+2:11.662 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+2:12.823 moss_adapter.py MOSS base: STALL #5: tracks commanded L=+100% R=-100% but the encoders moved L=+1100 R=-4 ticks in 1.0 s - stopped (the encoders are the
+2:12.837 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+2:12.924 moss_adapter.py MOSS telemetry: out=[100, -100] target=[100, -100] bus=10204 mV ticks=[394167, 464360] mode=2
+2:13.065 recovering_planner BUMP received
+2:13.066 local_planner.py changed state
+2:13.067 local_planner.py Local planner loop exited due to stop event.
+2:13.075 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+2:13.085 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:13.126 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+2:14.842 recovering_planner Contact escape
+2:14.842 global_planner.py Cancelling goal.
+2:14.852 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:14.855 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+2:15.018 explorer2.py goal 6: (2.18, -2.32) 11.9 m away (beyond the cap: nothing safe within it), 99 frontier cells, 20 clusters, chosen in 162 ms
+2:15.019 global_planner.py Got new goal
+2:15.019 global_planner.py Cancelling goal.
+2:15.080 global_planner.py Travelling to goal 1.2850097467377768m away from requested goal.
+2:15.081 global_planner.py Found safe goal.
+2:15.144 local_planner.py changed state
+2:15.185 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+2:15.259 moss_adapter.py MOSS telemetry: out=[0, 0] target=[0, 0] bus=10876 mV ticks=[392170, 462189] mode=2
+2:16.271 moss_adapter.py MOSS base: STALL #6: tracks commanded L=+100% R=-100% but the encoders moved L=+1041 R=+2 ticks in 1.0 s - stopped (the encoders are the
+2:16.281 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+2:16.575 local_planner.py changed state
+2:16.577 recovering_planner BUMP received
+2:16.576 local_planner.py Local planner loop exited due to stop event.
+2:16.586 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:16.590 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+2:17.282 moss_adapter.py MOSS telemetry: out=[-32, -50] target=[-50, -50] bus=10752 mV ticks=[393278, 462086] mode=2
+2:18.891 recovering_planner Contact escape
+2:18.891 global_planner.py Cancelling goal.
+2:18.894 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+2:18.897 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:19.016 explorer2.py 10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:20.112 explorer2.py 10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:21.216 explorer2.py 10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:22.310 explorer2.py 10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:23.458 explorer2.py 10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:24.534 explorer2.py 10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:25.632 explorer2.py 10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:26.734 explorer2.py 10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:27.865 explorer2.py 10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:28.960 explorer2.py 10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:30.066 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:31.155 explorer2.py starvation escape: the world stayed silent for 12 asks - reopening the oldest failed goal at (-1.27, 1.28)
+2:32.291 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:33.382 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:34.476 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:35.549 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:36.686 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:37.806 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:38.912 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:40.051 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:41.151 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:42.291 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:43.380 explorer2.py 9 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+2:44.493 explorer2.py starvation escape: the world stayed silent for 12 asks - reopening the oldest failed goal at (0.18, -1.47)
+2:45.690 explorer2.py goal 7: (0.18, -1.47) 1.7 m away, 20 frontier cells, 20 clusters, chosen in 195 ms
+2:45.691 global_planner.py Got new goal
+2:45.691 global_planner.py Cancelling goal.
+2:45.693 global_planner.py Found safe goal.
+2:45.748 local_planner.py changed state
+2:45.756 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+2:45.763 moss_adapter.py MOSS telemetry: out=[0, 0] target=[0, 0] bus=10868 mV ticks=[390416, 459210] mode=2
+2:47.786 moss_adapter.py MOSS telemetry: out=[100, -100] target=[100, -100] bus=10112 mV ticks=[392221, 458942] mode=2
+2:47.990 moss_adapter.py MOSS base: STALL #7: tracks commanded L=+100% R=-100% but the encoders moved L=+992 R=-6 ticks in 1.0 s - stopped (the encoders are the
+2:48.002 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+2:48.198 recovering_planner BUMP received
+2:48.199 local_planner.py changed state
+2:48.206 local_planner.py Local planner loop exited due to stop event.
+2:48.211 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:48.271 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+2:49.807 moss_adapter.py MOSS telemetry: out=[-50, -50] target=[-50, -50] bus=10744 mV ticks=[391050, 457549] mode=2
+2:50.462 recovering_planner Contact escape
+2:50.462 global_planner.py Cancelling goal.
+2:50.468 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+2:50.471 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+2:50.617 explorer2.py goal 8: (-1.42, 0.78) 2.2 m away, 5 frontier cells, 20 clusters, chosen in 144 ms
+2:50.620 global_planner.py Got new goal
+2:50.622 global_planner.py Cancelling goal.
+2:50.628 global_planner.py Found safe goal.
+2:50.755 local_planner.py changed state
+2:50.771 moss_adapter.py MOSS base: twist vx=+0.251 vy=+0.000(ignored) wz=+0.273 -> tracks L=+50% R=+64% (limit 100%)
+2:50.862 moss_adapter.py MOSS base: twist vx=+0.256 vy=+0.000(ignored) wz=+0.262 -> tracks L=+50% R=+65% (limit 100%)
+2:51.168 moss_adapter.py MOSS base: twist vx=+0.254 vy=+0.000(ignored) wz=+0.268 -> tracks L=+50% R=+64% (limit 100%)
+2:51.280 moss_adapter.py MOSS base: twist vx=+0.245 vy=+0.000(ignored) wz=+0.286 -> tracks L=+50% R=+63% (limit 100%)
+2:51.381 moss_adapter.py MOSS base: twist vx=+0.216 vy=+0.000(ignored) wz=+0.344 -> tracks L=+50% R=+58% (limit 100%)
+2:51.477 moss_adapter.py MOSS base: twist vx=+0.209 vy=+0.000(ignored) wz=+0.358 -> tracks L=+50% R=+57% (limit 100%)
+2:51.578 moss_adapter.py MOSS base: twist vx=+0.202 vy=+0.000(ignored) wz=+0.373 -> tracks L=+50% R=+56% (limit 100%)
+2:51.826 moss_adapter.py MOSS telemetry: out=[50, 56] target=[50, 56] bus=10728 mV ticks=[391317, 457806] mode=2
+2:53.860 moss_adapter.py MOSS telemetry: out=[50, 56] target=[50, 56] bus=10748 mV ticks=[394974, 461521] mode=2
+2:55.001 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.385 -> tracks L=-100% R=+100% (limit 100%)
+2:55.696 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=+0.385 -> tracks L=+50% R=+56% (limit 100%)
+2:55.884 moss_adapter.py MOSS telemetry: out=[-60, 90] target=[50, 56] bus=10524 mV ticks=[397677, 465684] mode=2
+2:57.604 moss_adapter.py MOSS base: tracks frozen at L=+50% R=+56% - pushing at 75 % for 1 s before calling it a contact
+2:57.615 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=+0.385 -> tracks L=+75% R=+75% (limit 100%)
+2:57.908 moss_adapter.py MOSS telemetry: out=[75, 75] target=[75, 75] bus=10400 mV ticks=[398047, 466494] mode=2
+2:58.626 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=+0.385 -> tracks L=+50% R=+56% (limit 100%)
+2:59.832 moss_adapter.py MOSS base: tracks frozen at L=+50% R=+56% - pushing at 75 % for 1 s before calling it a contact
+2:59.838 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=+0.385 -> tracks L=+75% R=+75% (limit 100%)
+2:59.935 moss_adapter.py MOSS telemetry: out=[50, 56] target=[50, 56] bus=10608 mV ticks=[398305, 466920] mode=2
+3:00.857 moss_adapter.py MOSS base: STALL #8: tracks commanded L=+75% R=+75% but the encoders moved L=+18 R=+30 ticks in 1.0 s - stopped (the encoders are the bu
+3:00.863 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+3:00.866 moss_adapter.py MOSS base: twist vx=+0.200 vy=+0.000(ignored) wz=+0.385 -> tracks L=+50% R=+56% (limit 100%)
+3:01.283 local_planner.py changed state
+3:01.284 recovering_planner BUMP received
+3:01.284 local_planner.py Local planner loop exited due to stop event.
+3:01.289 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+3:01.349 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+3:01.971 moss_adapter.py MOSS telemetry: out=[-50, -50] target=[-50, -50] bus=10664 mV ticks=[398158, 466800] mode=2
+3:03.769 recovering_planner Contact escape
+3:03.770 global_planner.py Cancelling goal.
+3:03.774 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+3:03.775 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+3:03.982 explorer2.py goal 9: (0.18, -1.47) 2.0 m away, 20 frontier cells, 19 clusters, chosen in 207 ms
+3:03.982 global_planner.py Got new goal
+3:03.983 global_planner.py Cancelling goal.
+3:03.984 global_planner.py Found safe goal.
+3:04.072 global_planner.py Robot is stuck. Replanning.
+3:04.159 local_planner.py changed state
+3:04.175 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+3:04.191 moss_adapter.py MOSS telemetry: out=[0, 0] target=[0, 0] bus=10828 mV ticks=[395601, 464221] mode=2
+3:05.202 moss_adapter.py MOSS base: STALL #9: tracks commanded L=+100% R=-100% but the encoders moved L=+838 R=-7 ticks in 1.0 s - stopped (the encoders are the
+3:05.211 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+3:05.276 recovering_planner BUMP received
+3:05.277 local_planner.py changed state
+3:05.277 local_planner.py Local planner loop exited due to stop event.
+3:05.281 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+3:05.333 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+3:06.211 moss_adapter.py MOSS telemetry: out=[-50, -50] target=[-50, -50] bus=10704 mV ticks=[395598, 463303] mode=2
+3:07.039 recovering_planner Contact escape
+3:07.039 global_planner.py Cancelling goal.
+3:07.045 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+3:07.052 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+3:07.169 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:08.263 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:09.336 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:10.463 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:11.545 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:12.621 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:13.733 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:14.830 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:15.969 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:17.081 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:18.196 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:19.295 explorer2.py starvation escape: the world stayed silent for 12 asks - reopening the oldest failed goal at (-1.67, -0.12)
+3:20.493 explorer2.py goal 10: (-1.27, -0.07) 11.0 m away (beyond the cap: nothing safe within it), 5 frontier cells, 19 clusters, chosen in 197 ms
+3:20.497 global_planner.py Got new goal
+3:20.498 global_planner.py Cancelling goal.
+3:20.501 global_planner.py Found safe goal.
+3:20.505 global_planner.py Robot is stuck. Replanning.
+3:20.559 local_planner.py changed state
+3:20.568 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+3:20.647 moss_adapter.py MOSS telemetry: out=[0, 0] target=[0, 0] bus=10820 mV ticks=[394095, 461793] mode=2
+3:21.666 moss_adapter.py MOSS base: STALL #10: tracks commanded L=+100% R=-100% but the encoders moved L=+968 R=-6 ticks in 1.0 s - stopped (the encoders are the
+3:21.667 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+3:21.867 local_planner.py changed state
+3:21.868 recovering_planner BUMP received
+3:21.869 local_planner.py Local planner loop exited due to stop event.
+3:21.873 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+3:21.885 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+3:21.934 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+3:22.676 moss_adapter.py MOSS telemetry: out=[-50, -50] target=[-50, -50] bus=10664 mV ticks=[394769, 461400] mode=2
+3:24.016 recovering_planner Contact escape
+3:24.017 global_planner.py Cancelling goal.
+3:24.021 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+3:24.026 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+3:24.142 explorer2.py 7 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:25.225 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:26.318 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:27.430 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:28.555 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:29.638 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:30.774 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:31.892 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:32.976 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:34.037 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:35.126 explorer2.py 7 of 19 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, not stopping
+3:35.151 wavefront_frontier WavefrontFrontierExplorer: stop_movement received, stopping exploration
+3:35.152 wavefront_frontier Received exploration stop command via LCM
+3:35.156 wavefront_frontier Stopped autonomous frontier exploration
+3:35.156 global_planner.py Got new goal
+3:35.156 global_planner.py Cancelling goal.
+3:35.158 global_planner.py Found safe goal.
+3:35.206 global_planner.py Cancelling goal.
+3:35.208 local_planner.py changed state
+3:35.210 local_planner.py Reached goal position, starting final rotation
+3:35.210 local_planner.py changed state
+3:35.211 local_planner.py changed state
+3:35.215 local_planner.py Error in local planning
+3:35.217 local_planner.py changed state
+3:35.218 global_planner.py Failure in navigation.
+3:35.219 recovering_planner Replan requested without a goal; ignoring.
+"""
+
+# The same run, three seconds around its first contact, with every module's lines (costmap camera counts,
+# sounds, the coordinator's bump relay).
+RUN_CONTACT = r"""
+1:56.934 moss_adapter.py MOSS base: twist vx=+0.313 vy=+0.000(ignored) wz=-0.200 -> tracks L=+75% R=+64% (limit 100%)
+1:56.998 costmap2d.py costmap: camera obstacles: 1544 points, 9 cell hits over the last 2 revolutions
+1:57.036 moss_adapter.py MOSS base: twist vx=+0.315 vy=+0.000(ignored) wz=-0.200 -> tracks L=+76% R=+64% (limit 100%)
+1:57.183 costmap2d.py costmap: camera obstacles: 1570 points, 8 cell hits over the last 2 revolutions
+1:57.220 moss_adapter.py MOSS base: STALL #1: tracks commanded L=+76% R=+64% but the encoders moved L=+1 R=+0 ticks in 1.0 s - stopped (the encoders are the bumper)
+1:57.225 moss_adapter.py MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once
+1:57.403 costmap2d.py costmap: camera obstacles: 1574 points, 4 cell hits over the last 2 revolutions
+1:57.445 moss_adapter.py MOSS base: twist vx=+0.313 vy=+0.000(ignored) wz=-0.200 -> tracks L=+75% R=+64% (limit 100%)
+1:57.447 blueprints.py base stall #1: publishing bump (contact) for the planner's escape
+1:57.503 recovering_planner BUMP received
+1:57.503 costmap2d.py costmap: contact at (-0.88, +0.73) heading +147 deg: 32 cells ahead marked as a wall
+1:57.504 sounds.py MOSS sounds: bump_surprise queued
+1:57.505 local_planner.py changed state
+1:57.505 local_planner.py Local planner loop exited due to stop event.
+1:57.509 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+1:57.570 moss_adapter.py MOSS base: twist vx=-0.100 vy=+0.000(ignored) wz=+0.000 -> tracks L=-50% R=-50% (limit 100%)
+1:57.581 costmap2d.py costmap: camera obstacles: 1594 points, 149 cell hits over the last 2 revolutions
+1:57.786 costmap2d.py costmap: camera obstacles: 1540 points, 35 cell hits over the last 2 revolutions
+1:57.985 costmap2d.py costmap: camera obstacles: 1596 points, 19 cell hits over the last 2 revolutions
+1:58.184 costmap2d.py costmap: camera obstacles: 1596 points, 5 cell hits over the last 2 revolutions
+1:58.375 costmap2d.py costmap: camera obstacles: 1594 points, 28 cell hits over the last 2 revolutions
+1:58.506 sounds.py MOSS sounds: recovery_success queued
+1:58.577 costmap2d.py costmap: camera obstacles: 1626 points, 52 cell hits over the last 2 revolutions
+1:58.752 moss_adapter.py MOSS telemetry: out=[-50, -50] target=[-50, -50] bus=10764 mV ticks=[399100, 474264] mode=2
+1:58.794 costmap2d.py costmap: camera obstacles: 1678 points, 189 cell hits over the last 2 revolutions
+1:58.975 costmap2d.py costmap: camera obstacles: 1642 points, 66 cell hits over the last 2 revolutions
+1:59.201 costmap2d.py costmap: camera obstacles: 1638 points, 191 cell hits over the last 2 revolutions
+1:59.376 costmap2d.py costmap: camera obstacles: 1648 points, 238 cell hits over the last 2 revolutions
+1:59.579 costmap2d.py costmap: camera obstacles: 1624 points, 131 cell hits over the last 2 revolutions
+1:59.605 recovering_planner Contact escape
+1:59.606 global_planner.py Cancelling goal.
+1:59.615 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)
+1:59.663 explorer2.py planner gave up on that goal: excluded until the map or the viewpoint changes
+1:59.777 costmap2d.py costmap: camera obstacles: 1594 points, 198 cell hits over the last 2 revolutions
+1:59.818 velocity_task.py JointVelocityTask vel_base timed out (no update for 0.209s)
+1:59.835 explorer2.py goal 2: (0.18, -1.47) 2.6 m away, 20 frontier cells, 19 clusters, chosen in 170 ms
+1:59.836 global_planner.py Got new goal
+1:59.837 global_planner.py Cancelling goal.
+1:59.840 global_planner.py Found safe goal.
+1:59.934 local_planner.py changed state
+1:59.949 moss_adapter.py MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit 100%)
+1:59.993 costmap2d.py costmap: camera obstacles: 1650 points, 118 cell hits over the last 2 revolutions
+"""
+
+print("I. what it decides: log lines -> decision events -> the state word, /decisions.json")
+WORDS = {"IDLE", "READY", "HEADING", "OBSTACLE", "BACKING OFF", "STUCK", "WAITING", "DONE", "STOPPED"}
+EVENT_KEYS = {"ts", "kind", "text", "src", "seq"}
+
+
+def recs_of(text):
+    """'M:SS.mmm module event' lines (the run's lines as RUN_NAV prints them) -> log records, ts in s."""
+    out = []
+    for line in text.splitlines():
+        m = re.match(r"^(\d+):(\d+(?:\.\d+)?) (\S+) (.*)$", line)
+        if m:
+            out.append({"ts": int(m[1]) * 60 + float(m[2]), "level": "info", "event": m[4], "logger": m[3]})
+    return out
+
+
+def one(event, logger="x.py"):
+    return mc.decisions_from_records([{"ts": 1.0, "level": "info", "event": event, "logger": logger}])
+
+
+# every catalogue line, as the modules print it (from the run where the run has it), -> kind, src and
+# a text that keeps the line's numbers
+CATALOGUE = [
+    ("explorer2.py", "goal 1: (-1.27, 1.28) 2.0 m away, 35 frontier cells, 12 clusters, chosen in 114 ms",
+     "goal", "explorer", ["Goal 1: 2.0 m away (35 cells)"]),
+    ("explorer2.py", "goal 3: (-1.67, -0.12) 3.9 m away (beyond the cap: nothing safe within it), 110 frontier cells, "
+     "19 clusters, chosen in 156 ms", "goal", "explorer", ["Goal 3: 3.9 m away (110 cells, beyond the cap)"]),
+    ("explorer2.py", "planner gave up on that goal: excluded until the map or the viewpoint changes",
+     "goal_dropped", "explorer", ["Goal dropped: the planner gave up"]),
+    ("explorer2.py", "goal timeout after 30 s having closed 0.05 m of 2.40 m: excluded until the map or the "
+     "viewpoint changes", "goal_dropped", "explorer", ["Goal dropped", "0.05 of 2.40 m", "30 s"]),
+    ("explorer2.py", "10 of 20 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, "
+     "not stopping", "waiting", "explorer", ["Waiting: 10 of 20 frontiers are failed goals"]),
+    ("explorer2.py", "starvation escape: the world stayed silent for 12 asks - reopening the oldest failed goal at "
+     "(-1.27, 1.28)", "retry", "explorer", ["Retrying an old goal at (-1.27, 1.28)"]),
+    ("local_planner.py", "Obstacle detected ahead, stopping local planner.", "obstacle", "planner",
+     ["Obstacle ahead: stop"]),
+    ("global_planner.py", "Replanning.", "replan", "planner", ["Replanning"]),
+    ("explorer2.py", "born cornered: 0.40 m2 of reachable floor and no frontier - one 0.20 m back-off via the bump "
+     "reflex", "obstacle", "explorer", ["Cornered (0.40 m2 of floor, no frontier): backing off 0.20 m"]),
+    ("global_planner.py", "No path found to the goal.", "goal_dropped", "planner", ["Goal dropped: no path"]),
+    ("global_planner.py", "No safe goal found near requested target.", "goal_dropped", "planner",
+     ["Goal dropped: no safe spot near it"]),
+    ("global_planner.py", "No safe goal found.", "goal_dropped", "planner", ["Goal dropped: no safe spot near it"]),
+    ("recovering_planner.py", "Goal abandoned, no recovery motion", "goal_dropped", "recovery",
+     ["Stuck: goal abandoned"]),
+    ("recovering_planner.py", "Contact during an escape: stopping dead", "contact", "recovery",
+     ["Contact during an escape: stop dead"]),
+    ("global_planner.py", "Got new goal", "new_goal", "planner", ["Planner: new goal"]),
+    ("global_planner.py", "Found safe goal.", "new_goal", "planner", ["Planner: safe goal found"]),
+    ("global_planner.py", "Travelling to goal 1.2850097467377768m away from requested goal.", "new_goal", "planner",
+     ["Planner: safe goal 1.29 m from the requested one"]),
+    ("local_planner.py", "Reached goal position, starting final rotation", "reached", "planner", ["Goal reached"]),
+    ("global_planner.py", "Close enough to goal. Accepting as arrived.", "reached", "planner",
+     ["Goal reached (close enough)"]),
+    ("moss_adapter.py", "MOSS base: STALL #1: tracks commanded L=+76% R=+64% but the encoders moved L=+1 R=+0 ticks "
+     "in 1.0 s - stopped (the encoders are the bumper)", "contact", "base",
+     ["Contact #1: both tracks blocked", "L=+76% R=+64%", "L=+1 R=+0", "1.0 s"]),
+    ("moss_adapter.py", "MOSS base: STALL #2: tracks commanded L=+100% R=-100% but the encoders moved L=+1259 R=+6 "
+     "ticks in 1.0 s - stopped (the encoders are the", "contact", "base",
+     ["Contact #2: right track blocked", "L=+100% R=-100%", "L=+1259 R=+6", "1.0 s"]),
+    ("moss_adapter.py", "MOSS base: STALL #8: tracks commanded L=+75% R=+75% but the encoders moved L=+18 R=+30 ticks "
+     "in 1.0 s - stopped (the encoders are the bumper)", "contact", "base",
+     ["Contact #8: left track blocked", "L=+18 R=+30"]),
+    ("recovering_planner.py", "BUMP received", "contact", "recovery", ["Bump: backing off"]),
+    ("recovering_planner.py", "Contact escape", "contact", "recovery", ["Escape done"]),
+    ("costmap2d.py", "costmap: contact at (-0.88, +0.73) heading +147 deg: 32 cells ahead marked as a wall",
+     "contact", "costmap", ["Wall remembered ahead (32 cells)"]),
+    ("moss_adapter.py", "MOSS base: tracks frozen at L=+56% R=+50% - pushing at 75 % for 1 s before calling it a "
+     "contact", "push", "base", ["Tracks frozen at L=+56% R=+50%: pushing at 75 %"]),
+    ("moss_adapter.py", "MOSS base: pivot L=+100% R=-100%: the right track did not turn (encoders L=+1259 R=+6 ticks "
+     "in 1.0 s) - not a contact: from now on this pivot turns on the left track only, the right track braked",
+     "pivot_fallback", "base",
+     ["Right track did not turn in reverse", "L=+100% R=-100%", "pivoting on the left track from now on"]),
+    ("moss_adapter.py", "MOSS base: pivot L=-100% R=+100%: the left track did not turn (encoders L=+3 R=+1180 ticks "
+     "in 1.0 s) - not a contact: from now on this pivot turns on the right track only, the left track braked",
+     "pivot_fallback", "base", ["Left track did not turn in reverse", "pivoting on the right track"]),
+    ("bump_imu.py", "IMU contact: forward -4.8 m/s^2 (threshold 4.0) while commanded L=+70% R=+60%", "imu", "imu",
+     ["IMU contact", "-4.8 m/s^2", "4.0", "L=+70% R=+60%"]),
+    ("explorer2.py", "exploration start: distance exp 2, cap 3 m, radius 4 m (0 = no limit; the radius is centred on "
+     "the first pose)", "mission", "mission", ["Exploration started (cap 3 m, radius 4 m)"]),
+    ("wavefront_frontier_goal_selector.py", "WavefrontFrontierExplorer: stop_movement received, stopping exploration",
+     "mission", "mission", ["Exploration stopped"]),
+    ("wavefront_frontier_goal_selector.py", "Received exploration stop command via LCM", "mission", "mission",
+     ["Exploration stopped"]),
+    ("wavefront_frontier_goal_selector.py", "Stopped autonomous frontier exploration", "mission", "mission",
+     ["Exploration stopped"]),
+    ("explorer2.py", "exploration complete: no reachable frontier left within 4 m of the start (12 targets, 150 ms)",
+     "mission", "mission", ["Exploration complete", "12 goals"]),
+    ("wavefront_frontier_goal_selector.py", "Exploration complete after 7 goals and 3 consecutive failures finding "
+     "new frontiers", "mission", "mission", ["Exploration complete (7 goals)"]),
+]
+for logger, line, kind, src, want in CATALOGUE:
+    ev = one(line, logger)
+    e = ev[0] if len(ev) == 1 else {}
+    check(f"{kind}: '{line[:58]}' -> '{e.get('text')}'",
+          e.get("kind") == kind and e.get("src") == src and all(w in e.get("text", "") for w in want)
+          and set(e) == EVENT_KEYS and e.get("seq") == 1 and e.get("ts") == 1.0 and len(e.get("text", "")) <= 120,
+          json.dumps(ev)[:200])
+
+IGNORED = [
+    "MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=+0.000 -> tracks L=+0% R=+0% (limit 100%)",
+    "MOSS telemetry: out=[0, 0] target=[0, 0] bus=10972 mV ticks=[387605, 451441] mode=0",
+    "costmap: camera obstacles: 1544 points, 9 cell hits over the last 2 revolutions",
+    "costmap: explore_cmd received - map writing OPEN for the mission",
+    "costmap: exploration complete - map writing continues",
+    "costmap: exploration stopped - map writing continues",
+    "MOSS sounds: bump_surprise queued",
+    "base stall #1: publishing bump (contact) for the planner's escape",
+    "MOSS base: 'drive' refused not_armed (firmware reason: drive) - re-arming once",
+    "twist_command: consumer behind, executing the newest command only (1 stale dropped so far)",
+    "Received exploration start command via LCM", "Started autonomous frontier exploration",
+    "Cancelling goal.", "changed state", "Local planner loop exited due to stop event.",
+    "Replan requested without a goal; ignoring.", "Failure in navigation.", "Error in local planning",
+    "goal timeout after 30 s, 0.80 m closer, re-deciding",
+    "JointVelocityTask vel_base timed out (no update for 0.209s)",
+]
+made = [line for line in IGNORED if one(line)]
+check(f"{len(IGNORED)} other lines of the run (twist, telemetry, camera counts, sounds, the bump relay, the "
+      "explore_cmd the costmap repeats...) -> no event", not made, json.dumps(made)[:200])
+
+
+def recs(*items):
+    """(ts, event[, fields]) -> log records."""
+    return [dict({"ts": it[0], "level": "info", "event": it[1], "logger": "x.py"}, **(it[2] if len(it) > 2 else {}))
+            for it in items]
+
+
+def kt(events):
+    return [(e["kind"], e["src"], e["text"]) for e in events]
+
+
+# the planner's replan reasons: the line before _replan_path is not the decision, what _replan_path does is
+REASONS = ["Robot is stuck. Replanning.", "Robot veered off track. Replanning.",
+           "Replanning path due to obstacle found.", "Failure in navigation."]
+check("a replan reason alone (the planner did nothing with it) -> no event",
+      not [line for line in REASONS if one(line, "global_planner.py")])
+check("each reason + dimOS's 'Replanning.' 2 ms later -> one replan event at the reason's time: Stuck: replanning, "
+      "Off track: replanning, Replanning, Navigation failed: replanning",
+      [kt(mc.decisions_from_records(recs((5.0, line), (5.002, "Replanning.")))) for line in REASONS]
+      == [[("replan", "planner", t)] for t in ("Stuck: replanning", "Off track: replanning", "Replanning",
+                                               "Navigation failed: replanning")]
+      and mc.decisions_from_records(recs((5.0, REASONS[0]), (5.002, "Replanning.")))[0]["ts"] == 5.0)
+ab = mc.decisions_from_records(recs((0.0, "goal 2: (1.00, 2.00) 2.0 m away, 30 frontier cells, 10 clusters, chosen "
+                                          "in 90 ms"),
+                                    (8.0, "Robot is stuck. Replanning."),
+                                    (8.001, "Goal abandoned, no recovery motion", {"trigger": "stuck_detector"}),
+                                    (8.002, "Cancelling goal."),
+                                    (8.008, "planner gave up on that goal: excluded until the map or the viewpoint "
+                                            "changes")))
+check("stuck -> MOSS's planner gives the goal up: 'Stuck: goal abandoned' (the explorer's give-up 7 ms later is "
+      "its echo); STUCK at 9.0, WAITING at 11.1 (the explorer runs)",
+      kt(ab)[1:] == [("goal_dropped", "recovery", "Stuck: goal abandoned")]
+      and [mc.now_state(ab, True, None, t)["word"] for t in (9.0, 11.1)] == ["STUCK", "WAITING"],
+      json.dumps(kt(ab)))
+check("the run's 'Failure in navigation.' + 'Replan requested without a goal; ignoring.' -> nothing",
+      mc.decisions_from_records(recs((215.218, "Failure in navigation."),
+                                     (215.219, "Replan requested without a goal; ignoring."))) == [])
+late = mc.decisions_from_records(recs((5.0, "Robot is stuck. Replanning."),
+                                      (5.6, "MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks "
+                                            "L=+100% R=-100% (limit 100%)")))
+check("a stuck verdict followed only by the pivot's twist 0.6 s later -> nothing (MOSS's planner ignores 'stuck' "
+      "while the follower turns in place)", late == [])
+carry = {}
+part1 = mc.decisions_from_records(recs((5.0, "Robot is stuck. Replanning.")), 3, None, carry)
+part2 = mc.decisions_from_records(recs((5.002, "Replanning.")), 3, None, carry)
+check("the reason at the end of one read, 'Replanning.' at the start of the next -> one event in the second read "
+      "(the reason waits in `carry`), seq 4",
+      part1 == [] and kt(part2) == [("replan", "planner", "Stuck: replanning")] and part2[0]["seq"] == 4
+      and carry.get("pending") is None, json.dumps([part1, part2, carry], default=str)[:300])
+
+RUN = recs_of(RUN_NAV)
+run_ev = mc.decisions_from_records(RUN)
+counts = {}
+for e in run_ev:
+    counts[e["kind"]] = counts.get(e["kind"], 0) + 1
+print(f"    the whole run replayed: {len(RUN)} records -> {len(run_ev)} events: "
+      + ", ".join(f"{k} {counts[k]}" for k in sorted(counts)))
+check("whole run -> goal >= 10, contact >= 10, waiting >= 20",
+      counts.get("goal", 0) >= 10 and counts.get("contact", 0) >= 10 and counts.get("waiting", 0) >= 20,
+      json.dumps(counts))
+check("whole run, exact: 10 goals, 10 dropped, 44 waits, 3 retries, 30 contacts (10 stalls + 10 bumps + 10 "
+      "escapes), 6 pushes, 1 obstacle, 1 replan (the obstacle's: the 3 stuck verdicts were ignored by the planner, "
+      "the last 'Failure in navigation.' had no goal), 1 shifted safe goal, 2 mission lines (the start, the STOP), "
+      "no 'Goal reached' (the explorer's stay-here goal right after the STOP is an echo)",
+      counts == {"goal": 10, "goal_dropped": 10, "waiting": 44, "retry": 3, "contact": 30, "push": 6,
+                 "obstacle": 1, "replan": 1, "new_goal": 1, "mission": 2}, json.dumps(counts))
+check("the run's 3 stuck verdicts (2:11.637, 3:04.072, 3:20.505), each 4-90 ms after 'Found safe goal.' and "
+      "followed by the in-place pivot, no 'Replanning.' -> no event; the word 0.3 s and 1.0 s after each = HEADING "
+      "toward that goal",
+      not any(e["text"].startswith("Stuck") for e in run_ev)
+      and all(mc.now_state([e for e in run_ev if e["ts"] <= t + d], True, None, t + d)["word"] == "HEADING"
+              for t in (131.637, 184.072, 200.505) for d in (0.3, 1.0)))
+chatty = [r for r in RUN if r["event"].startswith(("MOSS base: twist", "MOSS telemetry"))]
+check(f"no twist / telemetry line of the run makes an event ({len(chatty)} lines)",
+      len(chatty) == 181 and mc.decisions_from_records(chatty) == []
+      and not any("twist" in e["text"] or "telemetry" in e["text"] for e in run_ev))
+check("order kept: seq 1..N, times never go back",
+      [e["seq"] for e in run_ev] == list(range(1, len(run_ev) + 1))
+      and all(a["ts"] <= b["ts"] for a, b in zip(run_ev, run_ev[1:])))
+check("the run ends on the STOP: STOPPED, 'Exploration stopped (stop button or pad)', since 3:35.151",
+      mc.now_state(run_ev, True, None, 216.0) == {"word": "STOPPED", "detail": "Exploration stopped (stop button or "
+                                                  "pad)", "since": 215.151},
+      json.dumps(mc.now_state(run_ev, True, None, 216.0)))
+run_log = mc.DecisionLog()
+run_log.add(RUN)
+rows = list(run_log.events)
+tail30 = rows[-30:]
+waits = [e["text"] for e in rows if e["kind"] == "waiting"]
+check(f"the run through the feed's store: {len(run_ev)} events -> {len(rows)} rows (identical events one after "
+      "the other fold into one, ' (xN)', last ts and seq); the 11 waits from 3:24.142 to 3:35.126 -> 2 rows "
+      "(7 of 20, then 7 of 19 x10); the page's last 30 rows keep 12 contacts, not 3",
+      len(rows) == 66 and run_log.seq == len(run_ev) and rows[-1]["seq"] == len(run_ev)
+      and [e["text"] for e in rows[-3:-1]] == ["Waiting: 7 of 20 frontiers are failed goals",
+                                               "Waiting: 7 of 19 frontiers are failed goals (x10)"]
+      and rows[-2]["ts"] == 215.126 and sum(e["kind"] == "contact" for e in tail30) == 12
+      and sum(e["kind"] == "waiting" for e in tail30) == 5
+      and sum(int(re.search(r"\(x(\d+)\)$", t)[1]) if re.search(r"\(x(\d+)\)$", t) else 1 for t in waits) == 44
+      and mc.now_state(rows, True, None, 216.0)["word"] == "STOPPED",
+      json.dumps([(e["seq"], e["text"]) for e in rows[-4:]]))
+
+# three seconds around the first contact, every module's line (the timeline of the same run)
+EX = recs_of(RUN_CONTACT)
+ex_ev = mc.decisions_from_records(EX)
+check(f"first contact, {len(EX)} lines of every module -> stall, bump, wall, escape, goal dropped, goal 2 "
+      "(the planner taking goal 2 is an echo)",
+      [(e["kind"], e["src"], e["text"]) for e in ex_ev]
+      == [("contact", "base", "Contact #1: both tracks blocked (commanded L=+76% R=+64%, encoders moved L=+1 R=+0 "
+                              "ticks in 1.0 s)"),
+          ("contact", "recovery", "Bump: backing off"), ("contact", "costmap", "Wall remembered ahead (32 cells)"),
+          ("contact", "recovery", "Escape done"), ("goal_dropped", "explorer", "Goal dropped: the planner gave up"),
+          ("goal", "explorer", "Goal 2: 2.6 m away (20 cells)")],
+      json.dumps([(e["kind"], e["text"]) for e in ex_ev])[:300])
+
+
+def word_at(events, t, exploring=None):
+    return mc.now_state([e for e in events if e["ts"] <= t], True, exploring, t)
+
+
+check("first contact, the word at 1:57.3 / 1:59.0 / 1:59.7 / 1:59.9 -> BACKING OFF, BACKING OFF, "
+      "WAITING (goal dropped), HEADING (goal 2)",
+      [word_at(ex_ev, t)["word"] for t in (117.3, 119.0, 119.7, 119.9)]
+      == ["BACKING OFF", "BACKING OFF", "WAITING", "HEADING"]
+      and word_at(ex_ev, 119.9)["detail"] == "Goal 2: 2.6 m away (20 cells)",
+      json.dumps([word_at(ex_ev, t) for t in (117.3, 119.0, 119.7, 119.9)])[:300])
+
+# now_state: known sequences -> known words, holds to the millisecond
+G = "goal 4: (1.00, 2.00) 2.5 m away, 30 frontier cells, 9 clusters, chosen in 100 ms"
+GT = "Goal 4: 2.5 m away (30 cells)"
+OBST = "Obstacle detected ahead, stopping local planner."
+STALL = ("MOSS base: STALL #3: tracks commanded L=+60% R=+60% but the encoders moved L=+2 R=+1 ticks in 1.0 s - "
+         "stopped (the encoders are the bumper)")
+
+
+def evs(*pairs):
+    return mc.decisions_from_records([{"ts": t, "event": e} for t, e in pairs])
+
+
+def ns(events, now, exploring=None, running=True):
+    """The word at `now` from the events logged by then (a number ts after `now` is not written yet)."""
+    seen = [e for e in events if not isinstance(e["ts"], (int, float)) or e["ts"] <= now]
+    return mc.now_state(seen, running, exploring, now)
+
+
+check("the words are the nine of the page: IDLE READY HEADING OBSTACLE BACKING OFF STUCK WAITING DONE STOPPED",
+      set(mc.DECISION_WORDS) == WORDS and len(mc.DECISION_WORDS) == 9)
+check("no stack -> IDLE, whatever the events", ns(evs((100.0, G)), 101.0, running=False)["word"] == "IDLE")
+check("a stack and no decision -> READY, since null", ns([], 5.0) == {"word": "READY", "detail":
+      "Stack running, no decision yet", "since": None})
+check("goal at 100 s -> HEADING at 101 s, detail the goal line, since 100",
+      ns(evs((100.0, G)), 101.0) == {"word": "HEADING", "detail": GT, "since": 100.0})
+seq_o = evs((100.0, G), (105.0, OBST), (105.01, "Replanning path due to obstacle found."), (105.02, "Replanning."),
+            (105.05, "Found safe goal."))
+check("goal 100, obstacle 105 (+ replan, its echo, the safe goal) -> 2 + 1 events; OBSTACLE at 105.5 and 107.99 "
+      "(since the replan 105.01), HEADING the goal at 108.01 (3 s hold)",
+      [e["kind"] for e in seq_o] == ["goal", "obstacle", "replan"]
+      and [ns(seq_o, t)["word"] for t in (105.5, 107.99, 108.01)] == ["OBSTACLE", "OBSTACLE", "HEADING"]
+      and ns(seq_o, 105.5)["since"] == 105.01 and ns(seq_o, 108.01)["detail"] == GT,
+      json.dumps([ns(seq_o, t) for t in (105.5, 107.99, 108.01)])[:300])
+seq_c = evs((100.0, G), (110.0, STALL))
+check("goal 100, stall 110 and its escape's end line lost -> BACKING OFF at 110.1 and 115.99, HEADING at 116.0 "
+      "(the escape's 5 s timeout + 1 s)",
+      [ns(seq_c, t)["word"] for t in (110.1, 115.99, 116.0)] == ["BACKING OFF", "BACKING OFF", "HEADING"]
+      and ns(seq_c, 110.1)["detail"].startswith("Contact #3: both tracks blocked")
+      and mc.ESCAPE_HOLD_S == 6.0)
+slow = mc.decisions_from_records(recs((0.0, G), (10.0, STALL), (10.3, "BUMP received", {"acted": True}),
+                                      (10.3, "costmap: contact at (+0.10, +0.20) heading +10 deg: 30 cells ahead "
+                                             "marked as a wall"),
+                                      (15.3, "Contact escape", {"trigger": "bump", "travelled_m": 0.05,
+                                                                "seconds": 5.0, "aborted": False})))
+check("a slow escape (a track slipping in reverse: 0.05 m in 5 s, its end at 15.3) -> BACKING OFF at 12, 14, 14.5, "
+      "15, 15.29; then WAITING 'Escape timed out: only 0.05 m in 5.0 s'",
+      [ns(slow, t)["word"] for t in (12.0, 14.0, 14.5, 15.0, 15.29)] == ["BACKING OFF"] * 5
+      and ns(slow, 15.4) == {"word": "WAITING", "detail": "Escape timed out: only 0.05 m in 5.0 s", "since": 15.3},
+      json.dumps([ns(slow, t) for t in (14.5, 15.4)]))
+seq_co = evs((100.0, G), (110.0, "MOSS base: tracks frozen at L=+56% R=+50% - pushing at 75 % for 1 s before calling "
+                                 "it a contact"), (111.5, OBST))
+check("frozen tracks at 110 (STUCK 4 s) outrank an obstacle at 111.5 (OBSTACLE 3 s): STUCK to 114, then OBSTACLE "
+      "to 114.5, then HEADING",
+      [ns(seq_co, t)["word"] for t in (112.0, 113.99, 114.2, 114.5)]
+      == ["STUCK", "STUCK", "OBSTACLE", "HEADING"])
+seq_oc = evs((100.0, G), (110.0, OBST), (111.0, STALL))
+check("an obstacle at 110 then a contact at 111 -> BACKING OFF at 111.5 (to 117 at most), HEADING at 117",
+      [ns(seq_oc, t)["word"] for t in (110.5, 111.5, 116.99, 117.0)] == ["OBSTACLE", "BACKING OFF", "BACKING OFF",
+                                                                         "HEADING"])
+seq_p = evs((100.0, G), (120.0, "MOSS base: tracks frozen at L=+56% R=+50% - pushing at 75 % for 1 s before "
+                                "calling it a contact"))
+check("tracks frozen at 120 -> STUCK to 123.99, HEADING at 124 (4 s hold)",
+      [ns(seq_p, t)["word"] for t in (120.5, 123.99, 124.0)] == ["STUCK", "STUCK", "HEADING"])
+seq_s = evs((100.0, G), (130.0, "Robot is stuck. Replanning."), (130.001, "Replanning."))
+seq_s_ign = evs((100.0, G), (130.0, "Robot is stuck. Replanning."),
+                (130.025, "MOSS base: twist vx=+0.000 vy=+0.000(ignored) wz=-0.385 -> tracks L=+100% R=-100% (limit "
+                          "100%)"), (130.6, "changed state"))
+check("the planner's stuck replan (the verdict + dimOS's 'Replanning.') at 130 -> STUCK to 132.99, HEADING at 133 "
+      "(3 s hold); the verdict the planner ignores (the pivot twist follows, no 'Replanning.') -> HEADING throughout",
+      [ns(seq_s, t)["word"] for t in (130.5, 132.99, 133.0)] == ["STUCK", "STUCK", "HEADING"]
+      and [ns(seq_s_ign, t)["word"] for t in (130.3, 131.0, 133.0)] == ["HEADING"] * 3 and len(seq_s_ign) == 1)
+seq_i = evs((100.0, G), (150.0, "IMU contact: forward -6.1 m/s^2 (threshold 4.0) while commanded L=+70% R=+60%"))
+check("an IMU contact at 150 (no escape line) -> BACKING OFF to 155.99, HEADING at 156",
+      [ns(seq_i, t)["word"] for t in (150.5, 155.99, 156.0)] == ["BACKING OFF", "BACKING OFF", "HEADING"])
+seq_e = evs((100.0, G), (160.0, STALL), (160.3, "BUMP received"), (162.4, "Contact escape"))
+check("stall 160, bump 160.3, escape done 162.4 -> BACKING OFF at 162.3, WAITING at 162.5 (the escape ends the "
+      "hold; the explorer runs)",
+      [ns(seq_e, t)["word"] for t in (162.3, 162.5)] == ["BACKING OFF", "WAITING"]
+      and ns(seq_e, 162.5) == {"word": "WAITING", "detail": "Escape done", "since": 162.4})
+seq_tap = evs((200.0, "Got new goal"), (205.0, STALL), (207.0, "Contact escape"), (220.0, "Got new goal"),
+              (230.0, "Reached goal position, starting final rotation"))
+check("a tapped goal (no explorer line): new goal -> HEADING; escape done -> READY; reached -> READY "
+      "(exploring true from the bus -> HEADING)",
+      [ns(seq_tap, t)["word"] for t in (201.0, 207.5, 221.0, 231.0)] == ["HEADING", "READY", "HEADING", "READY"]
+      and ns(seq_tap, 231.0, exploring=True)["word"] == "HEADING"
+      and ns(seq_tap, 221.0)["detail"] == "Planner: new goal")
+seq_w = evs((100.0, G), (105.0, "planner gave up on that goal: excluded until the map or the viewpoint changes"),
+            (106.0, "3 of 9 clusters are on a recently failed goal: waiting for the map or the viewpoint to change, "
+                    "not stopping"))
+check("goal dropped, then waiting -> WAITING 'Waiting: 3 of 9 frontiers are failed goals', since 106",
+      ns(seq_w, 107.0) == {"word": "WAITING", "detail": "Waiting: 3 of 9 frontiers are failed goals",
+                           "since": 106.0})
+seq_st = evs((100.0, G), (140.0, STALL), (141.0, "WavefrontFrontierExplorer: stop_movement received, stopping "
+                                                  "exploration"))
+check("a stop during a contact hold -> STOPPED at once (141.5), the hold is over",
+      ns(seq_st, 141.5)["word"] == "STOPPED" and ns(seq_st, 145.0)["word"] == "STOPPED")
+seq_d = evs((100.0, G), (300.0, "exploration complete: no reachable frontier left (12 targets, 150 ms)"))
+check("exploration complete -> DONE", ns(seq_d, 301.0) == {"word": "DONE", "detail": "Exploration complete: no "
+                                                           "reachable frontier left (12 goals)", "since": 300.0})
+seq_pv = evs((100.0, G), (101.0, "MOSS base: pivot L=+100% R=-100%: the right track did not turn (encoders "
+                                 "L=+900 R=+4 ticks in 1.0 s) - not a contact: from now on this pivot turns on "
+                                 "the left track only, the right track braked"))
+check("a pivot fallback while heading -> still HEADING, detail the goal line",
+      ns(seq_pv, 102.0) == {"word": "HEADING", "detail": GT, "since": 100.0})
+iso = "2026-01-01T07:49:15.000Z"
+t_iso = _dt.datetime(2026, 1, 1, 7, 49, 15, tzinfo=_dt.timezone.utc).timestamp()
+seq_iso = mc.decisions_from_records([{"ts": "2026-01-01T07:49:10.000Z", "event": G}, {"ts": iso, "event": OBST}])
+check("ISO timestamps as dimOS writes them (UTC, Z): ts kept as given; OBSTACLE 1 s after, HEADING 3.5 s after",
+      seq_iso[1]["ts"] == iso and ns(seq_iso, t_iso + 1.0)["word"] == "OBSTACLE"
+      and ns(seq_iso, t_iso + 3.5)["word"] == "HEADING")
+check("an obstacle whose time cannot be read holds nothing (HEADING)",
+      ns(evs((100.0, G), ("soon", OBST)), 101.0)["word"] == "HEADING")
+NO_PATH = mc.decisions_from_records(recs((0.0, "Got new goal"), (0.001, "Cancelling goal."), (0.1, "Found safe goal."),
+                                         (0.2, "No path found to the goal.", {"x": 1.03, "y": -2.72}),
+                                         (0.21, "Cancelling goal.")))
+NO_SAFE = mc.decisions_from_records(recs((0.0, "Got new goal"), (0.1, "No safe goal found near requested target."),
+                                         (0.11, "No safe goal found.", {"x": 1.0, "y": 2.0}),
+                                         (0.12, "Cancelling goal.")))
+ABANDON = mc.decisions_from_records(recs((0.0, "Got new goal"), (0.1, "Found safe goal."),
+                                         (5.0, "Robot is stuck. Replanning."),
+                                         (5.01, "Goal abandoned, no recovery motion", {"trigger": "stuck_detector"}),
+                                         (5.02, "Cancelling goal.")))
+check("a goal tapped on the map (no explorer) that the planner drops -> the reason in the feed, READY 10 s later: "
+      "'Goal dropped: no path to (1.03, -2.72)', 'Goal dropped: no safe spot near it' (its second line an echo), "
+      "'Stuck: goal abandoned' (STUCK until 8.01)",
+      kt(NO_PATH)[1:] == [("goal_dropped", "planner", "Goal dropped: no path to (1.03, -2.72)")]
+      and kt(NO_SAFE)[1:] == [("goal_dropped", "planner", "Goal dropped: no safe spot near it")]
+      and kt(ABANDON)[1:] == [("goal_dropped", "recovery", "Stuck: goal abandoned")]
+      and [mc.now_state(x, True, False, 10.0)["word"] for x in (NO_PATH, NO_SAFE, ABANDON)] == ["READY"] * 3
+      and mc.now_state(NO_PATH, True, False, 10.0)["detail"] == "Goal dropped: no path to (1.03, -2.72)"
+      and [mc.now_state(ABANDON, True, False, t)["word"] for t in (6.0, 8.0, 8.02)] == ["STUCK", "STUCK", "READY"],
+      json.dumps([kt(NO_PATH), kt(NO_SAFE), kt(ABANDON)])[:300])
+drop_x = mc.decisions_from_records(recs((0.0, G), (0.03, "Got new goal"), (0.2, "No path found to the goal."),
+                                        (0.21, "Cancelling goal."),
+                                        (0.215, "planner gave up on that goal: excluded until the map or the "
+                                                "viewpoint changes")))
+check("the same while exploring: the explorer's 'planner gave up' 15 ms after the planner's reason is its echo, "
+      "the reason stays; WAITING",
+      kt(drop_x)[1:] == [("goal_dropped", "planner", "Goal dropped: no path")]
+      and ns(drop_x, 1.0)["word"] == "WAITING", json.dumps(kt(drop_x)))
+dead = mc.decisions_from_records(recs((0.0, G), (0.5, "BUMP received", {"acted": True}),
+                                      (1.0, "Contact during an escape: stopping dead", {"trigger": "bump"}),
+                                      (1.0, "BUMP received", {"acted": False}),
+                                      (1.05, "Contact escape", {"travelled_m": 0.05, "seconds": 0.5,
+                                                                "aborted": True})))
+check("a second contact during an escape: 'Contact during an escape: stop dead' (its BUMP acted=False backs nothing "
+      "off: no row), 'Escape aborted after 0.05 m'; WAITING once it ended",
+      [e["text"] for e in dead[1:]] == ["Bump: backing off", "Contact during an escape: stop dead",
+                                        "Escape aborted after 0.05 m"]
+      and ns(dead, 1.04)["word"] == "BACKING OFF" and ns(dead, 1.1)["word"] == "WAITING", json.dumps(kt(dead)))
+corner = mc.decisions_from_records(recs((0.0, "born cornered: 0.40 m2 of reachable floor and no frontier - one 0.20 m "
+                                              "back-off via the bump reflex"),
+                                        (0.05, "BUMP received", {"acted": True}),
+                                        (2.2, "Contact escape", {"travelled_m": 0.2, "seconds": 2.1,
+                                                                 "aborted": False})))
+check("born cornered: one row 'Cornered (0.40 m2 of floor, no frontier): backing off 0.20 m' (an obstacle, not a "
+      "contact; the BUMP it publishes is its echo), BACKING OFF until 'Escape done: 0.20 m in 2.1 s', then WAITING",
+      kt(corner) == [("obstacle", "explorer", "Cornered (0.40 m2 of floor, no frontier): backing off 0.20 m"),
+                     ("contact", "recovery", "Escape done: 0.20 m in 2.1 s")]
+      and [ns(corner, t)["word"] for t in (1.0, 2.19, 2.3)] == ["BACKING OFF", "BACKING OFF", "WAITING"],
+      json.dumps(kt(corner)))
+quiet = mc.decisions_from_records(recs((0.0, G), (5.0, "Robot veered off track. Replanning.", {"deviation": 0.6}),
+                                       (5.001, "Replanning."), (9.0, "Failure in navigation."),
+                                       (9.001, "Replanning.")))
+check("off track + 'Replanning.', a navigation failure + 'Replanning.' -> replan rows with no hold: HEADING "
+      "'Off track: replanning' at 5.5, 'Navigation failed: replanning' at 9.5 (no OBSTACLE: nothing was in the way)",
+      ns(quiet, 5.5) == {"word": "HEADING", "detail": "Off track: replanning", "since": 5.0}
+      and ns(quiet, 9.5) == {"word": "HEADING", "detail": "Navigation failed: replanning", "since": 9.0},
+      json.dumps([ns(quiet, 5.5), ns(quiet, 9.5)]))
+tap = mc.decisions_from_records(recs((0.0, "WavefrontFrontierExplorer: stop_movement received, stopping exploration"),
+                                     (0.5, "Got new goal"), (0.6, "Found safe goal.")))
+check("STOP, then a goal tapped 0.5 s later (not exploring: the page sends it at once) -> its own row, HEADING; "
+      "only the explorer's stay-here goal within 0.2 s of the stop is an echo",
+      kt(tap)[1:] == [("new_goal", "planner", "Planner: new goal")] and ns(tap, 3.0, False)["word"] == "HEADING"
+      and mc.AFTER_STOP_ECHO_S == 0.2, json.dumps(kt(tap)))
+halt = mc.decisions_from_records(recs((0.0, G), (1.0, "BUMP received", {"acted": True}),
+                                      (1.5, "WavefrontFrontierExplorer: stop_movement received, stopping exploration"),
+                                      (1.55, "Contact escape", {"travelled_m": 0.04, "seconds": 0.5, "aborted": True})))
+check("a STOP during an escape: the escape's aborted end after it leaves STOPPED",
+      ns(halt, 2.0) == {"word": "STOPPED", "detail": "Exploration stopped (stop button or pad)", "since": 1.5},
+      json.dumps(ns(halt, 2.0)))
+
+# echoes, and the feed carried across reads
+check("goal, then the planner's 'Got new goal' 1 ms later and 'Found safe goal.' -> 1 event; 'Got new goal' 2 s "
+      "later -> kept; alone -> kept",
+      len(evs((100.0, G), (100.001, "Got new goal"), (100.1, "Found safe goal."))) == 1
+      and len(evs((100.0, G), (102.0, "Got new goal"))) == 2 and len(evs((200.0, "Got new goal"))) == 1)
+stop5 = evs((300.0, "WavefrontFrontierExplorer: stop_movement received, stopping exploration"),
+            (300.001, "Received exploration stop command via LCM"), (300.005, "Stopped autonomous frontier exploration"),
+            (300.01, "Got new goal"), (300.06, "Reached goal position, starting final rotation"))
+check("a STOP: its two stop lines, the explorer's line and its stay-here goal and arrival -> 1 event, STOPPED",
+      [e["text"] for e in stop5] == ["Exploration stopped (stop button or pad)"]
+      and ns(stop5, 301.0)["word"] == "STOPPED")
+prev = {"ts": 10.0, "kind": "replan", "text": "Replanning", "src": "planner", "seq": 7}
+check("across reads: seq continues from seq0, the echo rule sees the previous read's last event",
+      mc.decisions_from_records([{"ts": 10.2, "event": "Replanning."}], 7, prev) == []
+      and mc.decisions_from_records([{"ts": 12.0, "event": "Replanning."}], 7, prev)[0]["seq"] == 8)
+
+# bad records never raise
+bad = [None, 3, "x", [], {}, {"event": None}, {"event": 5}, {"level": "info"}, {"event": "   "},
+       {"ts": object(), "event": OBST}, {"ts": float("nan"), "event": OBST}, {"event": OBST}]
+try:
+    got = mc.decisions_from_records(bad)
+    raised = None
+except Exception as exc:  # noqa: BLE001
+    got, raised = None, exc
+check("records that are not dicts, without an event or with an odd one -> skipped, no exception; a ts that is "
+      "not a time (an object, NaN, none) -> null",
+      raised is None and [(e["kind"], e["ts"]) for e in got] == [("obstacle", None)] * 3,
+      repr(raised) if raised else json.dumps(got, default=str))
+try:
+    ok_nones = (mc.decisions_from_records(None) == [] and mc.decisions_from_records(5) == []
+                and mc.now_state([None, 1, {"kind": None}, {"kind": "goal", "ts": object()},
+                                  {"kind": "obstacle", "ts": "x"}], True, None, 1.0)["word"] in WORDS)
+except Exception as exc:  # noqa: BLE001
+    ok_nones = False
+    print("    raised:", repr(exc))
+check("decisions_from_records(None / 5) -> [], now_state on junk events -> a word, no exception", ok_nones)
+
+# live: the running stack's main.jsonl through /decisions.json
+dec_dir = Path(TMP, "logs", "decisions")
+dec_dir.mkdir(parents=True)
+main = Path(dec_dir, "main.jsonl")
+DEC_RUN = "20260101-120000-moss-dimos-moss-explore"
+reg_i = Path(runs, "i.json")
+reg_i.write_text(json.dumps({"run_id": DEC_RUN, "pid": os.getpid(), "blueprint": "moss-dimos.moss-explore",
+                             "started_at": (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=5)).isoformat(),
+                             "log_dir": str(dec_dir)}))
+
+
+def jline(event, t, logger="dimos/navigation/replanning_a_star/global_planner.py"):
+    """One main.jsonl record with the fields a real one carries."""
+    stamp = _dt.datetime.fromtimestamp(t, _dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return json.dumps({"event": event, "level": "info", "logger": logger, "timestamp": stamp,
+                       "func_name": "f", "lineno": 1, "module": "x", "worker": 3}) + "\n"
+
+
+t0 = time.time() - 60.0
+twist = "MOSS base: twist vx=+0.313 vy=+0.000(ignored) wz=-0.200 -> tracks L=+75% R=+64% (limit 100%)"
+old_goals = "".join(jline(f"goal {90 + i}: (0.00, 0.00) 1.0 m away, 5 frontier cells, 2 clusters, chosen in 9 ms",
+                          t0, "/home/x/moss/moss_dimos/explorer2.py") for i in range(5))
+chatter = jline(twist, t0 + 1.0, "/home/x/moss/moss_dimos/moss_adapter.py")
+n_chatter = (mc.DECISIONS_TAIL_BYTES // len(chatter)) + 200          # more than the 1 MiB window by itself
+fresh = "".join(jline(f"goal {i}: (1.00, 2.00) 2.5 m away, 30 frontier cells, 9 clusters, chosen in 100 ms"
+                      if i % 2 == 0 else "3 of 9 clusters are on a recently failed goal: waiting for the map or the "
+                      "viewpoint to change, not stopping", t0 + 2.0 + i * 0.5, "/home/x/moss/moss_dimos/explorer2.py")
+                for i in range(45))
+main.write_text(old_goals + chatter * n_chatter + fresh)
+real_pid = mc._dimos_run_pid
+mc._dimos_run_pid = lambda: None
+srv_d, cd = serve(demo=False, page_dir=page_dir)
+t_read = time.perf_counter()
+code, dj = cd.json("/decisions.json?n=40")
+t_read = time.perf_counter() - t_read
+evs40 = dj.get("events", [])
+_, dall = cd.json("/decisions.json?n=500")
+check(f"/decisions.json?n=40 on a {main.stat().st_size / 1e6:.2f} MB main.jsonl (5 goals, then {n_chatter} twist "
+      f"lines, then 45 decisions) -> 40 events, the newest last, ts as written, run named; all of them = the 45 "
+      f"inside the 1 MiB window (first read {t_read * 1000:.0f} ms)",
+      code == 200 and set(dj) == {"now", "events", "run"} and len(evs40) == 40 and dj["run"] == DEC_RUN
+      and evs40[-1]["text"] == "Goal 44: 2.5 m away (30 cells)" and len(dall["events"]) == 45
+      and not any(e["text"].startswith("Goal 9") for e in dall["events"])
+      and evs40[-1]["ts"].endswith("Z") and all(set(e) == EVENT_KEYS for e in evs40),
+      json.dumps(dj)[:300])
+check("... now: the last line is goal 44 -> HEADING, since its ts",
+      dj.get("now", {}).get("word") == "HEADING" and dj["now"]["since"] == evs40[-1]["ts"], json.dumps(dj.get("now")))
+last_seq = evs40[-1]["seq"] if evs40 else 0
+stuck_t = time.time()
+torn = jline("Robot is stuck. Replanning.", stuck_t)
+with open(main, "a") as fh:
+    fh.write(jline(OBST, time.time()) + torn[:30])
+code, dj2 = cd.json("/decisions.json?n=40")
+check("a line appended within 0.5 s of the last read -> not read yet (2 Hz at most)",
+      dj2["events"] == evs40, json.dumps(dj2["events"][-1:]))
+time.sleep(0.6)
+code, dj3 = cd.json("/decisions.json?n=40")
+check("0.6 s later -> the obstacle, seq +1, OBSTACLE now; the torn last line waits",
+      dj3["events"][-1]["text"] == "Obstacle ahead: stop" and dj3["events"][-1]["seq"] == last_seq + 1
+      and dj3["now"]["word"] == "OBSTACLE", json.dumps(dj3["events"][-1:]) + json.dumps(dj3["now"]))
+with open(main, "a") as fh:
+    fh.write(torn[30:])
+time.sleep(0.6)
+code, dj4 = cd.json("/decisions.json?n=40")
+check("the torn line completed -> read whole: the stuck verdict, held until the planner's answer -> no event "
+      "yet, still OBSTACLE",
+      dj4["events"] == dj3["events"] and dj4["now"]["word"] == "OBSTACLE",
+      json.dumps(dj4["events"][-1:]) + json.dumps(dj4["now"]))
+with open(main, "a") as fh:
+    fh.write(jline("Replanning.", stuck_t + 0.002))
+time.sleep(0.6)
+code, dj4 = cd.json("/decisions.json?n=40")
+check("dimOS's 'Replanning.' in the next read -> 'Stuck: replanning' at the verdict's time, STUCK now",
+      dj4["events"][-1]["text"] == "Stuck: replanning" and dj4["events"][-1]["seq"] == last_seq + 2
+      and mc._epoch(dj4["events"][-1]["ts"]) == mc._epoch(json.loads(torn)["timestamp"])
+      and dj4["now"]["word"] == "STUCK", json.dumps(dj4["events"][-1:]) + json.dumps(dj4["now"]))
+code, dj5 = cd.json("/decisions.json?n=3")
+_, dj6 = cd.json("/decisions.json?n=abc")
+check("n=3 -> 3 events; n=abc -> 40", len(dj5["events"]) == 3 and len(dj6["events"]) == 40)
+main.write_text(jline(G, time.time()) + jline("BUMP received", time.time(),
+                                              "/home/x/moss/moss_dimos/recovering_planner.py"))
+time.sleep(0.6)
+code, dj7 = cd.json("/decisions.json?n=40")
+check("the file rewritten smaller (a new log) -> the feed starts over: 2 events, seq still growing, BACKING OFF",
+      [e["text"] for e in dj7["events"]] == [GT, "Bump: backing off"] and dj7["events"][0]["seq"] > last_seq + 2
+      and dj7["now"]["word"] == "BACKING OFF", json.dumps(dj7)[:300])
+reg_i.unlink()
+code, dj8 = cd.json("/decisions.json?n=40")
+check("the stack stops -> IDLE 'No stack running (last run: ...)', its events and run kept (what happened stays "
+      "readable, like the map)",
+      dj8 == {"now": {"word": "IDLE", "detail": f"No stack running (last run: {DEC_RUN})", "since": None},
+              "events": dj7["events"], "run": DEC_RUN}, json.dumps(dj8)[:300])
+mc._dimos_run_pid = lambda: 4242
+code, dj9 = cd.json("/decisions.json?n=40")
+check("a `dimos run` with no registry entry (foreground, swept registry) -> READY 'Stack running, its log is not "
+      "found', no events: never the last run's lines as if they were its own",
+      dj9 == {"now": {"word": "READY", "detail": "Stack running, its log is not found", "since": None},
+              "events": [], "run": None}, json.dumps(dj9))
+mc._dimos_run_pid = lambda: None
+dec_dir2 = Path(TMP, "logs", "decisions2")
+dec_dir2.mkdir(parents=True)
+Path(dec_dir2, "main.jsonl").write_text(jline("Obstacle detected ahead, stopping local planner.", time.time()))
+DEC_RUN2 = "20260101-130000-moss-dimos-moss-explore"
+reg_i.write_text(json.dumps({"run_id": DEC_RUN2, "pid": os.getpid(), "blueprint": "moss-dimos.moss-explore",
+                             "started_at": (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=6)).isoformat(),
+                             "log_dir": str(dec_dir2)}))
+code, dj10 = cd.json("/decisions.json?n=40")
+check("the next run -> its own feed only (1 event, seq still growing), its run name",
+      [e["text"] for e in dj10["events"]] == ["Obstacle ahead: stop"] and dj10["run"] == DEC_RUN2
+      and dj10["events"][0]["seq"] > dj7["events"][-1]["seq"], json.dumps(dj10)[:300])
+reg_i.unlink()
+srv_d.shutdown()
+mc._dimos_run_pid = real_pid
+
+# demo: the scripted cycle through the same parser
+dsrv, dcl = serve(demo=True, page_dir=page_dir)
+code, dd = dcl.json("/decisions.json")
+check("demo /decisions.json -> now + events + run: exploration started, WAITING, run on moss-explore",
+      code == 200 and set(dd) == {"now", "events", "run"} and set(dd["now"]) == {"word", "detail", "since"}
+      and dd["now"]["word"] in WORDS and dd["events"] and dd["events"][0]["text"].startswith("Exploration started")
+      and all(set(e) == EVENT_KEYS for e in dd["events"]) and str(dd["run"]).endswith("moss-explore"),
+      json.dumps(dd)[:300])
+dsrv.cockpit._script_t0 -= mc.DEMO_DECISION_CYCLE_S + 0.5        # one whole cycle is due
+code, dd = dcl.json("/decisions.json")
+kinds = [e["kind"] for e in dd["events"]]
+cycle = ["mission", "goal", "obstacle", "replan", "contact", "contact", "contact", "contact", "goal_dropped", "goal",
+         "reached"]
+check("demo, one cycle later -> goal, obstacle, replan, contact (stall, bump, wall), escape (from its record's "
+      "fields: 'Escape done: 0.20 m in 2.1 s'), goal dropped, goal, reached; the stack log carries the same lines",
+      kinds[:len(cycle)] == cycle and dd["events"][7]["text"] == "Escape done: 0.20 m in 2.1 s"
+      and dd["now"]["word"] in WORDS, json.dumps(kinds))
+stamps = [e["ts"] for e in dd["events"]]
+check("demo times are dimOS's: ISO UTC with a Z, milliseconds, on the clock now (the page reads them as UTC)",
+      all(isinstance(t, str) and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z", t) for t in stamps)
+      and abs(mc._epoch(stamps[0]) - time.time()) < 60, json.dumps(stamps[:2]))
+_, dlog = dcl.json("/log.json?n=200")
+check("demo: every decision has its raw line in /log.json",
+      any(ln["event"].startswith("MOSS base: STALL #1") for ln in dlog["lines"])
+      and any(ln["event"] == "Contact escape" for ln in dlog["lines"]))
+dcl.post("/cmd/stop", {})
+_, dd = dcl.json("/decisions.json")
+check("demo STOP -> STOPPED, 'Exploration stopped (stop button or pad)' (its second line is an echo)",
+      dd["now"]["word"] == "STOPPED" and dd["events"][-1]["text"] == "Exploration stopped (stop button or pad)",
+      json.dumps(dd["now"]))
+dcl.post("/cmd/explore", {"action": "start"})
+_, dd = dcl.json("/decisions.json")
+check("demo explore start -> WAITING, 'Exploration started (cap 3 m, radius 4 m)'",
+      dd["now"]["word"] == "WAITING" and dd["events"][-1]["text"] == "Exploration started (cap 3 m, radius 4 m)")
+dcl.post("/cmd/goal", {"x": 1.0, "y": 1.0})
+_, dd = dcl.json("/decisions.json")
+first = (dd["now"]["word"], dd["events"][-1]["text"])
+time.sleep(mc.GOAL_AFTER_STOP_S + 0.1)                           # the page sends the goal after the stop, as live
+_, dd = dcl.json("/decisions.json")
+check("demo goal while exploring -> 'Exploration stopped (stop command)' at once, the planner's new goal "
+      "3 s later -> HEADING",
+      first == ("STOPPED", "Exploration stopped (stop command)") and dd["now"]["word"] == "HEADING"
+      and dd["events"][-1]["text"] == "Planner: new goal", json.dumps([first, dd["now"]]))
+_, before = dcl.json("/decisions.json")
+dcl.post("/cmd/stack", {"action": "stop"})
+_, dd = dcl.json("/decisions.json")
+check("demo stack stop -> IDLE 'No stack running (last run: ...)', the run's events kept, as live",
+      dd["now"]["word"] == "IDLE" and dd["events"] == before["events"] and dd["events"]
+      and dd["run"] == before["run"] and dd["now"]["detail"] == f"No stack running (last run: {before['run']})",
+      json.dumps(dd)[:200])
+dcl.post("/cmd/stack", {"action": "map"})
+_, dd = dcl.json("/decisions.json")
+check("demo: a new stack -> a fresh feed", dd["events"] == [] and dd["now"]["word"] == "READY"
+      and dd["run"] != before["run"], json.dumps(dd)[:200])
+dsrv.shutdown()
+
+check("the server's docstring lists GET /decisions.json", "GET  /decisions.json?n=40" in (mc.__doc__ or ""))
+cockpit_md = (ROOT / "docs" / "cockpit.md").read_text()
+check("docs/cockpit.md: a 'What it decides' section, /decisions.json, the link to imu.md",
+      "## What it decides" in cockpit_md and "/decisions.json" in cockpit_md and "(imu.md)" in cockpit_md)
 
 # ---------------------------------------------------------------------------
 print("F. hygiene")

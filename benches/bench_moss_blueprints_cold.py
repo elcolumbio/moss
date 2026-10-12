@@ -32,6 +32,16 @@ Known input -> known output in physical units. Groups:
                     MOSS_CAMERA=0 / MOSS_RECORD=0 / MOSS_WRIST=0 / MOSS_RERUN=1
                     (and off / no / false: robot_profile.env_on);
                     MossMemoryConfig defaults; base_telemetry on the coordinator
+  J. MOSS_IMU     - unset / 0 / off: dimOS's RealSenseCamera with enable_imu False
+                    and no BumpImu, the same blueprint as without the switch;
+                    MOSS_IMU=1: MossRealSense with enable_imu True and imu_hz
+                    200 and every other camera kwarg unchanged, a BumpImu atom
+                    with the knobs read at build time, its bump on the stream
+                    the coordinator / explorer publish and the planner / costmap
+                    read, imu from the camera, base_telemetry from the
+                    coordinator, no stream type conflict; refused without the
+                    camera; both classes pickle by reference into a clean
+                    interpreter; importing the blueprints imports neither
   I. the worker   - what a dimOS forkserver worker does: unpickle the
                     coordinator class in a clean interpreter -> the module is
                     imported, 'moss' is registered, the registry builds a
@@ -498,6 +508,129 @@ check("explorer frontier floor 0.3 m, goal timeout 45 s",
 pl = atom(exp, "RecoveringPlanner").kwargs
 check("planner footprint = MOSS width 0.34, pivot 0.50",
       pl.get("robot_width") == 0.34 and pl.get("robot_rotation_diameter") == 0.50)
+
+# ── J. MOSS_IMU: contacts from the IMU ───────────────────────────────────
+print("J. MOSS_IMU: the in-process IMU camera and BumpImu")
+from collections import defaultdict  # noqa: E402
+from dimos.core.coordination.module_coordinator import _verify_no_name_conflicts  # noqa: E402
+from dimos.hardware.sensors.camera.realsense.camera import RealSenseCamera  # noqa: E402
+from dimos.msgs.sensor_msgs.Imu import Imu  # noqa: E402
+from dimos.msgs.std_msgs.String import String  # noqa: E402
+
+
+def wiring(bp):
+    """{(stream name after remaps, type): {(module class name, direction)}} - the
+    grouping dimOS's _connect_streams gives one transport each."""
+    out = defaultdict(set)
+    for b in bp.active_blueprints:
+        for conn in b.streams:
+            name = bp.remapping_map.get((b.name, conn.name), conn.name)
+            out[(name, conn.type)].add((b.module.__name__, conn.direction))
+    return out
+
+
+def blueprint_text(bp):
+    return [(b.module.__name__, repr(sorted(b.kwargs.items()))) for b in bp.blueprints]
+
+
+cam_default = atom(nav, "RealSenseCamera")
+check("MOSS_IMU unset: the camera atom is dimOS's own RealSenseCamera, enable_imu False, no imu_hz kwarg",
+      cam_default.module is RealSenseCamera and cam_default.kwargs.get("enable_imu") is False
+      and "imu_hz" not in cam_default.kwargs)
+check("MOSS_IMU unset: no BumpImu, no MossRealSense in moss-nav or moss-explore",
+      not ({"BumpImu", "MossRealSense"} & (names(nav) | names(exp))), f"{sorted(names(exp))}")
+for spelled_off in ("0", "off"):
+    os.environ["MOSS_IMU"] = spelled_off
+    same_nav, same_exp = mb.build_moss_nav(), mb.build_moss_explore()
+    check(f"MOSS_IMU={spelled_off}: moss-nav and moss-explore are the blueprints of the unset switch, kwarg for kwarg",
+          blueprint_text(same_nav) == blueprint_text(nav) and blueprint_text(same_exp) == blueprint_text(exp))
+os.environ["MOSS_IMU"] = "1"
+imu_nav, imu_exp = mb.build_moss_nav(), mb.build_moss_explore()
+from moss_dimos.bump_imu import BumpImu  # noqa: E402
+from moss_dimos.realsense_imu import MossRealSense  # noqa: E402
+check("MOSS_IMU=1: moss-nav has MossRealSense and BumpImu, and no stock RealSenseCamera",
+      {"MossRealSense", "BumpImu"} <= names(imu_nav) and "RealSenseCamera" not in names(imu_nav), f"{sorted(names(imu_nav))}")
+check("MOSS_IMU=1: moss-explore too, with the planner and the explorer still there",
+      {"MossRealSense", "BumpImu", "RecoveringPlanner", "Explorer2"} <= names(imu_exp) and "RealSenseCamera" not in names(imu_exp))
+cam_imu = atom(imu_nav, "MossRealSense")
+check("the camera atom is moss_dimos.realsense_imu.MossRealSense, a RealSenseCamera subclass",
+      cam_imu.module is MossRealSense and issubclass(MossRealSense, RealSenseCamera))
+check("... enable_imu True, imu_hz 200", cam_imu.kwargs.get("enable_imu") is True and cam_imu.kwargs.get("imu_hz") == 200,
+      f"{cam_imu.kwargs.get('enable_imu')} {cam_imu.kwargs.get('imu_hz')}")
+strip = lambda kw: repr(sorted((k, v) for k, v in kw.items() if k not in ("enable_imu", "imu_hz")))  # noqa: E731
+check("... every other camera kwarg as without the switch (640x480 @ 5 fps, depth, no cloud, the mount)",
+      strip(cam_imu.kwargs) == strip(cam_default.kwargs), f"{strip(cam_imu.kwargs)}")
+bk = atom(imu_nav, "BumpImu").kwargs
+check("BumpImu atom: forward axis +z, 4.0 m/s^2, debounce 0.7 s, no CSV (the defaults, read at build time)",
+      bk == {"axis": "+z", "threshold": 4.0, "debounce_s": 0.7, "log_path": None}, f"{bk}")
+w = wiring(imu_exp)
+bump_side = w.get(("bump", mb.Bool), set())
+check("moss-explore: BumpImu's bump is the stream the coordinator and the explorer publish on",
+      {("BumpImu", "out"), ("MossControlCoordinator", "out"), ("Explorer2", "out")} <= bump_side, f"{sorted(bump_side)}")
+check("... and the one the planner's escape and the costmap's contact memory read",
+      {("RecoveringPlanner", "in"), ("MossCostMap", "in")} <= bump_side, f"{sorted(bump_side)}")
+check("... the sounds read it too when the sound module is in the build",
+      "MossSounds" not in names(imu_exp) or ("MossSounds", "in") in bump_side, f"{sorted(names(imu_exp))}")
+check("... no second bump stream of another type",
+      [k for k in w if k[0] == "bump"] == [("bump", mb.Bool)], f"{[k for k in w if k[0] == 'bump']}")
+check("imu: MossRealSense out -> BumpImu in (and the odometry's In)",
+      {("MossRealSense", "out"), ("BumpImu", "in"), ("LidarOdometry", "in")} <= w.get(("imu", Imu), set()),
+      f"{sorted(w.get(('imu', Imu), set()))}")
+check("base_telemetry: the coordinator out -> BumpImu in",
+      {("MossControlCoordinator", "out"), ("BumpImu", "in")} <= w.get(("base_telemetry", String), set()))
+try:
+    _verify_no_name_conflicts(imu_exp)
+    _verify_no_name_conflicts(imu_nav)
+    check("dimOS's stream type check accepts both MOSS_IMU builds", True)
+except ValueError as exc:
+    check("dimOS's stream type check accepts both MOSS_IMU builds", False, str(exc)[:300])
+check("moss-nav with MOSS_IMU=1: bump reaches the costmap (no planner there)",
+      {("BumpImu", "out"), ("MossCostMap", "in")} <= wiring(imu_nav).get(("bump", mb.Bool), set()))
+check("MOSS_IMU=1 leaves the gyro prior off (MOSS_GYRO unset)", atom(imu_nav, "LidarOdometry").kwargs.get("use_gyro_prior") is False)
+os.environ.update(MOSS_BUMP_ACCEL="6", MOSS_BUMP_AXIS="-z", MOSS_BUMP_DEBOUNCE_S="0.5", MOSS_IMU_LOG="/data/imu.csv", MOSS_GYRO="1")
+tuned = mb.build_moss_nav()
+for k in ("MOSS_BUMP_ACCEL", "MOSS_BUMP_AXIS", "MOSS_BUMP_DEBOUNCE_S", "MOSS_IMU_LOG", "MOSS_GYRO"):
+    os.environ.pop(k)
+check("MOSS_BUMP_ACCEL=6 MOSS_BUMP_AXIS=-z MOSS_BUMP_DEBOUNCE_S=0.5 MOSS_IMU_LOG=/data/imu.csv -> the BumpImu kwargs",
+      atom(tuned, "BumpImu").kwargs == {"axis": "-z", "threshold": 6.0, "debounce_s": 0.5, "log_path": "/data/imu.csv"},
+      f"{atom(tuned, 'BumpImu').kwargs}")
+check("MOSS_IMU=1 MOSS_GYRO=1: the gyro prior rides the in-process IMU (MossRealSense, prior on)",
+      atom(tuned, "MossRealSense").kwargs.get("enable_imu") is True and atom(tuned, "LidarOdometry").kwargs.get("use_gyro_prior") is True)
+os.environ["MOSS_CAMERA"] = "0"
+nocam = mb.build_moss_nav()
+os.environ.pop("MOSS_CAMERA")
+check("MOSS_IMU=1 MOSS_CAMERA=0: no camera, so no BumpImu either (refused with a warning)",
+      not ({"MossRealSense", "RealSenseCamera", "BumpImu"} & names(nocam)), f"{sorted(names(nocam))}")
+os.environ.pop("MOSS_IMU")
+pick = run_child("""
+    import json, pickle, sys
+    import moss_dimos.blueprints as b
+    print(json.dumps({"imported": [m for m in ("moss_dimos.bump_imu", "moss_dimos.realsense_imu") if m in sys.modules]}))
+""")
+try:
+    got_imp = json.loads(last_line(pick))
+except ValueError:
+    got_imp = {}
+    print(pick.stderr.decode(errors="replace")[-600:])
+check("importing moss_dimos.blueprints imports neither bump_imu nor realsense_imu", got_imp.get("imported") == [], f"{got_imp}")
+payload_imu = pickle.dumps((MossRealSense, BumpImu))
+check("MossRealSense and BumpImu pickle by reference to their modules",
+      b"moss_dimos.realsense_imu" in payload_imu and b"moss_dimos.bump_imu" in payload_imu)
+unp = run_child("""
+    import json, pickle, sys
+    cam, bump = pickle.loads(sys.stdin.buffer.read())
+    from dimos.hardware.sensors.camera.realsense.camera import RealSenseCamera
+    print(json.dumps({"cam": f"{cam.__module__}.{cam.__name__}", "bump": f"{bump.__module__}.{bump.__name__}",
+                      "camera": issubclass(cam, RealSenseCamera)}))
+""", stdin=payload_imu)
+try:
+    got_unp = json.loads(last_line(unp))
+except ValueError:
+    got_unp = {}
+    print(unp.stderr.decode(errors="replace")[-600:])
+check("... and unpickle in a clean interpreter, as a dimOS worker does",
+      got_unp == {"cam": "moss_dimos.realsense_imu.MossRealSense", "bump": "moss_dimos.bump_imu.BumpImu", "camera": True},
+      f"{got_unp}")
 
 os.environ["MOSS_CAMERA"] = "0"
 os.environ["MOSS_RECORD"] = "0"

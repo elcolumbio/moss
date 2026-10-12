@@ -32,6 +32,11 @@ Endpoints (all Cache-Control: no-store; a failing request never kills the server
                                 polls the scan at 3 Hz, so its robot marker moves at 3 Hz)
     GET  /path.json             planner path
     GET  /log.json?n=40         tail of the running stack's main.jsonl
+    GET  /decisions.json?n=40   what the stack decided, read from the same main.jsonl: the last n
+                                decision events (goals, obstacles, replans, contacts, waits, the
+                                mission) as short English lines, and the state word now
+                                (HEADING, OBSTACLE, BACKING OFF...), at most 2 Hz of file reads;
+                                after a stop, the last run's events until the next run
     GET  /preflight.json        the last saved flight check
     GET  /launch.json           tail of the last launcher output
     GET  /camera.mjpg           nose camera (RealSense colour), multipart JPEG, at most 5 fps
@@ -708,6 +713,544 @@ def log_tail(log_dir: str | None, n: int) -> list[dict]:
     return out[::-1]
 
 
+# --- what it decides: the stack's own log lines, read as decisions --------------------
+#
+# The explorer, the planners, the base adapter, the costmap and the contact sources
+# all log through dimOS's logger into the run's main.jsonl. Each line below is one
+# of their decisions, matched on its real text; every other line (twists,
+# telemetry, camera counts, transport, workers) is ignored. The page shows the
+# result as a feed and one state word.
+
+DECISIONS_MIN_INTERVAL_S = 0.5   # main.jsonl read for decisions at most 2 Hz, whoever asks
+DECISIONS_TAIL_BYTES = 1 << 20   # a first read takes the last MiB: thousands of records, past the twists
+DECISIONS_KEEP = 500             # decision rows kept per run (the page shows 30)
+DECISION_ECHO_S = 1.0            # a generic line this soon after the specific one it repeats is not a new decision
+AFTER_STOP_ECHO_S = 0.2          # the explorer's stay-here goal and its arrival land within ~60 ms of its stop
+REASON_CONFIRM_S = 0.5           # a replan reason with no consequence logged this soon was not acted on
+OBSTACLE_HOLD_S = 3.0            # OBSTACLE (a stop on an obstacle, a replan) and the planner's STUCK stay up this long
+CONTACT_HOLD_S = 4.0             # STUCK for frozen tracks (the base pushing harder) stays up this long
+ESCAPE_TIMEOUT_S = 5.0           # recovering_planner's: an escape that never covers its distance ends after this
+ESCAPE_DISTANCE_M = 0.20         # recovering_planner's: an escape that ended short of this timed out
+ESCAPE_HOLD_S = ESCAPE_TIMEOUT_S + 1.0   # BACKING OFF lasts until the escape's end line, at most this (a lost line)
+STALL_MIN_TICKS = 20             # moss_adapter's: fewer ticks over the stall window = that track did not move
+DECISION_WORDS = ("IDLE", "READY", "HEADING", "OBSTACLE", "BACKING OFF", "STUCK", "WAITING", "DONE", "STOPPED")
+HOLD_RANK = {"OBSTACLE": 1, "STUCK": 2, "BACKING OFF": 3}   # several holds running: the highest rank shows
+RECORD_FIELDS = ("acted", "aborted", "travelled_m", "seconds", "trigger", "x", "y")   # what a decision reads
+                                                                                     # beyond the event text
+
+_N = r"([-+]?(?:\d+(?:\.\d+)?|nan|inf))"     # a number as the line prints it, kept as printed
+_P = r"([-+]?\d+)"                           # a signed track percent or tick count
+
+TXT_ESCAPE = "Escape "                       # every end of an escape: done, timed out, aborted
+TXT_ESCAPE_DONE = "Escape done"
+TXT_STARTED = "Exploration started"
+TXT_STOPPED = "Exploration stopped"
+TXT_COMPLETE = "Exploration complete"
+TXT_REPLAN = "Replanning"
+TXT_STUCK = "Stuck: replanning"
+TXT_OFF_TRACK = "Off track: replanning"
+TXT_NAV_FAILED = "Navigation failed: replanning"
+QUIET_REPLANS = (TXT_OFF_TRACK, TXT_NAV_FAILED)   # the rover keeps heading for its goal: no hold
+TXT_ABANDONED = "Stuck: goal abandoned"
+TXT_NO_PATH = "Goal dropped: no path"
+TXT_NO_SAFE = "Goal dropped: no safe spot near it"
+TXT_PLANNER_DROPS = "Goal dropped: no "              # the planner's own reasons for dropping a goal
+TXT_CORNERED = "Cornered"
+TXT_PLANNER_ECHOES = ("Planner: new goal", "Planner: safe goal found")   # the detail keeps the explorer's goal line
+TXT_NO_LOG = "Stack running, its log is not found"
+_FOLD = re.compile(r" \(x\d+\)$")             # the count a folded run of identical rows carries
+
+
+def _num(rec, key) -> float | None:
+    """A record field as a finite number, else None."""
+    value = rec.get(key) if isinstance(rec, dict) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
+
+
+def _stall_text(m, rec=None) -> str:
+    n, cmd_l, cmd_r, enc_l, enc_r, secs = m.groups()
+    blocked = [side for side, cmd, enc in (("left", cmd_l, enc_l), ("right", cmd_r, enc_r))
+               if int(cmd) != 0 and abs(int(enc)) < STALL_MIN_TICKS]
+    which = "both tracks" if len(blocked) == 2 else f"{blocked[0]} track" if blocked else "tracks"
+    return (f"Contact #{n}: {which} blocked (commanded L={cmd_l}% R={cmd_r}%, "
+            f"encoders moved L={enc_l} R={enc_r} ticks in {secs} s)")
+
+
+def _pivot_text(m, rec=None) -> str:
+    cmd_l, cmd_r, side = m.groups()
+    cmd = cmd_r if side == "right" else cmd_l
+    other = "left" if side == "right" else "right"
+    way = "reverse" if int(cmd) < 0 else "forward"
+    return (f"{side.capitalize()} track did not turn in {way} (L={cmd_l}% R={cmd_r}%): "
+            f"pivoting on the {other} track from now on")
+
+
+def _bump_text(m, rec) -> str | None:
+    """'BUMP received' with acted=False is a contact during an escape: the line before it
+    ('Contact during an escape: stopping dead') already says so, and nothing backs off."""
+    return None if rec.get("acted") is False else "Bump: backing off"
+
+
+def _escape_text(m, rec) -> str:
+    """The end of an escape, from the record's fields (aborted, travelled_m, seconds)."""
+    travelled, seconds = _num(rec, "travelled_m"), _num(rec, "seconds")
+    took = f" in {seconds:.1f} s" if seconds is not None else ""
+    if rec.get("aborted") is True:
+        return "Escape aborted" + (f" after {travelled:.2f} m" if travelled is not None else "")
+    if travelled is None:
+        return TXT_ESCAPE_DONE
+    if travelled < ESCAPE_DISTANCE_M - 0.005:
+        return f"Escape timed out: only {travelled:.2f} m{took}"
+    return f"{TXT_ESCAPE_DONE}: {travelled:.2f} m{took}"
+
+
+def _abandon_text(m, rec) -> str:
+    trigger = rec.get("trigger")
+    if trigger is None or trigger == "stuck_detector":
+        return TXT_ABANDONED
+    return f"Goal abandoned ({str(trigger)[:40]})"
+
+
+def _no_path_text(m, rec) -> str:
+    x, y = _num(rec, "x"), _num(rec, "y")
+    return TXT_NO_PATH + (f" to ({x:.2f}, {y:.2f})" if x is not None and y is not None else "")
+
+
+def _metres(text: str) -> str:
+    try:
+        return f"{float(text):.2f}"
+    except ValueError:
+        return text
+
+
+# (kind, src, pattern on the event text, the short English text or a function of the
+# match and the record (None: no event), echo, role).
+#
+# `echo` lists (kind, text prefix or None[, window s]) entries: when the previous
+# decision is one of them and at most the window (DECISION_ECHO_S by default) older,
+# this line only repeats it and is not a new event (the planner taking the
+# explorer's goal, the second of the two stop lines a STOP produces, the explorer's
+# give-up after the planner's own reason, the explorer's "stay here" goal right
+# after it stops).
+#
+# `role` ties the global planner's replan lines together. Its monitor and its stop
+# handler log a REASON ("Robot is stuck. Replanning.", "Replanning path due to
+# obstacle found.", "Robot veered off track. Replanning.", "Failure in
+# navigation.") and then call _replan_path, which decides: "Replanning." when it
+# really replans (logged by dimOS's _replan_path), "Goal abandoned, no recovery
+# motion" when MOSS's planner gives the goal up, "Replan requested without a goal;
+# ignoring.", or nothing at all (MOSS's planner ignores a stuck verdict while the
+# follower turns in place, is idle or a contact escape owns the wheels). So a
+# reason is held, not shown; the "Replanning." that follows within
+# REASON_CONFIRM_S ("confirm") shows it, an abandon ("resolve") replaces it, and
+# anything else ("clear", or nothing in time) drops it: the planner did not act on it.
+_AFTER_STOP = ("mission", TXT_STOPPED)
+_AFTER_STOP_GOAL = ("mission", TXT_STOPPED, AFTER_STOP_ECHO_S)
+DECISION_CATALOGUE = (
+    ("goal", "explorer",
+     r"goal (\d+): \(" + _N + r", " + _N + r"\) " + _N + r" m away( \(beyond the cap[^)]*\))?, (\d+) frontier cells",
+     lambda m, r: f"Goal {m[1]}: {m[4]} m away ({m[6]} cells{', beyond the cap' if m[5] else ''})", None, None),
+    ("goal_dropped", "explorer", r"planner gave up on that goal\b", "Goal dropped: the planner gave up",
+     (("goal_dropped", TXT_PLANNER_DROPS), ("goal_dropped", TXT_ABANDONED)), None),
+    ("goal_dropped", "explorer", r"goal timeout after " + _N + r" s having closed " + _N + r" m of " + _N + r" m",
+     lambda m, r: f"Goal dropped: {m[2]} of {m[3]} m closed in {m[1]} s", None, None),
+    ("waiting", "explorer", r"(\d+) of (\d+) clusters are on a recently failed goal",
+     lambda m, r: f"Waiting: {m[1]} of {m[2]} frontiers are failed goals", None, None),
+    ("retry", "explorer", r"starvation escape:.*reopening the oldest failed goal at \(" + _N + r", " + _N + r"\)",
+     lambda m, r: f"Retrying an old goal at ({m[1]}, {m[2]})", None, None),
+    ("obstacle", "explorer",
+     r"born cornered: " + _N + r" m2 of reachable floor and no frontier - one " + _N + r" m back-off",
+     lambda m, r: f"{TXT_CORNERED} ({m[1]} m2 of floor, no frontier): backing off {m[2]} m", None, None),
+    ("obstacle", "planner", r"Obstacle detected ahead, stopping local planner", "Obstacle ahead: stop", None, None),
+    ("replan", "planner", r"Replanning path due to obstacle found", TXT_REPLAN, None, "reason"),
+    ("replan", "planner", r"Robot is stuck\. Replanning", TXT_STUCK, None, "reason"),
+    ("replan", "planner", r"Robot veered off track\. Replanning", TXT_OFF_TRACK, None, "reason"),
+    ("replan", "planner", r"Failure in navigation\b", TXT_NAV_FAILED, None, "reason"),
+    ("replan", "planner", r"Replanning\.?$", TXT_REPLAN, (("obstacle", None), ("replan", None)), "confirm"),
+    (None, None, r"Replan requested without a goal", None, None, "clear"),
+    ("goal_dropped", "recovery", r"Goal abandoned, no recovery motion", _abandon_text, None, "resolve"),
+    ("goal_dropped", "planner", r"No path found to the goal\b", _no_path_text, None, None),
+    ("goal_dropped", "planner", r"No safe goal found\b", TXT_NO_SAFE, (("goal_dropped", TXT_NO_SAFE),), None),
+    ("new_goal", "planner", r"Got new goal\b", TXT_PLANNER_ECHOES[0],
+     (("goal", None), ("retry", None), _AFTER_STOP_GOAL), None),
+    ("new_goal", "planner", r"Found safe goal\b", TXT_PLANNER_ECHOES[1],
+     (("goal", None), ("new_goal", None), ("obstacle", None), ("replan", None), _AFTER_STOP_GOAL), None),
+    ("new_goal", "planner", r"Travelling to goal " + _N + r" ?m away from requested goal",
+     lambda m, r: f"Planner: safe goal {_metres(m[1])} m from the requested one", None, None),
+    ("reached", "planner", r"Reached goal position\b", "Goal reached", (_AFTER_STOP_GOAL,), None),
+    ("reached", "planner", r"Close enough to goal\. Accepting as arrived", "Goal reached (close enough)",
+     (_AFTER_STOP_GOAL,), None),
+    ("contact", "base",
+     r"(?:MOSS base: )?STALL #(\d+): tracks commanded L=" + _P + r"% R=" + _P + r"% but the encoders moved L="
+     + _P + r" R=" + _P + r" ticks in " + _N + r" s", _stall_text, None, None),
+    ("contact", "recovery", r"BUMP received\b", _bump_text, (("obstacle", TXT_CORNERED),), None),
+    ("contact", "recovery", r"Contact during an escape: stopping dead", "Contact during an escape: stop dead",
+     None, None),
+    ("contact", "recovery", r"Contact escape$", _escape_text, None, None),
+    ("contact", "costmap",
+     r"costmap: contact at \(" + _N + r", " + _N + r"\) heading " + _N + r" deg: (\d+) cells ahead marked as a wall",
+     lambda m, r: f"Wall remembered ahead ({m[4]} cells)", None, None),
+    ("push", "base", r"(?:MOSS base: )?tracks frozen at L=" + _P + r"% R=" + _P + r"% - pushing at (\d+) %",
+     lambda m, r: f"Tracks frozen at L={m[1]}% R={m[2]}%: pushing at {m[3]} %", None, None),
+    ("pivot_fallback", "base",
+     r"(?:MOSS base: )?pivot L=" + _P + r"% R=" + _P + r"%: the (right|left) track did not turn", _pivot_text,
+     None, None),
+    ("imu", "imu", r"IMU contact\b.*", lambda m, r: m[0][:120], None, None),
+    ("mission", "mission", r"exploration start: .*?cap " + _N + r" m, radius " + _N + r" m",
+     lambda m, r: f"{TXT_STARTED} (cap {m[1]} m, radius {m[2]} m)", None, None),
+    ("mission", "mission", r"exploration start\b", TXT_STARTED, None, None),
+    ("mission", "mission", r"(?:\w+: )?stop_movement received, stopping exploration",
+     f"{TXT_STOPPED} (stop button or pad)", (_AFTER_STOP,), None),
+    ("mission", "mission", r"Received exploration stop command\b", f"{TXT_STOPPED} (stop command)",
+     (_AFTER_STOP,), None),
+    ("mission", "mission", r"Stopped autonomous frontier exploration", TXT_STOPPED, (_AFTER_STOP,), None),
+    ("mission", "mission", r"exploration complete: no reachable frontier left.*?\((\d+) targets",
+     lambda m, r: f"{TXT_COMPLETE}: no reachable frontier left ({m[1]} goals)", None, None),
+    ("mission", "mission", r"[Ee]xploration complete after (\d+) goals",
+     lambda m, r: f"{TXT_COMPLETE} ({m[1]} goals)", None, None),
+    ("mission", "mission", r"exploration complete\b", TXT_COMPLETE, None, None),
+)
+_CATALOGUE = tuple((kind, src, re.compile(pattern), text, echo, role)
+                   for kind, src, pattern, text, echo, role in DECISION_CATALOGUE)
+
+
+def _epoch(ts) -> float | None:
+    """A record's time as epoch seconds: a number as is, an ISO string (dimOS writes
+    UTC with a Z) through fromisoformat; anything else None."""
+    if isinstance(ts, bool):
+        return None
+    if isinstance(ts, (int, float)):
+        return float(ts) if math.isfinite(ts) else None
+    if isinstance(ts, str):
+        t = _parse_iso(ts)
+        if t is None:
+            try:
+                t = float(ts)
+            except ValueError:
+                return None
+        return t if math.isfinite(t) else None
+    return None
+
+
+def _record_ts(rec: dict):
+    """The record's own time as given (ISO string or epoch), None when it is not a time."""
+    ts = rec.get("ts", rec.get("timestamp"))
+    if (isinstance(ts, bool) or not isinstance(ts, (int, float, str))
+            or (isinstance(ts, float) and not math.isfinite(ts))):
+        return None
+    return ts
+
+
+def decide(record) -> tuple | None:
+    """(kind, src, text, echo, role) for one log record whose event is a decision line,
+    else None. A "clear" line has no kind, src or text."""
+    if not isinstance(record, dict):
+        return None
+    event = record.get("event")
+    if not isinstance(event, str):
+        return None
+    event = event.strip()
+    for kind, src, rx, text, echo, role in _CATALOGUE:
+        m = rx.match(event)
+        if m:
+            said = text(m, record) if callable(text) else text
+            if said is None and role != "clear":
+                return None
+            return kind, src, said, echo, role
+    return None
+
+
+def _is_echo(echo, last: dict | None, ts) -> bool:
+    if not echo or last is None:
+        return False
+    a, b = _epoch(last.get("ts")), _epoch(ts)
+    if a is None or b is None:
+        return False
+    text = str(last.get("text", ""))
+    for item in echo:
+        kind, prefix = item[0], item[1]
+        window = item[2] if len(item) > 2 else DECISION_ECHO_S
+        if last.get("kind") == kind and (not prefix or text.startswith(prefix)) and abs(b - a) <= window:
+            return True
+    return False
+
+
+def decisions_from_records(records, seq0: int = 0, prev: dict | None = None, carry: dict | None = None) -> list[dict]:
+    """Log records ({ts, level, event, logger} plus any RECORD_FIELDS, oldest first, as
+    log_tail returns them) -> decision events {ts, kind, text, src, seq}, in the same
+    order. `ts` is the record's own (an ISO string or epoch seconds); `seq` counts from
+    seq0 + 1; `prev` is the last event already emitted (for the echo rule across reads);
+    `carry` is a dict the caller keeps between reads: a replan reason still waiting for
+    its consequence when the records ran out stays in it (read and updated in place).
+    Never raises: a record that is not a dict, has no event or an unknown one is skipped."""
+    out: list[dict] = []
+    last = prev if isinstance(prev, dict) else None
+    pending = carry.get("pending") if isinstance(carry, dict) else None
+    seq = seq0
+    try:
+        items = list(records or ())
+    except Exception:  # noqa: BLE001 - not a list of records at all
+        items = []
+    for rec in items:
+        try:
+            if pending is not None and isinstance(rec, dict):
+                t = _epoch(rec.get("ts", rec.get("timestamp")))
+                if t is not None and pending["t"] is not None and t - pending["t"] > REASON_CONFIRM_S:
+                    pending = None               # the planner did not act on that reason
+            hit = decide(rec)
+            if hit is None:
+                continue
+            kind, src, text, echo, role = hit
+            ts = _record_ts(rec)
+            if role == "clear":
+                pending = None
+                continue
+            if role == "reason":
+                pending = {"ts": ts, "t": _epoch(ts), "kind": kind, "src": src, "text": text}
+                continue
+            if role == "confirm" and pending is not None:
+                kind, src, text, ts = pending["kind"], pending["src"], pending["text"], pending["ts"]
+                pending = None
+            else:
+                if role == "resolve":
+                    pending = None
+                if _is_echo(echo, last, ts):
+                    continue
+        except Exception:  # noqa: BLE001 - one odd record never costs the feed
+            continue
+        seq += 1
+        last = {"ts": ts, "kind": kind, "text": text, "src": src, "seq": seq}
+        out.append(last)
+    if isinstance(carry, dict):
+        carry["pending"] = pending
+    return out
+
+
+def now_state(events, stack_running: bool, exploring: bool | None, now_ts: float) -> dict:
+    """The state word for the page, from the decision events (oldest first).
+
+    The last decision wins, with holds. OBSTACLE_HOLD_S: an obstacle stop or a replan
+    around an obstacle -> OBSTACLE; the planner's stuck replan or its giving the goal up
+    when stuck -> STUCK. Frozen tracks (the base pushing harder) -> STUCK for
+    CONTACT_HOLD_S. A contact (a stall, the bump, the wall it leaves, an IMU contact) or
+    the explorer backing out of a corner -> BACKING OFF until the escape's end line,
+    at most ESCAPE_HOLD_S. While several holds run, the highest rank shows (BACKING OFF
+    over STUCK over OBSTACLE, the latest among equals); the end of an escape or of the
+    mission ends them all. Outside a hold the word is what the other events said: goal
+    / retry / new goal / a replan that keeps the goal (off track, a navigation failure)
+    -> HEADING; waiting / the explorer dropping a goal -> WAITING; exploration started
+    -> WAITING (the explorer picks a goal), stopped -> STOPPED, complete -> DONE. A goal
+    reached, the planner dropping a goal and the end of an escape -> HEADING / WAITING /
+    WAITING while the explorer runs (its own lines since the last start say so, or
+    `exploring` from the bus), READY otherwise: a tapped goal is over. An escape that
+    ends after a STOP leaves STOPPED. No stack -> IDLE; a stack and no decision yet ->
+    READY. Returns {word, detail, since}: since = the ts of the event that set the
+    word, detail = the goal line or that event's text."""
+    if not stack_running:
+        return {"word": "IDLE", "detail": "No stack running", "since": None}
+    base = None                      # (word, detail, ts) said by the last event that is not a hold
+    holds: list = []                 # (rank, start epoch, end epoch, word, detail, ts)
+    last_hold = None                 # the last hold event, for its text once every hold ran out
+    goal_text = None                 # the explorer's line for the goal being driven to
+    explorer_on = False              # the explorer's own lines say it runs
+    seen = False
+    for ev in events or ():
+        if not isinstance(ev, dict):
+            continue
+        seen = True
+        kind, ts, src = ev.get("kind"), ev.get("ts"), ev.get("src")
+        shown = str(ev.get("text") or "")
+        text = _FOLD.sub("", shown)
+        on = explorer_on or exploring is True
+        new_hold = None
+        if kind == "obstacle":
+            if text.startswith(TXT_CORNERED):
+                explorer_on = True
+                new_hold = ("BACKING OFF", ESCAPE_HOLD_S)
+            else:
+                new_hold = ("OBSTACLE", OBSTACLE_HOLD_S)
+        elif kind == "replan":
+            if text in QUIET_REPLANS:
+                base = ("HEADING", shown, ts)
+            else:
+                new_hold = ("STUCK" if text.startswith(TXT_STUCK) else "OBSTACLE", OBSTACLE_HOLD_S)
+        elif kind == "contact" and text.startswith(TXT_ESCAPE):
+            holds, goal_text = [], None
+            if base is None or base[0] not in ("STOPPED", "DONE"):
+                base = ("WAITING" if on else "READY", shown, ts)
+        elif kind in ("contact", "imu"):
+            new_hold = ("BACKING OFF", ESCAPE_HOLD_S)
+        elif kind == "push":
+            new_hold = ("STUCK", CONTACT_HOLD_S)
+        elif kind in ("goal", "retry"):
+            explorer_on = True
+            goal_text = shown if kind == "goal" else goal_text
+            base = ("HEADING", shown, ts)
+        elif kind == "new_goal":
+            base = ("HEADING", goal_text if goal_text and text in TXT_PLANNER_ECHOES else shown, ts)
+        elif kind == "reached":
+            goal_text = None
+            base = ("HEADING" if on else "READY", shown, ts)
+        elif kind == "waiting":
+            explorer_on, goal_text = True, None
+            base = ("WAITING", shown, ts)
+        elif kind == "goal_dropped":
+            goal_text = None
+            if src in ("planner", "recovery"):
+                base = ("WAITING" if on else "READY", shown, ts)
+                if text.startswith(TXT_ABANDONED):
+                    new_hold = ("STUCK", OBSTACLE_HOLD_S)
+            else:
+                explorer_on = True
+                base = ("WAITING", shown, ts)
+        elif kind == "mission":
+            holds, goal_text = [], None
+            explorer_on = text.startswith(TXT_STARTED)
+            base = ("STOPPED" if text.startswith(TXT_STOPPED) else "DONE" if text.startswith(TXT_COMPLETE)
+                    else "WAITING", shown, ts)
+        if new_hold is not None:
+            word, dur = new_hold
+            last_hold = (word, shown, ts)
+            t = _epoch(ts)
+            if t is not None:            # a hold needs a time to end
+                holds.append((HOLD_RANK[word], t, t + dur, word, shown, ts))
+    if not seen:
+        return {"word": "READY", "detail": "Stack running, no decision yet", "since": None}
+    active = [h for h in holds if h[1] <= now_ts < h[2]]
+    if active:
+        _, _, _, word, detail, since = max(active, key=lambda h: (h[0], h[1]))
+        return {"word": word, "detail": detail, "since": since}
+    if base is not None:
+        return {"word": base[0], "detail": base[1], "since": base[2]}
+    return {"word": "WAITING" if explorer_on or exploring is True else "READY",
+            "detail": last_hold[1] if last_hold else "Stack running, no decision yet",
+            "since": last_hold[2] if last_hold else None}
+
+
+def decisions_doc(events, n: int, stack_running: bool, exploring: bool | None, now_ts: float, run) -> dict:
+    """/decisions.json: the state word now, the last n events, the run they belong to.
+    With no stack running, `run` is the last run whose events are kept."""
+    events = list(events or ())
+    now = now_state(events, stack_running, exploring, now_ts)
+    if not stack_running and run:
+        now["detail"] = f"No stack running (last run: {run})"
+    return {"now": now, "events": events[-n:] if n > 0 else [], "run": run}
+
+
+class DecisionLog:
+    """Decision rows in arrival order; `seq` never goes back, even across a restart.
+    Identical events one after the other (same kind and text: the explorer saying it
+    waits every second) make one row whose text ends in ' (xN)', with the last one's
+    ts and seq, so a long wait never pushes the contacts out of the page's 30 rows."""
+
+    def __init__(self, keep: int = DECISIONS_KEEP):
+        self.events: deque = deque(maxlen=keep)
+        self.seq = 0
+        self._carry: dict = {}           # a replan reason waiting for its consequence across reads
+        self._fold = None                # (kind, text, count) of the last row
+
+    def add(self, records) -> None:
+        new = decisions_from_records(records, self.seq, self.events[-1] if self.events else None, self._carry)
+        for ev in new:
+            self.seq = ev["seq"]
+            fold = self._fold
+            if fold is not None and self.events and fold[:2] == (ev["kind"], ev["text"]):
+                count = fold[2] + 1
+                self.events[-1] = dict(ev, text=f"{ev['text']} (x{count})")   # a new dict: readers hold the old one
+                self._fold = (ev["kind"], ev["text"], count)
+            else:
+                self.events.append(ev)
+                self._fold = (ev["kind"], ev["text"], 1)
+
+    def clear(self) -> None:
+        self.events.clear()
+        self._carry, self._fold = {}, None
+
+
+class DecisionFeed(DecisionLog):
+    """The decision events of one run's main.jsonl, read incrementally and at most
+    every DECISIONS_MIN_INTERVAL_S. The first read takes the last DECISIONS_TAIL_BYTES;
+    later reads only the bytes appended since (a half-written last line waits for the
+    next read). Another file (a new run, a rotation, a truncation) or more than the
+    window appended since the last read starts over from the tail: the feed is always
+    one unbroken stretch of the log. A read without a log (the stack stopped) keeps the
+    last run's events and `run`; the next run's log starts a new feed."""
+
+    def __init__(self, tail_bytes: int = DECISIONS_TAIL_BYTES, keep: int = DECISIONS_KEEP,
+                 min_interval_s: float = DECISIONS_MIN_INTERVAL_S):
+        super().__init__(keep)
+        self._tail_bytes = tail_bytes
+        self._min_interval_s = min_interval_s
+        self._lock = threading.Lock()
+        self._path = None
+        self._ident = None
+        self._offset = None
+        self._partial = b""
+        self._read_at = None
+        self.run = None                  # the run the events belong to
+
+    def _restart(self, path, ident=None) -> None:
+        self.clear()
+        self._path, self._ident, self._offset, self._partial = path, ident, None, b""
+
+    def read(self, log_dir: str | None, run=None) -> list[dict]:
+        """The events of <log_dir>/main.jsonl (oldest first); without a log_dir, the
+        events already read, as they are."""
+        path = os.path.join(log_dir, "main.jsonl") if log_dir else None
+        with self._lock:
+            if path is None:
+                return list(self.events)
+            if path != self._path:
+                self._restart(path)
+                self._read_at = None
+                self.run = run
+            now = time.monotonic()
+            if self._read_at is not None and now - self._read_at < self._min_interval_s:
+                return list(self.events)
+            self._read_at = now
+            try:
+                self._read_new(path)
+            except OSError:
+                pass                     # gone or unreadable for now: keep what was read
+            return list(self.events)
+
+    def _read_new(self, path: str) -> None:
+        with open(path, "rb") as fh:
+            st = os.fstat(fh.fileno())
+            ident = (st.st_dev, st.st_ino)
+            size = st.st_size
+            if (ident != self._ident or self._offset is None or size < self._offset
+                    or size - self._offset > self._tail_bytes):
+                self._restart(path, ident)
+                start = max(0, size - self._tail_bytes)
+                drop_first = start > 0           # the window starts inside a line
+            else:
+                start, drop_first = self._offset, False
+            fh.seek(start)
+            chunk = fh.read(size - start)
+        self._offset = start + len(chunk)
+        lines = (self._partial + chunk).split(b"\n")
+        self._partial = lines.pop()              # b"" after a final newline, else a line still being written
+        if len(self._partial) > self._tail_bytes:
+            self._partial = b""
+        if drop_first and lines:
+            lines = lines[1:]
+        records = []
+        for line in lines:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue                         # a stray print, a torn line
+            if isinstance(rec, dict):
+                out = {"ts": rec.get("timestamp"), "level": rec.get("level"),
+                       "event": rec.get("event"), "logger": rec.get("logger")}
+                out.update((k, rec[k]) for k in RECORD_FIELDS if k in rec)
+                records.append(out)
+        self.add(records)
+
+
 def preflight_doc() -> dict:
     """The last flight check moss-fly.sh saved (moss_preflight.py --json)."""
     path = os.path.join(state_dir(), "preflight.json")
@@ -1028,6 +1571,7 @@ class LiveCockpit(Cockpit):
         self._run_id = None                     # the run the bus cache belongs to
         self._goal_lock = threading.Lock()
         self._goal_gen = 0                      # a stop, an explore or a newer goal cancels a queued goal
+        self._feed = DecisionFeed()             # the decisions in the running stack's main.jsonl
 
     # the listener ------------------------------------------------------------
     def start_listener(self) -> None:
@@ -1228,6 +1772,23 @@ class LiveCockpit(Cockpit):
 
     def log(self, n: int) -> list[dict]:
         return log_tail(stack_status().get("log_dir"), n)
+
+    def decisions(self, n: int) -> dict:
+        """The running stack's decisions (its main.jsonl, read incrementally) and the word now.
+        `exploring` comes from the bus when it is listened to, else it is unknown (None).
+        Once the stack stops, the last run's events stay (IDLE, "last run: ..."), as its map
+        does, until a new run's log replaces them. A `dimos run` with no registry entry (a
+        foreground run, a swept registry) has no known log: READY, and the detail says so."""
+        stack = stack_status()
+        self._sync_run(stack)
+        now = time.time()
+        if stack.get("running") and stack.get("log_dir"):
+            events = self._feed.read(stack["log_dir"], stack.get("run_id"))
+            exploring = self._nav(time.monotonic(), stack)["exploring"] if lcm is not None and HAVE_MSGS else None
+            return decisions_doc(events, n, True, exploring, now, stack.get("run_id"))
+        if stack.get("running") or _dimos_run_pid() is not None:
+            return {"now": {"word": "READY", "detail": TXT_NO_LOG, "since": None}, "events": [], "run": None}
+        return decisions_doc(self._feed.read(None), n, False, None, now, self._feed.run)
 
     def preflight(self) -> dict:
         return preflight_doc()
@@ -1576,6 +2137,50 @@ class DemoWorld:
         return np.column_stack((px[idx, first[idx]], py[idx, first[idx]])).astype(np.float32)
 
 
+# The demo's decisions: one exploration cycle as the stack's modules log it, in the
+# order a real run logs them (goal, obstacle and replan, contact, bump and wall,
+# escape, goal dropped, next goal, arrival). The lines go into the demo's log and
+# through decisions_from_records, like a real main.jsonl.
+DEMO_DECISION_CYCLE_S = 16.0
+DEMO_DECISION_SCRIPT = (   # (seconds into the cycle, level, logger, line)
+    (0.0, "info", "explorer2.py", "goal {goal}: ({gx:.2f}, {gy:.2f}) {dist:.1f} m away, {cells} frontier cells, "
+                                  "14 clusters, chosen in 120 ms"),
+    (0.1, "info", "global_planner.py", "Got new goal"),
+    (0.2, "info", "global_planner.py", "Found safe goal."),
+    (4.0, "info", "local_planner.py", "Obstacle detected ahead, stopping local planner."),
+    (4.1, "info", "global_planner.py", "Replanning path due to obstacle found."),
+    (4.2, "info", "global_planner.py", "Replanning."),
+    (4.3, "info", "global_planner.py", "Found safe goal."),
+    (8.0, "warning", "moss_adapter.py", "MOSS base: STALL #{stall}: tracks commanded L=+60% R=+60% but the encoders "
+                                        "moved L=+2 R=+1 ticks in 1.0 s - stopped (the encoders are the bumper)"),
+    (8.3, "warning", "recovering_planner.py", "BUMP received"),
+    (8.3, "info", "costmap2d.py", "costmap: contact at ({x:+.2f}, {y:+.2f}) heading {deg:+.0f} deg: "
+                                  "32 cells ahead marked as a wall"),
+    (10.4, "warning", "recovering_planner.py", "Contact escape"),
+    (10.5, "info", "explorer2.py", "planner gave up on that goal: excluded until the map or the viewpoint changes"),
+    (10.7, "info", "explorer2.py", "goal {goal2}: ({gx:.2f}, {gy:.2f}) {dist:.1f} m away, {cells} frontier cells, "
+                                   "14 clusters, chosen in 130 ms"),
+    (14.0, "info", "local_planner.py", "Reached goal position, starting final rotation"),
+)
+DEMO_LINE_FIELDS = {   # the fields a real record carries with its line, where a decision reads them
+    "Contact escape": {"trigger": "bump", "direction": "reverse", "travelled_m": 0.201, "seconds": 2.1,
+                       "aborted": False},
+    "BUMP received": {"reflex": "escape reverse 0.20 m", "acted": True},
+}
+DEMO_EXPLORE_START = ("exploration start: distance exp 2, cap 3 m, radius 4 m "
+                      "(0 = no limit; the radius is centred on the first pose)")
+DEMO_STOP_LINES = {   # how the explorer logs each way of being stopped
+    "cmd": ("Received exploration stop command via LCM", "Stopped autonomous frontier exploration"),
+    "stop": ("WavefrontFrontierExplorer: stop_movement received, stopping exploration",
+             "Stopped autonomous frontier exploration"),
+}
+
+
+def _iso_ms(t: float) -> str:
+    """Epoch seconds as dimOS stamps its records: ISO, UTC, milliseconds, a Z."""
+    return _dt.datetime.fromtimestamp(t, _dt.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
 class DemoCockpit(Cockpit):
     """Same endpoints, synthetic sources, never touches LCM or the launcher; the
     machine metrics are real."""
@@ -1597,12 +2202,66 @@ class DemoCockpit(Cockpit):
         self._launch_lines: deque = deque(maxlen=LAUNCH_TAIL)
         self._launch_action = None
         self._preflight_ts = now
+        self._decisions = DecisionLog()
+        self._script_t0 = None                 # the scripted exploration's start; None = nothing scripted runs
+        self._script_pos = (0, 0)              # (cycle, step) of the next scripted line
+        self._goal_said = True                 # the arrival at a tapped goal is logged once
+        self._pending: list = []               # (at, level, logger, line) logged once their time comes
         self._say("info", "demo cockpit: synthetic MOSS, nothing on the bus")
         self._say("info", "RPLIDAR C1 up (demo)")
         self._say("info", "lidar odometry up (demo)")
+        self._start_script(now)
 
     def _say(self, level: str, event: str) -> None:
         self._log.append({"ts": time.strftime(_ISO), "level": level, "event": event, "logger": "demo"})
+
+    # the decisions, scripted (called with self._lock held) ---------------------
+    def _line(self, at: float, level: str, logger: str, event: str) -> None:
+        """One line as a stack module logs it: into the demo log and the decision feed."""
+        rec = {"ts": _iso_ms(at), "level": level, "event": event, "logger": logger}
+        rec.update(DEMO_LINE_FIELDS.get(event, {}))
+        self._log.append(rec)
+        self._decisions.add([rec])
+
+    def _start_script(self, now: float) -> None:
+        self._line(now, "info", "explorer2.py", DEMO_EXPLORE_START)
+        self._script_t0, self._script_pos = now + 0.5, (0, 0)
+
+    def _stop_script(self, now: float, how: str) -> None:
+        if self._script_t0 is None:
+            return
+        for event in DEMO_STOP_LINES[how]:
+            self._line(now, "info", "wavefront_frontier_goal_selector.py", event)
+        self._script_t0 = None
+
+    def _script_values(self, cycle: int) -> dict:
+        w = self.world
+        tx, ty = w.target()
+        return {"goal": 2 * cycle + 1, "goal2": 2 * cycle + 2, "stall": cycle + 1, "gx": tx, "gy": ty,
+                "dist": max(0.1, math.hypot(tx - w.x, ty - w.y)), "cells": 20 + (7 * cycle) % 40,
+                "x": w.x, "y": w.y, "deg": math.degrees(w.yaw)}
+
+    def _script_tick(self, now: float) -> None:
+        """Log every scripted line that is due; a page away for long skips to the last cycle."""
+        if self._script_t0 is None:
+            return
+        cycle, step = self._script_pos
+        if now - (self._script_t0 + cycle * DEMO_DECISION_CYCLE_S) > 2 * DEMO_DECISION_CYCLE_S:
+            cycle, step = int((now - self._script_t0) // DEMO_DECISION_CYCLE_S) - 1, 0
+        while True:
+            offset, level, logger, line = DEMO_DECISION_SCRIPT[step]
+            at = self._script_t0 + cycle * DEMO_DECISION_CYCLE_S + offset
+            if at > now:
+                break
+            self._line(at, level, logger, line.format(**self._script_values(cycle)))
+            step += 1
+            if step == len(DEMO_DECISION_SCRIPT):
+                cycle, step = cycle + 1, 0
+        self._script_pos = (cycle, step)
+
+    def _run_id(self) -> str:
+        return (time.strftime("%Y%m%d-%H%M%S-demo-", time.localtime(self.stack["started"]))
+                + self.stack["blueprint"])
 
     def _tick(self) -> float:
         now = time.time()
@@ -1612,6 +2271,13 @@ class DemoCockpit(Cockpit):
                 return now
             may = not self.halted and (self.exploring or self.stack["blueprint"] == "moss-nav")
             self.world.step(now, may)
+            self._script_tick(now)
+            for item in [p for p in self._pending if p[0] <= now]:
+                self._pending.remove(item)
+                self._line(*item)
+            if not self._goal_said and not self._pending and self.world.goal_reached:
+                self._goal_said = True
+                self._line(now, "info", "local_planner.py", "Reached goal position, starting final rotation")
         return now
 
     def state(self) -> dict:
@@ -1619,8 +2285,7 @@ class DemoCockpit(Cockpit):
         w = self.world
         running = self.stack["running"]
         up = now - self.stack["started"]
-        stack = ({"running": True, "run_id": time.strftime("%Y%m%d-%H%M%S-demo-", time.localtime(self.stack["started"]))
-                  + self.stack["blueprint"], "blueprint": self.stack["blueprint"], "pid": os.getpid(),
+        stack = ({"running": True, "run_id": self._run_id(), "blueprint": self.stack["blueprint"], "pid": os.getpid(),
                   "started_at": _dt.datetime.fromtimestamp(self.stack["started"], _dt.timezone.utc).isoformat(),
                   "uptime_s": round(up, 1), "log_dir": None} if running else {"running": False})
         silent = 0.0 if running else now - (self.stack_stopped_at or now)
@@ -1697,6 +2362,14 @@ class DemoCockpit(Cockpit):
     def log(self, n: int) -> list[dict]:
         return list(self._log)[-n:]
 
+    def decisions(self, n: int) -> dict:
+        now = self._tick()
+        with self._lock:
+            running = self.stack["running"]
+            # a stopped stack keeps its run's events, as live mode does
+            return decisions_doc(list(self._decisions.events), n, running, running and self.exploring, now,
+                                 self._run_id() if running or self._decisions.events else None)
+
     def preflight(self) -> dict:
         checks = [("stack", "stack: none", ""), ("ports", "QT Py present", "by-id"),
                   ("ports", "C1 lidar present", "by-id"), ("firmware", "telemetry", "qtpy-mdd3a-v3, mode 0 (off)"),
@@ -1726,9 +2399,14 @@ class DemoCockpit(Cockpit):
                 action = body.get("action")
                 if action not in ("start", "stop"):
                     raise ValueError('explore needs "action": "start" or "stop"')
+                was = self.exploring
                 self.exploring = action == "start"
                 self.halted = False if self.exploring else self.halted
                 self._say("info", f"demo: exploration {'started' if self.exploring else 'stopped'}")
+                if self.exploring and not was and self.stack["running"] and self.stack["blueprint"] == "moss-explore":
+                    self._start_script(time.time())
+                elif not self.exploring:
+                    self._stop_script(time.time(), "cmd")
                 return {"ok": True, "sent": "/explore_cmd#std_msgs.Bool" if self.exploring
                         else "/stop_explore_cmd#std_msgs.Bool"}
             if name == "map":
@@ -1744,11 +2422,20 @@ class DemoCockpit(Cockpit):
                 self.halted = False
                 w.goal, w.goal_active, w.goal_reached = (x, y), True, None
                 self._say("info", f"demo: goal ({x:+.2f}, {y:+.2f})")
+                # exploring: the page stops the explorer first and the goal goes out GOAL_AFTER_STOP_S later
+                now = time.time()
+                at = now + GOAL_AFTER_STOP_S if self._script_t0 is not None else now
+                self._stop_script(now, "cmd")
+                self._pending = [(at, "info", "global_planner.py", "Got new goal"),
+                                 (at, "info", "global_planner.py", "Found safe goal.")]
+                self._goal_said = False
                 return {"ok": True, "sent": "/goal_request#geometry_msgs.PoseStamped",
                         "also": ["/stop_explore_cmd#std_msgs.Bool"], "goal": {"x": x, "y": y}}
             if name == "stop":
                 self.exploring, self.halted, w.goal_active = False, True, False
                 self._say("warning", "demo: soft stop")
+                self._stop_script(time.time(), "stop")
+                self._pending, self._goal_said = [], True
                 return {"ok": True, "sent": "/tele_cmd_vel#geometry_msgs.Twist",
                         "also": ["/stop_explore_cmd#std_msgs.Bool", "/stop_movement#std_msgs.Bool"]}
             if name == "episode":
@@ -1762,6 +2449,10 @@ class DemoCockpit(Cockpit):
                 now = time.time()
                 self._launch_action = action
                 self._launch_lines.append(f"=== moss-fly.sh {action}  {time.strftime(_ISO)} === (demo)")
+                if action != "check" and not (action in ("map", "explore") and self.stack["running"]):
+                    self._script_t0, self._pending, self._goal_said = None, [], True
+                    if action != "stop":
+                        self._decisions.clear()        # a new stack: a fresh feed; a stop keeps the last run's
                 if action in ("map", "explore"):
                     if self.stack["running"]:
                         return {"ok": False, "error": "a dimOS stack is already running: stop it first"}
@@ -1871,6 +2562,12 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     n = 40
                 self._json(200, {"lines": self.cockpit.log(max(1, min(n, 500)))})
+            elif path == "/decisions.json":
+                try:
+                    n = int(parse_qs(url.query).get("n", ["40"])[0])
+                except ValueError:
+                    n = 40
+                self._json(200, self.cockpit.decisions(max(1, min(n, DECISIONS_KEEP))))
             elif path == "/preflight.json":
                 self._json(200, self.cockpit.preflight())
             elif path == "/launch.json":
