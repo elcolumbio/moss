@@ -30,6 +30,12 @@ rows, colours and words for the panel. Groups:
                      everything)
   E. the server    - when the cockpit serves /decisions.json (demo mode), its answer goes through
                      the page's functions: one row per event, every kind and word known
+  The idle stop's line (A to E): #idle-note under the chip, a button, hidden at first and
+  dimmed offline; dim, plain or warning colour by tokens; drawn from /state.json "idle" each
+  state, a press posting keepalive; idleView in node (m:ss, the colour by the time left, hidden
+  without a stack the stop applies to or with the rule off), renderIdle on a stub document
+  (disabled at the stop and offline), keepUp showing the count restarting, followLaunch saying
+  the cockpit's note once with its time; the demo server's idle document through idleView
 
 Nothing here needs dimOS, a bus or hardware; D needs node (skipped with a line without it).
 
@@ -168,6 +174,14 @@ check(f"every id app.js reads ($, setText, meter: {len(read_ids)}) exists in ind
       ", ".join(missing))
 check("the map caption's subtitle still carries the command (cap-sub, last_cmd_vel)",
       'setText("cap-sub", sub);' in js and 'sub += (sub ? "  \u00b7  " : "") + "cmd "' in js and 'id="cap-sub"' in html)
+idle_el = re.search(r'<span id="chip" [^>]*>IDLE</span>\s*</div>\s*<button id="idle-note" class="num dim" '
+                    r'type="button" data-live hidden\s+title="[^"]+"></button>', html)
+check("M5 the idle line: #idle-note, a button right under the chip's row in the header (a press keeps the stack up, "
+      "its title says so), hidden until a stack the stop applies to runs, dimmed offline like the other live "
+      "values (data-live)",
+      idle_el is not None and E.get("idle-note", {}).get("tag") == "button"
+      and "Keep the stack up" in E.get("idle-note", {}).get("attrs", {}).get("title", ""),
+      json.dumps(E.get("idle-note")))
 
 # ---------------------------------------------------------------------------
 print("B. the colours")
@@ -195,6 +209,13 @@ check("amber is one token: --ui-caution in tokens.css = the depth camera's dots 
       "the HUD's camera line uses it", rgb is not None and depth is not None
       and rgb == tuple(int(g) for g in depth.groups()) and rgb == (255, 193, 94)
       and "color: var(--ui-caution)" in rule("#hud-cam"), f"{rgb} {depth.groups() if depth else None}")
+check("the idle line's colours are the page's tokens: small text, .dim = --ui-dim, .attn = --ui-attention (the warning)",
+      "font-size: var(--ui-fs-small)" in rule("#idle-note") and re.search(r"^\s*\.dim \{ color: var\(--ui-dim\); \}", html, re.M)
+      and re.search(r"^\s*\.attn \{ color: var\(--ui-attention\); \}", html, re.M) is not None, rule("#idle-note"))
+check("M5 the idle button reads as the line it was (no border, no background, no padding), mint under the pointer "
+      "while it can be pressed",
+      all(s in rule("#idle-note") for s in ("background: none", "border: 0", "padding: 0"))
+      and "color: var(--moss-mint)" in rule("#idle-note:hover:not(:disabled)"), rule("#idle-note"))
 
 # ---------------------------------------------------------------------------
 print("C. the wiring")
@@ -223,6 +244,15 @@ check(f"app.js talks to no other host: no '://', no '//host' literal, every URL 
       and "new WebSocket" not in js and "EventSource" not in js, ", ".join(u for u in urls if not u.startswith("/")))
 check("index.html loads nothing from another host", "://" not in re.sub(r"<svg[\s\S]*?</svg>", "", html)
       and all(u.startswith("/") for u in re.findall(r'(?:src|href)="([^"]+)"', html)))
+check("each state draws the idle line (render -> renderIdle) and follows the launcher first "
+      "(pollState: followLaunch(d.launch, d.stack) before render), no new endpoint",
+      re.search(r"function render\(\) \{[^}]*renderIdle\(\);", js) is not None
+      and re.search(r"followLaunch\(d\.launch, d\.stack\);\n\s*render\(\);", js) is not None
+      and "/idle" not in js)
+check("M5 a press on the idle line posts keepalive (the page's post(), with its header) and draws the answer's idle",
+      '$("idle-note").addEventListener("click", keepUp);' in js
+      and re.search(r'function keepUp\(\) \{\s*return post\("keepalive", \{\}\)', js) is not None
+      and "S.state.idle = d.idle; renderIdle();" in js)
 
 # ---------------------------------------------------------------------------
 print("D. in node")
@@ -667,6 +697,119 @@ pollDecisions().then(function () {
           and idl.get("word") == "IDLE" and idl.get("cls") == "dim" and idl.get("detail") == "No stack running."
           and "No stack, no decisions." in idl.get("feed", ""), json.dumps([mi, idl])[:300])
 
+    # The idle line and the launcher's note: idleView, renderIdle and followLaunch, the page's own code.
+    IDLE_FNS = ("pad2", "clock", "IDLE_WARN_S", "$", "setText", "stack", "idleView", "renderIdle", "followLaunch",
+                "hhmm", "keepUp", "answer")
+    idle_defs = {n: js_def(n) for n in IDLE_FNS}
+    idle_js = "\n".join(idle_defs.values()) + r"""
+var els = { "idle-note": { textContent: "", className: "num dim", hidden: true, disabled: false } };
+var document = { getElementById: function (id) { return els[id] || null; } };
+var S = { state: null, noteTs: undefined, launchBusy: false, online: true };
+var says = [], watched = 0, posted = [];
+function say(t, bad) { says.push([t, !!bad]); }
+function watchLaunch() { watched++; }
+function post(name, body) {
+  posted.push(name);
+  return Promise.resolve({ ok: true, idle: { enabled: true, idle_s: 0.2, stop_in_s: 299.8, limit_s: 300,
+                                             last_source: "keepalive", blind: null } });
+}
+var MOSS = { running: true, blueprint: "moss-explore" };
+function I(idle, left, lim) { return { enabled: true, idle_s: idle, stop_in_s: left, limit_s: lim === undefined ? 300 : lim }; }
+function drawn(state) {
+  S.state = state; renderIdle(); var e = els["idle-note"];
+  return { text: e.textContent, cls: e.className, hidden: e.hidden, disabled: e.disabled };
+}
+var out = {
+  sample: idleView(I(200, 100), MOSS),
+  early: idleView(I(20, 280), MOSS),
+  close: idleView(I(250, 50), MOSS),
+  due: idleView(I(300, 0), MOSS),
+  hour: idleView(I(3725, 3475, 7200), MOSS),
+  off: idleView({ enabled: false, idle_s: 50, stop_in_s: null, limit_s: 0 }, MOSS),
+  foreign: idleView({ enabled: true, idle_s: 50, stop_in_s: null, limit_s: 300 }, { running: true, blueprint: "explore" }),
+  down: idleView(I(200, 100), { running: false }),
+  none: [idleView(null, MOSS), idleView(I(200, 100), null), idleView({ enabled: true }, MOSS)],
+  shown: drawn({ stack: MOSS, idle: I(200, 100) }),
+  warn: drawn({ stack: MOSS, idle: I(250, 50) }),
+  hidden: drawn({ stack: { running: false }, idle: { enabled: true, idle_s: null, stop_in_s: null, limit_s: 300 } }),
+  dueDrawn: drawn({ stack: MOSS, idle: I(300, 0) })
+};
+S.online = false; out.offline = drawn({ stack: MOSS, idle: I(200, 100) }); S.online = true;
+var N1 = { text: "stopping the stack to preserve battery (idle 5 min)", ts: 1000 };
+var N2 = { text: "stopping the stack to preserve battery (idle 5 min)", ts: 2000 };
+// a page opened after the idle stop: the stack is down, the note says why (once)
+followLaunch({ running: false, note: N1 }, { running: false });
+followLaunch({ running: false, note: N1 }, { running: false });
+out.downFirst = { says: says.slice(), watched: watched };
+// a page opened while a later stack runs: the old note is not news; the next stop is
+says = []; watched = 0; S.noteTs = undefined;
+followLaunch({ running: false, note: N1 }, { running: true });
+out.upFirst = { says: says.slice(), watched: watched };
+followLaunch({ running: true, note: N2 }, { running: true });
+out.upNext = { says: says.slice(), watched: watched, busy: S.launchBusy };
+// a launch the page did not send, with no note (another page): followed, nothing said
+says = []; watched = 0; S.noteTs = null; S.launchBusy = false;
+followLaunch({ running: true, note: null }, { running: true });
+out.foreignLaunch = { says: says.slice(), watched: watched, busy: S.launchBusy };
+// a press on the idle line, 250 s idle: the answer's idle is drawn at once
+says = []; S.state = { stack: MOSS, idle: I(250, 50) };
+keepUp().then(function () {
+  var e = els["idle-note"];
+  out.keep = { posted: posted.slice(), says: says.slice(), text: e.textContent, cls: e.className, disabled: e.disabled };
+  console.log(JSON.stringify(out));
+});
+"""
+    r = subprocess.run([node, "-e", idle_js], capture_output=True, text=True, timeout=30)
+    try:
+        IJ = json.loads(r.stdout)
+    except ValueError:
+        IJ = {}
+        print("  node said:", r.stderr.strip()[:600])
+    check("the idle line's code is found in app.js (idleView, renderIdle, followLaunch, IDLE_WARN_S, clock)",
+          all(idle_defs.values()), ", ".join(n for n, d in idle_defs.items() if not d))
+    KEEP = "  \u00b7  keep the stack up"
+    check("idle line: idle 200 s of 300 -> 'idle 3:20, stops at 5:00 to preserve battery  \u00b7  keep the stack up', "
+          "plain (past half the limit), a press can keep the stack up",
+          IJ.get("sample") == {"text": "idle 3:20, stops at 5:00 to preserve battery" + KEEP, "cls": "", "keep": True},
+          json.dumps(IJ.get("sample")))
+    check("idle line: 20 s idle -> dim; 50 s left (under 60 s) -> the warning colour (attn); at the stop -> "
+          "'idle 5:00: stopping the stack to preserve battery', attn, nothing left to keep; a 2 h limit -> "
+          "'idle 1:02:05, stops at 2:00:00'",
+          (IJ.get("early") or {}).get("cls") == "dim"
+          and IJ.get("early", {}).get("text") == "idle 0:20, stops at 5:00 to preserve battery" + KEEP
+          and (IJ.get("close") or {}).get("cls") == "attn"
+          and IJ.get("due") == {"text": "idle 5:00: stopping the stack to preserve battery", "cls": "attn", "keep": False}
+          and (IJ.get("hour") or {}).get("text") == "idle 1:02:05, stops at 2:00:00 to preserve battery" + KEEP,
+          json.dumps({k: IJ.get(k) for k in ("early", "close", "due", "hour")}))
+    check("idle line hidden (null): the rule off, a stack that is not MOSS (no stop_in_s), no stack, no idle document",
+          IJ.get("off") is None and IJ.get("foreign") is None and IJ.get("down") is None
+          and IJ.get("none") == [None, None, None], json.dumps({k: IJ.get(k) for k in ("off", "foreign", "down", "none")}))
+    check("renderIdle on a stub document: shown with its text and class 'num' (+ attn under 60 s), a button that can be "
+          "pressed; hidden with no stack; disabled at the stop and while the cockpit is offline",
+          IJ.get("shown") == {"text": "idle 3:20, stops at 5:00 to preserve battery" + KEEP, "cls": "num", "hidden": False,
+                              "disabled": False}
+          and IJ.get("warn") == {"text": "idle 4:10, stops at 5:00 to preserve battery" + KEEP, "cls": "num attn",
+                                 "hidden": False, "disabled": False}
+          and (IJ.get("hidden") or {}).get("hidden") is True and (IJ.get("dueDrawn") or {}).get("disabled") is True
+          and (IJ.get("offline") or {}).get("disabled") is True,
+          json.dumps({k: IJ.get(k) for k in ("shown", "warn", "hidden", "dueDrawn", "offline")}))
+    check("M5 keepUp (a press, 250 s idle): posts keepalive, says the count restarted, and the line shows the answer's "
+          "idle at once: 'idle 0:00, stops at 5:00', dim, still a button",
+          IJ.get("keep") == {"posted": ["keepalive"], "says": [["Idle count restarted: the stack stays up.", False]],
+                             "text": "idle 0:00, stops at 5:00 to preserve battery" + KEEP, "cls": "num dim",
+                             "disabled": False}, json.dumps(IJ.get("keep")))
+    msg5 = "stopping the stack to preserve battery (idle 5 min)"
+    at1, at2 = (datetime.fromtimestamp(t).strftime("%H:%M") for t in (1000, 2000))
+    check("m8 the cockpit's note on the status line with its time ('..., stopped at HH:MM', this browser's clock): a page "
+          "opened after the idle stop (no stack) says it once, in the colour that stays, and fetches the launch lines; "
+          "opened under a later stack, the old note is not said, the next stop is; a launch with no note is followed "
+          "(busy) and says nothing",
+          IJ.get("downFirst") == {"says": [[msg5 + ", stopped at " + at1, True]], "watched": 1}
+          and IJ.get("upFirst") == {"says": [], "watched": 0}
+          and IJ.get("upNext") == {"says": [[msg5 + ", stopped at " + at2, True]], "watched": 1, "busy": True}
+          and IJ.get("foreignLaunch") == {"says": [], "watched": 1, "busy": True},
+          json.dumps({k: IJ.get(k) for k in ("downFirst", "upFirst", "upNext", "foreignLaunch")}) + r.stderr[:200])
+
 # ---------------------------------------------------------------------------
 print("E. the server's answer through the page")
 try:
@@ -716,6 +859,25 @@ console.log(JSON.stringify({ n: rows.length, labels: rows.map(function (r) { ret
     elif ok_shape:
         print("  -- skipped, no node here: the demo answer through the page's functions")
 if server is not None:
+    with urllib.request.urlopen(base + "/state.json", timeout=10) as resp:
+        sd = json.loads(resp.read())
+    idle_doc = sd.get("idle")
+    check("demo /state.json carries idle {enabled, idle_s, stop_in_s, limit_s, last_source, blind} next to stack",
+          isinstance(idle_doc, dict)
+          and set(idle_doc) == {"enabled", "idle_s", "stop_in_s", "limit_s", "last_source", "blind"}
+          and "stack" in sd, json.dumps(idle_doc))
+    if node is not None and isinstance(idle_doc, dict):
+        idle_feed = "\n".join(js_def(n) for n in ("pad2", "clock", "IDLE_WARN_S", "idleView")) \
+            + "\nconsole.log(JSON.stringify(idleView(" + json.dumps(idle_doc) + ", " + json.dumps(sd.get("stack")) + ")));"
+        r = subprocess.run([node, "-e", idle_feed], capture_output=True, text=True, timeout=30)
+        try:
+            iv = json.loads(r.stdout)
+        except ValueError:
+            iv = None
+        check("the page draws the demo's idle document: 'idle m:ss, stops at 5:00 to preserve battery  \u00b7  keep the "
+              "stack up'", isinstance(iv, dict) and re.fullmatch(r"idle \d+:\d\d, stops at 5:00 to preserve battery  "
+                                                                 r"\u00b7  keep the stack up", iv.get("text", ""))
+              is not None, json.dumps(iv) + r.stderr[:200])
     server.shutdown()
 
 # The stack's own decision lines (one per kind, as a real exploration logs them) through the

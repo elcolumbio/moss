@@ -22,6 +22,14 @@ last_launch.log, written by the launcher it starts). It NEVER
 opens a serial port: battery and arming state come from /base_telemetry, which
 the stack's coordinator publishes.
 
+It stops an idle moss-nav or moss-explore stack by itself: no commanded track, no
+non-zero cmd_vel, no explore order, no goal, no episode, no move of the pose (2 cm or
+2 deg over 10 s) and no command from the page for MOSS_IDLE_STOP_S seconds (default
+300, at least 30, 0 = never) runs `tools/moss-fly.sh stop` with the message
+"stopping the stack to preserve battery". A cockpit that hears nothing on the bus,
+or a stack on another bus, is never stopped; moss-gamepad and the other blueprints
+stay up.
+
 Endpoints (all Cache-Control: no-store; a failing request never kills the server):
     GET  /  /static/<file>      the page and its assets (tools/moss_cockpit/)
     GET  /state.json            stack, pose, topic rates, base, nav, recording, system
@@ -46,6 +54,8 @@ Endpoints (all Cache-Control: no-store; a failing request never kills the server
                                 explore and goal only on a moss-* stack, else 409;
                                 bus commands only on an LCM run, else 503: the stack's own
                                 DIMOS_TRANSPORT, then TRANSPORT, as dimOS reads them)
+    POST /cmd/keepalive         the idle stop's count starts again: the stack stays up (same
+                                header; the answer carries /state.json's "idle")
 
 Standard library + numpy (+ lcm and dimos_lcm in live mode). No build step,
 no CDN: the field has no internet.
@@ -163,6 +173,21 @@ LAUNCH_ENV_DROP = ("EXPLORE", "MOCK", "MOSS_MOCK_BUS")   # per-run switches of a
 GOAL_AFTER_STOP_S = 3.0       # the explorer's own 'stay here' goal lands ~2 s after its stop: ours goes after
 MJPEG_WRITE_TIMEOUT_S = 5.0   # a viewer that vanished without FIN/RST frees its slot after this
 CMD_HEADER = ("X-Requested-With", "moss-cockpit")   # every POST /cmd/* carries it: a cross-site form cannot
+IDLE_STOP_DEFAULT_S = 300.0   # MOSS_IDLE_STOP_S unset: a MOSS stack idle this long is stopped (0 = never)
+IDLE_STOP_MIN_S = 30.0        # a shorter limit is refused (the default applies): it would stop a stack in use
+IDLE_STOP_BLUEPRINTS = ("moss-nav", "moss-explore")   # the stacks it stops: odometry + costmap load the
+                                                      # board; moss-gamepad and the others stay up
+IDLE_TICK_S = 1.0             # the idle watchdog looks once per second, from the bus tap's loop
+IDLE_MOVE_M = 0.02            # the pose moved more than this over IDLE_WINDOW_S: activity
+IDLE_TURN_RAD = math.radians(2.0)   # ... or turned more than this
+IDLE_WINDOW_S = 10.0          # the pose now against the pose this long ago: drift at rest never adds up
+IDLE_DEAF_S = 10.0            # a MOSS stack up and nothing heard on any tapped channel this long: deaf
+IDLE_FIRMWARE_AGE_S = 1.0     # telemetry whose firmware line is older: the coordinator repeating its last one
+IDLE_BUSY_MAX_S = 120.0       # a launcher busy longer than this no longer holds the stop
+IDLE_STOP_TEXT = "stopping the stack to preserve battery"
+IDLE_KEYS = ("enabled", "idle_s", "stop_in_s", "limit_s", "last_source", "blind")   # /state.json "idle"
+IDLE_SOURCES = ("start", "telemetry", "cmd_vel", "odom", "explore_cmd", "goal_request", "episode",
+                "post", "keepalive", "demo")   # idle.last_source: what restarted the count last
 
 # 3S pack: 12.6 V full, the BMS cuts at 10.2 V (linear, clamped; a voltage
 # gauge, not a coulomb counter).
@@ -367,6 +392,11 @@ def decode_bool(raw: bytes) -> bool:
 
 def decode_string(raw: bytes) -> str:
     return str(LcmString.lcm_decode(raw).data)
+
+
+def decode_json(raw: bytes):
+    """A String message that carries JSON (the base telemetry), parsed."""
+    return json.loads(decode_string(raw))
 
 
 # --- messages to publish ----------------------------------------------------------
@@ -604,6 +634,16 @@ def _parse_iso(text: str) -> float | None:
         return None
 
 
+def _parse_utc(text) -> float | None:
+    """A registry time (started_at) as epoch seconds; one written without a timezone is UTC,
+    as dimOS writes it, never this machine's local time."""
+    try:
+        t = _dt.datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return (t if t.tzinfo is not None else t.replace(tzinfo=_dt.timezone.utc)).timestamp()
+
+
 def stack_status(now: float | None = None) -> dict:
     """The live run from dimOS's registry (dead pids skipped, never `dimos status`:
     every dimOS CLI call writes a log file and it would also prune the registry)."""
@@ -618,7 +658,7 @@ def stack_status(now: float | None = None) -> dict:
             continue
         if not _pid_alive(pid):
             continue
-        started = _parse_iso(entry.get("started_at"))
+        started = _parse_utc(entry.get("started_at"))
         if best is None or (started or 0) > (best[0] or 0):
             best = (started, pid, entry)
     if best is None:
@@ -630,6 +670,23 @@ def stack_status(now: float | None = None) -> dict:
             "started_at": entry.get("started_at"),
             "uptime_s": round(now - started, 1) if started else None,
             "log_dir": entry.get("log_dir")}
+
+
+def proc_cmdline(pid) -> list[bytes] | None:
+    """The arguments process `pid` runs with (/proc/<pid>/cmdline), None when it is gone."""
+    try:
+        with open(f"/proc/{int(pid)}/cmdline", "rb") as fh:
+            return fh.read().split(b"\0")
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def is_dimos_run(argv) -> bool:
+    """argv (a /proc cmdline) is a `dimos run`: an argument ending in bin/dimos, then "run" among
+    the arguments after it. tools/moss-fly.sh's STACK_RE ('[b]in/dimos( [^ ]+)* run( |$)') reads
+    a command line the same way."""
+    argv = list(argv or [])
+    return any(a.endswith(b"bin/dimos") and b"run" in argv[i + 1:] for i, a in enumerate(argv))
 
 
 def _dimos_run_pid() -> int | None:
@@ -648,7 +705,7 @@ def _dimos_run_pid() -> int | None:
                 argv = fh.read().split(b"\0")
         except OSError:
             continue
-        if any(a.endswith(b"bin/dimos") for a in argv) and b"run" in argv:
+        if is_dimos_run(argv):
             return int(pid)
     return None
 
@@ -669,7 +726,8 @@ def proc_environ(pid) -> dict | None:
     return env
 
 
-BUS_VARS = ("DIMOS_TRANSPORT", "TRANSPORT")   # what dimOS picks its bus from (explore_ctl reads them)
+BUS_VARS = ("DIMOS_TRANSPORT", "TRANSPORT",   # what dimOS picks its bus from (explore_ctl reads them)
+            "LCM_DEFAULT_URL")                # and the LCM group: the cockpit and the stack share all three
 
 
 def bus_env(pid) -> tuple[dict, str]:
@@ -684,6 +742,107 @@ def bus_env(pid) -> tuple[dict, str]:
         env = os.environ
         whose = "the cockpit's own environment" + (", the stack's is unreadable" if pid else "")
     return {k: env[k] for k in BUS_VARS if k in env}, whose
+
+
+def bus_transport(env) -> str:
+    """The bus a stack with environment `env` runs on, in dimOS's order (explore_ctl's rule)."""
+    try:
+        import explore_ctl
+        return explore_ctl.transport(env)
+    except Exception:  # noqa: BLE001 - no dimos_lcm: the same order as explore_ctl.transport
+        return (env.get("DIMOS_TRANSPORT") or env.get("TRANSPORT") or "lcm").strip().lower()
+
+
+# --- the idle stop: a stack nobody uses drains the battery ------------------------------
+#
+# With the explore stack up and the rover still, the lidar odometry, the costmap and the
+# camera keep one core of the board at 100 %. The cockpit stops a MOSS stack that saw no
+# activity for MOSS_IDLE_STOP_S seconds, as the page's Stop stack button does.
+
+def idle_limit_s(env=None) -> float:
+    """MOSS_IDLE_STOP_S from the cockpit's environment (the service's), read once at start:
+    the seconds a MOSS stack may stay idle, 0 = never stopped. Unset: the default; not a
+    number of seconds >= 0, or under IDLE_STOP_MIN_S: the default, and the cockpit says so."""
+    env = os.environ if env is None else env
+    raw = (env.get("MOSS_IDLE_STOP_S") or "").strip()
+    if not raw:
+        return IDLE_STOP_DEFAULT_S
+    try:
+        value = float(raw)
+    except ValueError:
+        value = -1.0
+    if not (math.isfinite(value) and value >= 0):
+        print(f"moss_cockpit: MOSS_IDLE_STOP_S={raw!r} is not a number of seconds >= 0: "
+              f"{IDLE_STOP_DEFAULT_S:g} s", file=sys.stderr, flush=True)
+        return IDLE_STOP_DEFAULT_S
+    if 0 < value < IDLE_STOP_MIN_S:
+        print(f"moss_cockpit: MOSS_IDLE_STOP_S={raw!r} is under {IDLE_STOP_MIN_S:g} s (0 turns the stop off): "
+              f"{IDLE_STOP_DEFAULT_S:g} s", file=sys.stderr, flush=True)
+        return IDLE_STOP_DEFAULT_S
+    return value
+
+
+def is_moss_stack(stack) -> bool:
+    """A running stack whose blueprint is a MOSS one: the only kind the cockpit commands or stops."""
+    return bool(stack and stack.get("running")) and str(stack.get("blueprint") or "").startswith("moss")
+
+
+def idle_stoppable(stack) -> bool:
+    """A running stack the idle stop may stop: moss-nav or moss-explore, whose lidar odometry and
+    costmap keep the board busy. moss-gamepad stays up with the pad on the table, as
+    tools/moss-teleop.sh promises, and so does any other blueprint."""
+    return is_moss_stack(stack) and str(stack.get("blueprint") or "") in IDLE_STOP_BLUEPRINTS
+
+
+_FROM_STACK = object()      # idle_state: the start is the stack's started_at
+
+
+def idle_state(stack, activity_ts, now: float, limit_s: float, started=_FROM_STACK) -> dict:
+    """The idle rule, pure. idle_s: seconds since the last activity, or since the stack's start
+    when nothing happened since (activity before the start never counts); None with no running
+    stack or no time to count from. `started`: the stack's start on the clock of `now` and
+    `activity_ts` (the cockpit passes the monotonic clock); left out, the stack's started_at
+    as epoch seconds (UTC when it has no timezone). stop_in_s: limit_s - idle_s floored at 0,
+    for a stack the stop may stop (idle_stoppable) with the rule on, else None. due: the rule
+    is on (limit_s > 0), the stack is one of those and idle_s >= limit_s."""
+    enabled = limit_s > 0
+    running = bool(stack and stack.get("running"))
+    if started is _FROM_STACK:
+        started = _parse_utc(stack.get("started_at")) if running else None
+    marks = [t for t in (activity_ts, started)
+             if isinstance(t, (int, float)) and not isinstance(t, bool) and math.isfinite(t)]
+    idle = max(0.0, now - max(marks)) if running and marks else None
+    counted = enabled and idle is not None and idle_stoppable(stack)
+    return {"enabled": enabled, "idle_s": None if idle is None else round(idle, 1),
+            "stop_in_s": round(max(0.0, limit_s - idle), 1) if counted else None,
+            "limit_s": limit_s, "due": counted and idle >= limit_s}
+
+
+def idle_stop_message(limit_s: float) -> str:
+    """The line the cockpit says when it stops an idle stack: the limit in minutes, in seconds under one."""
+    span = f"{limit_s:g} s" if limit_s < 60 else f"{round(limit_s / 60.0, 1):g} min"
+    return f"{IDLE_STOP_TEXT} (idle {span})"
+
+
+def motors_commanded(output_pct) -> bool:
+    """Telemetry output_pct [left, right] with a track commanded (anything but [0, 0]): the pad,
+    the planner and the explorer all end there."""
+    return isinstance(output_pct, (list, tuple)) and any(
+        isinstance(v, (int, float)) and not isinstance(v, bool) and v != 0 for v in output_pct)
+
+
+def telemetry_fresh(t: dict) -> bool:
+    """A telemetry line whose firmware line is at most IDLE_FIRMWARE_AGE_S old. With the board
+    lost, the coordinator keeps publishing its last line (firmware_age_s grows): its output_pct
+    is old news. No age at all counts as fresh: a commanded track is never missed for it."""
+    age = t.get("firmware_age_s")
+    return not (isinstance(age, (int, float)) and not isinstance(age, bool) and age > IDLE_FIRMWARE_AGE_S)
+
+
+def pose_moved(ref: dict, pose: dict, move_m: float = IDLE_MOVE_M, turn_rad: float = IDLE_TURN_RAD) -> bool:
+    """The pose is more than move_m from ref, or turned more than turn_rad from it."""
+    turned = abs(math.remainder(pose["yaw"] - ref["yaw"], math.tau))
+    return math.hypot(pose["x"] - ref["x"], pose["y"] - ref["y"]) > move_m or turned > turn_rad
 
 
 def log_tail(log_dir: str | None, n: int) -> list[dict]:
@@ -1331,6 +1490,7 @@ class Launcher:
         self._lock = threading.Lock()
         self._procs: list[tuple[str, float, subprocess.Popen]] = []
         self.last: dict = {}
+        self.note: dict | None = None    # {text, ts}: why the cockpit itself ran the last action
 
     def log_path(self) -> str:
         return os.path.join(state_dir(), "last_launch.log")
@@ -1358,7 +1518,9 @@ class Launcher:
                 pass
             fh.write(f"=== moss-fly.sh {action} (pid {proc.pid}) cancelled by stop: {how} ===\n".encode())
 
-    def start(self, action: str) -> dict:
+    def start(self, action: str, note: str | None = None) -> dict:
+        """`note`: why the cockpit runs it by itself (the idle stop): a line in the log above the
+        action's header, and status()'s "note" until the next start."""
         with self._lock:
             busy = self._running()
             if busy and action != "stop":
@@ -1372,6 +1534,8 @@ class Launcher:
             with open(path, "ab" if busy else "wb") as fh:
                 if action == "stop":
                     self._cancel(fh)
+                if note:
+                    fh.write(f"=== {note}  {time.strftime(_ISO)} ===\n".encode())
                 fh.write(f"=== moss-fly.sh {action}  {time.strftime(_ISO)} ===\n".encode())
                 fh.flush()
                 proc = subprocess.Popen(["bash", self.script, action], cwd=REPO_DIR, env=env,
@@ -1379,6 +1543,7 @@ class Launcher:
                                         start_new_session=True)   # its own process group: Stop can end it
             self._procs = self._running() + [(action, time.time(), proc)]
             self.last = {"action": action, "started_at": time.time(), "pid": proc.pid}
+            self.note = {"text": note, "ts": time.time()} if note else None
             return {"ok": True, "sent": f"moss-fly.sh {action}", "pid": proc.pid}
 
     def status(self, lines: bool = True) -> dict:
@@ -1386,8 +1551,9 @@ class Launcher:
             running = self._running()
             last = self._procs[-1] if self._procs else None
             rc = last[2].poll() if last else None
+            note = self.note
         head = {"running": bool(running), "action": last[0] if last else None,
-                "started_at": last[1] if last else None, "returncode": rc}
+                "started_at": last[1] if last else None, "returncode": rc, "note": note}
         if not lines:
             return head
         try:
@@ -1459,6 +1625,12 @@ class BusCache:
         hz = (len(recent) - 1) / (recent[-1] - recent[0]) if len(recent) >= 2 and recent[-1] > recent[0] else 0.0
         return {"age_s": None if mono is None else round(now - mono, 2), "hz": round(hz, 1)}
 
+    def last_arrival(self) -> float | None:
+        """The monotonic time of the newest message on any tapped channel, None before the first."""
+        with self._lock:
+            arrivals = [t.mono for t in self._topics.values() if t.mono is not None]
+        return max(arrivals) if arrivals else None
+
     def decoded(self, name: str, fn):
         """fn(raw) for the latest message of `name`, computed once per arrival.
         Returns (value, mono) or (None, None); a decode error caches None."""
@@ -1493,6 +1665,74 @@ class Cockpit:
         self._cam_lock = threading.Lock()
         self._cam_clients = {cam: 0 for cam in CAMERAS}
         self.started = time.time()
+        self.idle_limit_s = idle_limit_s()
+        # The idle count runs on the monotonic clock: a clock step never stops a stack nor holds
+        # one. The cockpit's own start counts as activity: a cockpit restarted under a running
+        # stack gives it the whole limit, it never stops it at once for time it did not see.
+        self.activity_mono = time.monotonic()
+        self.activity_source = "start"
+        self._idle_lock = threading.Lock()
+        self._idle_stopped = None                 # the run the idle stop stopped: never twice
+        self._idle_start = (None, None)           # (the run, its start on the monotonic clock): converted once
+        self._idle_said: set = set()              # (run, what) journal lines already said for a run
+
+    def note_activity(self, source: str, mono: float | None = None) -> None:
+        """Something happened (`source`, one of IDLE_SOURCES) at `mono` (the monotonic clock, now by
+        default): the idle count restarts from there."""
+        mono = time.monotonic() if mono is None else mono
+        with self._idle_lock:
+            if mono >= self.activity_mono:
+                self.activity_mono, self.activity_source = mono, source
+
+    def _run_start_mono(self, stack: dict) -> float | None:
+        """The stack's started_at (wall clock, UTC) on the monotonic clock, converted once per run."""
+        if not (stack and stack.get("running")):
+            return None
+        key = (stack.get("run_id"), stack.get("pid"), stack.get("started_at"))
+        if self._idle_start[0] != key:
+            t = _parse_utc(stack.get("started_at"))
+            self._idle_start = (key, None if t is None else time.monotonic() - (time.time() - t))
+        return self._idle_start[1]
+
+    def _idle_rule(self, stack: dict) -> dict:
+        """idle_state on the monotonic clock, plus "source": what restarted the count last."""
+        started = self._run_start_mono(stack)
+        with self._idle_lock:
+            act, source = self.activity_mono, self.activity_source
+        st = idle_state(stack, act, time.monotonic(), self.idle_limit_s, started=started)
+        st["source"] = "start" if started is not None and started > act else source
+        return st
+
+    def _idle_blind(self, stack: dict) -> str | None:
+        """Why this cockpit cannot see the stack's activity, or None. A blind cockpit never stops a stack."""
+        return None
+
+    def idle_doc(self, stack: dict) -> dict:
+        """/state.json "idle": {enabled, idle_s, stop_in_s, limit_s, last_source, blind}. last_source:
+        what restarted the count last (IDLE_SOURCES; "start" = the stack's or the cockpit's start);
+        blind: why the cockpit cannot see the run, and then nothing is counted (enabled false)."""
+        st = self._idle_rule(stack)
+        blind = self._idle_blind(stack)
+        if blind:
+            return {"enabled": False, "idle_s": None, "stop_in_s": None, "limit_s": self.idle_limit_s,
+                    "last_source": st["source"], "blind": blind}
+        return {"enabled": st["enabled"], "idle_s": st["idle_s"], "stop_in_s": st["stop_in_s"],
+                "limit_s": st["limit_s"], "last_source": st["source"], "blind": None}
+
+    def keepalive(self, stack: dict) -> dict:
+        """POST /cmd/keepalive: the operator keeps the stack up, the idle count starts again."""
+        self.note_activity("keepalive")
+        return {"ok": True, "idle": self.idle_doc(stack)}
+
+    def _say_once(self, run, what: str, level: str, event: str) -> None:
+        """A journal line said once per run: a held stop says why without repeating it every second."""
+        if (run, what) not in self._idle_said:
+            self._idle_said.add((run, what))
+            self._say(level, event)
+
+    def _say(self, level: str, event: str) -> None:
+        """The cockpit's own message line: its standard output, the service's journal."""
+        print(f"moss_cockpit: {level}: {event}", flush=True)
 
     @property
     def camera_clients(self) -> int:
@@ -1572,6 +1812,11 @@ class LiveCockpit(Cockpit):
         self._goal_lock = threading.Lock()
         self._goal_gen = 0                      # a stop, an explore or a newer goal cancels a queued goal
         self._feed = DecisionFeed()             # the decisions in the running stack's main.jsonl
+        self.listening = False                  # the bus tap is subscribed: the idle watchdog sees the run
+        self._idle_next = 0.0                   # monotonic time of the watchdog's next look
+        self._idle_seen: dict = {}              # topic -> arrival of the last message the watchdog read
+        self._idle_run = None                   # (run_id, pid) the watchdog's pose samples belong to
+        self._idle_poses: deque = deque(maxlen=64)   # (arrival, pose) per look: the last IDLE_WINDOW_S and one older
 
     # the listener ------------------------------------------------------------
     def start_listener(self) -> None:
@@ -1589,6 +1834,7 @@ class LiveCockpit(Cockpit):
                     lc.subscribe(ch, self._on_message)
                 image_subs = {cam: None for cam in CAMERAS}
                 self.bus_error = None
+                self.listening = True
                 while True:
                     for cam, (_, channel) in CAMERAS.items():
                         want = self._cam_clients[cam] > 0
@@ -1598,7 +1844,14 @@ class LiveCockpit(Cockpit):
                             lc.unsubscribe(image_subs[cam])
                             image_subs[cam] = None
                     lc.handle_timeout(LCM_HANDLE_MS)
+                    if time.monotonic() >= self._idle_next:
+                        self._idle_next = time.monotonic() + IDLE_TICK_S
+                        try:
+                            self.idle_tick()
+                        except Exception as exc:  # noqa: BLE001 - the watchdog never takes the bus tap down
+                            print(f"moss_cockpit: idle watchdog: {exc!r}", file=sys.stderr, flush=True)
             except Exception as exc:  # noqa: BLE001 - multicast not up yet, etc.: retry
+                self.listening = False
                 self.bus_error = f"{type(exc).__name__}: {exc}"
                 time.sleep(3.0)
 
@@ -1617,7 +1870,7 @@ class LiveCockpit(Cockpit):
         return self._pose(time.monotonic())
 
     def _base(self, now: float) -> dict | None:
-        t, mono = self.bus.decoded("base_telemetry", lambda raw: json.loads(decode_string(raw)))
+        t, mono = self.bus.decoded("base_telemetry", decode_json)
         if not isinstance(t, dict):
             return None
         return base_view(t, now - mono)
@@ -1692,7 +1945,7 @@ class LiveCockpit(Cockpit):
         """The running stack if it is a MOSS one. Another dimOS stack may share the
         computer and the bus: it never takes a goal or an explore_cmd from this page."""
         st = stack_status()
-        return st if st.get("running") and str(st.get("blueprint") or "").startswith("moss") else None
+        return st if is_moss_stack(st) else None
 
     def state(self) -> dict:
         now = time.monotonic()
@@ -1707,14 +1960,12 @@ class LiveCockpit(Cockpit):
         if not stack["running"]:
             self._close_orphan_episode()
         env, _ = bus_env(stack.get("pid") if stack["running"] else None)
-        try:
-            import explore_ctl
-            transport = explore_ctl.transport(env)
-        except Exception:  # noqa: BLE001 - no dimos_lcm: the same order as explore_ctl.transport
-            transport = (env.get("DIMOS_TRANSPORT") or env.get("TRANSPORT") or "lcm").strip().lower()
+        transport = bus_transport(env)
+        ts = time.time()
         return {
-            "ts": time.time(), "mode": self.mode,
+            "ts": ts, "mode": self.mode,
             "stack": stack,
+            "idle": self.idle_doc(stack),
             "pose": self._pose(now),
             "topics": {name: self.bus.stats(name, now) for name in STATE_TOPICS},
             "base": self._base(now),
@@ -1793,6 +2044,120 @@ class LiveCockpit(Cockpit):
     def preflight(self) -> dict:
         return preflight_doc()
 
+    # the idle stop -----------------------------------------------------------
+    def _idle_blind(self, stack: dict) -> str | None:
+        if not (self.listening and HAVE_MSGS):
+            return "the cockpit does not listen to the bus"
+        if not stack.get("running"):
+            return None
+        env, _ = bus_env(stack.get("pid"))
+        if bus_transport(env) != "lcm":
+            return "the stack is not on LCM, the bus the cockpit listens to"
+        if (env.get("LCM_DEFAULT_URL") or "") != (os.environ.get("LCM_DEFAULT_URL") or ""):
+            return "the stack's LCM_DEFAULT_URL is not the cockpit's: another LCM bus"
+        if is_moss_stack(stack):
+            argv = proc_cmdline(stack.get("pid"))
+            if argv is None or not is_dimos_run(argv):
+                return f"pid {stack.get('pid')} is not a dimos run (a stale registry entry)"
+            heard = self.bus.last_arrival()
+            if heard is None or time.monotonic() - heard > IDLE_DEAF_S:
+                # every MOSS stack publishes base_telemetry at 2 Hz: silence here means this
+                # cockpit is deaf (another multicast route, a firewall), not that the rover is idle
+                return f"nothing heard on the bus for {IDLE_DEAF_S:g} s"
+        return None
+
+    def idle_tick(self) -> dict | None:
+        """The watchdog, once a second from the bus tap's loop: note what the bus shows happened
+        since its last look, then stop a moss-nav or moss-explore stack idle for idle_limit_s,
+        once per run. Returns the launcher's answer when it asked for a stop, else None."""
+        stack = stack_status()
+        self._episode_from_bus()                   # a marker from a script opens the episode too
+        if self.episode is not None and not stack.get("running") and _dimos_run_pid() is None:
+            self._close_orphan_episode()           # no stack left to record it: it holds nothing
+        self._idle_scan(stack)
+        return self._idle_fire(stack)
+
+    def _idle_scan(self, stack: dict) -> None:
+        """Activity on the bus since the last look, each at its arrival (monotonic). Only messages
+        that arrived since then count: a planner that went silent on a non-zero twist is not driving."""
+        run = (stack.get("run_id"), stack.get("pid")) if stack.get("running") else None
+        if run != self._idle_run:
+            self._idle_run = run
+            self._idle_poses.clear()                       # a new run: its odometry starts a new frame
+
+        def new(name, fn):
+            value, m = self.bus.decoded(name, fn)
+            if m is None or m == self._idle_seen.get(name):
+                return None, None
+            self._idle_seen[name] = m
+            return value, m
+
+        t, at = new("base_telemetry", decode_json)
+        if isinstance(t, dict) and telemetry_fresh(t) and motors_commanded(t.get("output_pct")):
+            self.note_activity("telemetry", at)
+        tw, at = new("cmd_vel", decode_twist)
+        if tw is not None and (tw[0] != 0.0 or tw[1] != 0.0):
+            self.note_activity("cmd_vel", at)
+        order, at = new("explore_cmd", decode_bool)
+        if order:
+            self.note_activity("explore_cmd", at)
+        _, at = new("goal_request", decode_pose)
+        if at is not None:
+            self.note_activity("goal_request", at)         # a goal from the page, a script or the explorer
+        _, at = new("episode_marker", decode_json)
+        if at is not None:
+            self.note_activity("episode", at)
+        if self.episode is not None:
+            self.note_activity("episode")                  # an open episode holds the stop
+        pose, at = new("odom", decode_pose)
+        if pose is not None and self._pose_moved(pose, at):
+            self.note_activity("odom", at)
+
+    def _pose_moved(self, pose: dict, at: float) -> bool:
+        """The pose now against the pose IDLE_WINDOW_S ago (early in a run, its first one): moved
+        more than IDLE_MOVE_M or turned more than IDLE_TURN_RAD. A window, not a sum since the last
+        move: odometry drifting a few mm a minute at rest never adds up to a move."""
+        ring = self._idle_poses
+        ring.append((at, pose))
+        while len(ring) > 1 and ring[1][0] <= at - IDLE_WINDOW_S:
+            ring.popleft()
+        return pose_moved(ring[0][1], pose)
+
+    def _idle_fire(self, stack: dict) -> dict | None:
+        """Stop a moss-nav or moss-explore stack that is due, the way the page's Stop stack button
+        does. Held while the cockpit is blind (the journal says why, once per run); tried again
+        at the next look when the launcher fails."""
+        st = self._idle_rule(stack)
+        if not st["due"]:
+            return None
+        run = (stack.get("run_id"), stack.get("pid"))
+        if run == self._idle_stopped:
+            return None
+        blind = self._idle_blind(stack)
+        if blind:
+            self._say_once(run, "blind: " + blind, "warning", f"idle {st['idle_s']:g} s, not stopped: {blind}")
+            return None
+        busy = self.launcher.status(lines=False)
+        if busy.get("running"):
+            began = busy.get("started_at")
+            age = time.time() - began if isinstance(began, (int, float)) else 0.0
+            if age <= IDLE_BUSY_MAX_S:
+                return None                  # a launch, a flight check or a stop is running: never over it
+            self._say_once(run, "busy", "warning", f"moss-fly.sh {busy.get('action')} has run {age:.0f} s: "
+                                                   "the idle stop no longer waits for it")
+        msg = idle_stop_message(self.idle_limit_s)
+        try:
+            answer = self.launcher.start("stop", note=msg)
+        except Exception as exc:  # noqa: BLE001 - an unwritable state dir...: tried again at the next look
+            answer = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        if not answer.get("ok"):
+            self._say_once(run, f"failed: {answer.get('error')}", "warning",
+                           f"{msg}: the stop did not start ({answer.get('error')}), tried again each second")
+            return answer
+        self._idle_stopped = run
+        self._say("info", msg)
+        return answer
+
     # camera ------------------------------------------------------------------
     def _encode(self, arr: np.ndarray, encoding: str) -> bytes:
         if self._encoder is None:
@@ -1862,6 +2227,8 @@ class LiveCockpit(Cockpit):
     def command(self, name: str, body: dict) -> dict:
         if name == "stack":
             return self._stack(body)
+        if name == "keepalive":
+            return self.keepalive(stack_status())
         try:
             import explore_ctl                   # needs dimos_lcm: imported where it is used
             from dimos_lcm.std_msgs import Bool, String
@@ -2201,6 +2568,7 @@ class DemoCockpit(Cockpit):
         self._log: deque = deque(maxlen=200)
         self._launch_lines: deque = deque(maxlen=LAUNCH_TAIL)
         self._launch_action = None
+        self._launch_note = None               # {text, ts}: why the demo stopped its own stack
         self._preflight_ts = now
         self._decisions = DecisionLog()
         self._script_t0 = None                 # the scripted exploration's start; None = nothing scripted runs
@@ -2278,16 +2646,42 @@ class DemoCockpit(Cockpit):
             if not self._goal_said and not self._pending and self.world.goal_reached:
                 self._goal_said = True
                 self._line(now, "info", "local_planner.py", "Reached goal position, starting final rotation")
+            if self.world.moving:
+                self.note_activity("demo")            # the demo rover drives: it is not idle
+            msg = self._idle_due(now)
+        if msg:
+            # the page's Stop stack path, then the note that says why
+            self.command("stack", {"action": "stop"})
+            self._launch_note = {"text": msg, "ts": now}
         return now
+
+    def _idle_due(self, now: float) -> str | None:
+        """The idle rule on the demo stack (self._lock held): its message once per run when due.
+        The demo has no thread of its own: the stop lands on the first request past the limit."""
+        if not self._idle_rule(self._stack_doc(now))["due"]:
+            return None
+        if self._idle_stopped == self._run_id():
+            return None
+        self._idle_stopped = self._run_id()
+        msg = idle_stop_message(self.idle_limit_s)
+        self._say("info", msg)
+        self._launch_lines.append(f"=== {msg}  {time.strftime(_ISO)} === (demo)")
+        return msg
+
+    def _stack_doc(self, now: float) -> dict:
+        """The demo stack as /state.json gives it."""
+        if not self.stack["running"]:
+            return {"running": False}
+        return {"running": True, "run_id": self._run_id(), "blueprint": self.stack["blueprint"], "pid": os.getpid(),
+                "started_at": _dt.datetime.fromtimestamp(self.stack["started"], _dt.timezone.utc).isoformat(),
+                "uptime_s": round(now - self.stack["started"], 1), "log_dir": None}
 
     def state(self) -> dict:
         now = self._tick()
         w = self.world
         running = self.stack["running"]
         up = now - self.stack["started"]
-        stack = ({"running": True, "run_id": self._run_id(), "blueprint": self.stack["blueprint"], "pid": os.getpid(),
-                  "started_at": _dt.datetime.fromtimestamp(self.stack["started"], _dt.timezone.utc).isoformat(),
-                  "uptime_s": round(up, 1), "log_dir": None} if running else {"running": False})
+        stack = self._stack_doc(now)
         silent = 0.0 if running else now - (self.stack_stopped_at or now)
         nominal = {"odom": 10.0, "global_costmap": 1.0, "lidar": 10.0, "pointcloud": 10.0, "path": 1.0,
                    "cmd_vel": 10.0, "base_telemetry": 2.0}
@@ -2305,6 +2699,7 @@ class DemoCockpit(Cockpit):
                      "firmware_age_s": 0.1, "mock": True, "stalled": False, "stall_count": 0}
         return {
             "ts": now, "mode": self.mode, "stack": stack,
+            "idle": self.idle_doc(stack),
             "pose": self._pose_doc(),
             "topics": topics,
             "base": base_view(telemetry, 0.3) if running else None,
@@ -2317,7 +2712,7 @@ class DemoCockpit(Cockpit):
             "system": system_metrics(),
             "bus": {"transport": "demo", "listening": False, "error": None},
             "camera": self.camera_state(),
-            "launch": {"running": False, "action": self._launch_action},
+            "launch": {"running": False, "action": self._launch_action, "note": self._launch_note},
         }
 
     def _pose_doc(self) -> dict | None:
@@ -2384,7 +2779,7 @@ class DemoCockpit(Cockpit):
 
     def launch(self) -> dict:
         return {"running": False, "action": self._launch_action, "started_at": None, "returncode": 0,
-                "lines": list(self._launch_lines)}
+                "note": self._launch_note, "lines": list(self._launch_lines)}
 
     def camera_frame(self, cam: str = "nose"):
         # a new key every period, so the stream really runs at 5 fps; both demo cameras
@@ -2395,6 +2790,8 @@ class DemoCockpit(Cockpit):
         self._tick()
         with self._lock:
             w = self.world
+            if name == "keepalive":
+                return self.keepalive(self._stack_doc(time.time()))
             if name == "explore":
                 action = body.get("action")
                 if action not in ("start", "stop"):
@@ -2448,6 +2845,7 @@ class DemoCockpit(Cockpit):
                     raise ValueError('stack needs "action": "map", "explore", "stop" or "check"')
                 now = time.time()
                 self._launch_action = action
+                self._launch_note = None
                 self._launch_lines.append(f"=== moss-fly.sh {action}  {time.strftime(_ISO)} === (demo)")
                 if action != "check" and not (action in ("map", "explore") and self.stack["running"]):
                     self._script_t0, self._pending, self._goal_said = None, [], True
@@ -2664,6 +3062,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(403, {"ok": False, "error": f"refused: POST /cmd/* needs the header "
                                                    f"'{CMD_HEADER[0]}: {CMD_HEADER[1]}'"})
             return
+        self.cockpit.note_activity("post")        # the operator is there: the idle count restarts
         try:
             length = int(self.headers.get("Content-Length") or "0")
             if length < 0 or length > MAX_BODY:
@@ -2722,6 +3121,9 @@ def main(argv=None) -> int:
     if not args.demo and isinstance(cockpit, LiveCockpit) and cockpit.bus_error:
         print(f"warning: {cockpit.bus_error} - the page will show no live data", flush=True)
     print(f"MOSS cockpit ({cockpit.mode}) on http://{args.bind}:{server.server_address[1]}/", flush=True)
+    limit = cockpit.idle_limit_s
+    print(f"idle stop: a moss-nav or moss-explore stack idle {limit:g} s is stopped" if limit > 0 else
+          "idle stop: off (MOSS_IDLE_STOP_S=0)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

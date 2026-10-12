@@ -51,6 +51,11 @@
   .chip.idle { color: var(--ui-unknown); }
   .chip.off { color: var(--moss-salmon); }
   .chip.off::before { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+  /* the idle stop's count, a button that keeps the stack up; .dim far from the stop, .attn close */
+  #idle-note { font-size: var(--ui-fs-small); appearance: none; background: none; border: 0; padding: 0;
+               text-align: left; cursor: pointer; align-self: flex-start; }
+  #idle-note:hover:not(:disabled) { color: var(--moss-mint); }
+  #idle-note:disabled { cursor: default; }
   @keyframes breathe { 50% { opacity: .35; } }
 
   main { display: grid; grid-template-columns: minmax(250px, 3fr) minmax(0, 6fr) minmax(290px, 3fr);
@@ -310,6 +315,8 @@
         <span id="run-name" class="num" data-live>no stack</span>
         <span id="chip" class="chip idle" role="status" aria-live="polite">IDLE</span>
       </div>
+      <button id="idle-note" class="num dim" type="button" data-live hidden
+              title="Keep the stack up: the idle count starts again"></button>
     </div>
   </header>
 

@@ -61,6 +61,21 @@ Every check feeds a value we know and reads back a value in physical units
                       file, the stack gone and its events kept, the next run, a stack with
                       no registry entry) and in the demo (the scripted cycle, STOP, explore,
                       a goal 3 s after the stop, UTC times, the stop keeping the feed)
+  J. idle stop      - the rule at every branch (off, a fresh stack counted from its start,
+                      activity, before the start, at the limit, not MOSS, moss-gamepad and
+                      moss-base never, no stack, another clock, a start without timezone),
+                      the message, MOSS_IDLE_STOP_S (under 30 s refused), fresh telemetry,
+                      the dimos run rule against STACK_RE; each activity source restarts the
+                      count and names itself (a fresh commanded track, a non-zero cmd_vel,
+                      explore_cmd, goal_request, episode_marker, an open episode, the pose
+                      moved over 10 s, a POST, keepalive) and its no-activity twin does not
+                      (a lost board's repeated line, drift at rest for 30 min); the watchdog
+                      with a fake launcher (once at the limit, not twice, again for a new
+                      run, never at limit 0, a foreign stack, a deaf cockpit, another
+                      LCM_DEFAULT_URL, zenoh, a stale pid, a busy launcher until 120 s, a
+                      failing launcher tried again, a clock step); the bus tap's loop calling
+                      it at 1 Hz; the real launcher's note line; /state.json idle live and
+                      demo; the demo stack stopping itself after the limit
   F. hygiene        - no dimos/serial/torch import, no LAN address in the server
 
 C, D and the run-change checks of G need dimos_lcm (pure python, installed with
@@ -70,7 +85,9 @@ Run:  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. .venv/bin/python benches/bench_moss
 """
 
 import atexit
+import contextlib
 import http.client
+import io
 import json
 import math
 import os
@@ -2476,6 +2493,701 @@ check("the server's docstring lists GET /decisions.json", "GET  /decisions.json?
 cockpit_md = (ROOT / "docs" / "cockpit.md").read_text()
 check("docs/cockpit.md: a 'What it decides' section, /decisions.json, the link to imu.md",
       "## What it decides" in cockpit_md and "/decisions.json" in cockpit_md and "(imu.md)" in cockpit_md)
+
+# ---------------------------------------------------------------------------
+print("J. the idle stop: the rule, what counts as activity, the watchdog, /state.json")
+MSG5 = "stopping the stack to preserve battery (idle 5 min)"
+J_NOW = 1_800_000_000.0                        # an epoch second the rule counts from
+for f in runs.glob("*.json"):
+    f.unlink()
+real_pid = mc._dimos_run_pid
+mc._dimos_run_pid = lambda: None               # this machine's own dimos processes never count as a stack
+
+
+def stack_up(ago, blueprint="moss-explore"):
+    """A running stack as stack_status gives it, started `ago` seconds before J_NOW."""
+    return {"running": True, "run_id": "r", "blueprint": blueprint, "pid": 1, "log_dir": None,
+            "started_at": _dt.datetime.fromtimestamp(J_NOW - ago, _dt.timezone.utc).isoformat()}
+
+
+def rule(stack, activity_ago, limit):
+    return mc.idle_state(stack, None if activity_ago is None else J_NOW - activity_ago, J_NOW, limit)
+
+
+r_fresh = rule(stack_up(10), None, 300)
+check("rule: a fresh MOSS stack (up 10 s, no activity yet), limit 300 s -> enabled, idle 10 s (from its start), "
+      "stop in 290 s, not due",
+      r_fresh == {"enabled": True, "idle_s": 10.0, "stop_in_s": 290.0, "limit_s": 300, "due": False}, json.dumps(r_fresh))
+r_act = rule(stack_up(1000), 5, 300)
+check("rule: activity 5 s ago on a stack up 1000 s -> idle 5 s, stop in 295 s, not due",
+      (r_act["idle_s"], r_act["stop_in_s"], r_act["due"]) == (5.0, 295.0, False), json.dumps(r_act))
+r_before = rule(stack_up(10), 500, 300)
+check("rule: activity from before the stack started never counts (500 s ago, stack up 10 s) -> idle 10 s",
+      (r_before["idle_s"], r_before["stop_in_s"]) == (10.0, 290.0), json.dumps(r_before))
+edge = [rule(stack_up(1000), a, 300) for a in (299.9, 300.0, 450.0)]
+check("rule at the limit: idle 299.9 s -> not due, stop in 0.1 s; 300 s -> due, stop in 0; 450 s -> due, "
+      "stop_in_s floored at 0",
+      [(r["due"], r["stop_in_s"]) for r in edge] == [(False, 0.1), (True, 0.0), (True, 0.0)],
+      json.dumps([(r["idle_s"], r["stop_in_s"], r["due"]) for r in edge]))
+r_off = rule(stack_up(5000), None, 0)
+check("rule off (limit 0): a MOSS stack idle 5000 s -> enabled false, idle 5000 s, no stop_in_s, never due",
+      r_off == {"enabled": False, "idle_s": 5000.0, "stop_in_s": None, "limit_s": 0, "due": False}, json.dumps(r_off))
+r_foreign = rule(stack_up(5000, "explore"), None, 300)
+check("rule: a stack that is not MOSS (blueprint 'explore', idle 5000 s) -> never due, no stop_in_s",
+      (r_foreign["due"], r_foreign["stop_in_s"], r_foreign["idle_s"]) == (False, None, 5000.0), json.dumps(r_foreign))
+r_down = rule({"running": False}, 5, 300)
+r_blank = mc.idle_state({"running": True, "blueprint": "moss-explore", "started_at": None}, None, J_NOW, 300)
+check("rule: no stack -> idle_s null, not due; a running stack with no start time and no activity -> idle_s null, "
+      "not due", (r_down["idle_s"], r_down["due"], r_blank["idle_s"], r_blank["due"]) == (None, False, None, False),
+      json.dumps([r_down, r_blank]))
+r_pad, r_base, r_nav = (rule(stack_up(5000, bp), None, 300) for bp in ("moss-gamepad", "moss-base", "moss-nav"))
+check("M4 rule: moss-gamepad (the pad on the table) and moss-base idle 5000 s -> never due, no stop_in_s: they stay "
+      "up; moss-nav -> due; the stop applies to moss-nav and moss-explore only",
+      (r_pad["due"], r_pad["stop_in_s"], r_base["due"], r_base["stop_in_s"], r_nav["due"]) == (False, None, False, None, True)
+      and mc.IDLE_STOP_BLUEPRINTS == ("moss-nav", "moss-explore"), json.dumps([r_pad, r_base, r_nav]))
+r_mono = mc.idle_state(stack_up(5000), 100.0, 130.0, 300, started=120.0)
+check("m1 rule on the cockpit's clock: started=120 (the run's start converted to the monotonic clock), activity at "
+      "100, now 130 -> idle 10 s from the start, stop in 290 s (started_at is not read then)",
+      (r_mono["idle_s"], r_mono["stop_in_s"]) == (10.0, 290.0), json.dumps(r_mono))
+naive_20 = _dt.datetime.fromtimestamp(J_NOW - 20, _dt.timezone.utc).replace(tzinfo=None).isoformat()
+tz_was = os.environ.get("TZ")
+os.environ["TZ"] = "XYZ-7"                      # this machine seven hours east of UTC
+time.tzset()
+try:
+    r_naive = mc.idle_state({"running": True, "blueprint": "moss-explore", "started_at": naive_20}, J_NOW - 600,
+                            J_NOW, 300)
+finally:
+    if tz_was is None:
+        os.environ.pop("TZ", None)
+    else:
+        os.environ["TZ"] = tz_was
+    time.tzset()
+check("m2 a started_at with no timezone is UTC, as dimOS writes it: on a machine seven hours east of UTC, a stack "
+      "started 20 s ago -> idle 20 s (not 7 h off)", r_naive["idle_s"] == 20.0, json.dumps(r_naive))
+check("the message: 300 s -> '" + MSG5 + "', 90 s -> '(idle 1.5 min)', 30 s -> '(idle 30 s)'",
+      (mc.idle_stop_message(300), mc.idle_stop_message(90), mc.idle_stop_message(30))
+      == (MSG5, "stopping the stack to preserve battery (idle 1.5 min)",
+          "stopping the stack to preserve battery (idle 30 s)"))
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    limits = {k: mc.idle_limit_s({} if k is None else {"MOSS_IDLE_STOP_S": k})
+              for k in (None, "0", "120", "45.5", "abc", "-5", "nan", " ", "10", "29.9", "30")}
+check("MOSS_IDLE_STOP_S: unset -> 300 s, '0' -> 0 (off), '120' -> 120, '45.5' -> 45.5, '30' -> 30; 'abc', '-5', "
+      "'nan' -> 300 and the cockpit says so; m6 '10' and '29.9' (under 30 s: a stack stopped while in use) -> 300 "
+      "and it says so; blank -> 300",
+      limits == {None: 300, "0": 0, "120": 120, "45.5": 45.5, "abc": 300, "-5": 300, "nan": 300, " ": 300,
+                 "10": 300, "29.9": 300, "30": 30}
+      and err.getvalue().count("MOSS_IDLE_STOP_S=") == 5 and err.getvalue().count("is under 30 s") == 2,
+      f"{limits} {err.getvalue()!r}")
+os.environ["MOSS_IDLE_STOP_S"] = "42"
+read_at_start = mc.LiveCockpit(str(Path(TMP, "never_run.sh"))).idle_limit_s
+os.environ.pop("MOSS_IDLE_STOP_S")
+check("the cockpit reads MOSS_IDLE_STOP_S from its environment when it starts (42 -> 42 s; unset -> 300 s)",
+      read_at_start == 42 and mc.LiveCockpit(str(Path(TMP, "never_run.sh"))).idle_limit_s == 300, str(read_at_start))
+check("motors commanded: output_pct [0, 0] / None / [] -> no; [35, 0], [0, -20] -> yes",
+      [mc.motors_commanded(v) for v in ([0, 0], None, [], [35, 0], [0, -20])] == [False, False, False, True, True])
+P0 = {"x": 1.0, "y": 1.0, "yaw": 0.0}
+moves = [mc.pose_moved(P0, dict(P0, **d)) for d in ({"x": 1.019}, {"x": 1.021}, {"y": 0.98 - 0.001},
+                                                    {"yaw": math.radians(1.9)}, {"yaw": math.radians(2.1)})]
+wrap = mc.pose_moved({"x": 0.0, "y": 0.0, "yaw": math.pi - 0.01}, {"x": 0.0, "y": 0.0, "yaw": -math.pi + 0.01})
+check("pose moved: 1.9 cm -> no, 2.1 cm -> yes, 2.1 cm sideways -> yes, 1.9 deg -> no, 2.1 deg -> yes; "
+      "+179.4 deg to -179.4 deg (1.1 deg across the wrap) -> no",
+      moves == [False, True, True, False, True] and wrap is False, f"{moves} {wrap}")
+check("M1 telemetry fresh: firmware_age_s 0.1 and 1.0 -> fresh; 1.2 and 600 (the coordinator repeating the last line "
+      "of a lost board) -> stale; no age, or null -> fresh (a commanded track is never missed for it)",
+      [mc.telemetry_fresh(t) for t in ({"firmware_age_s": 0.1}, {"firmware_age_s": 1.0}, {"firmware_age_s": 1.2},
+                                       {"firmware_age_s": 600.0}, {}, {"firmware_age_s": None})]
+      == [True, True, False, False, True, True])
+fly_src = (ROOT / "tools" / "moss-fly.sh").read_text()
+stack_re = re.search(r"^STACK_RE='([^']+)'", fly_src, re.M)
+ARGVS = [[b"/v/bin/python3", b"/v/bin/dimos", b"run", b"moss-dimos.moss-explore"],
+         [b"/v/bin/dimos", b"--rerun-open", b"none", b"run", b"moss-dimos.moss-gamepad", b"--daemon", b""],
+         [b"/v/bin/dimos", b"status"], [b"vim", b"/v/bin/dimos"], [b"run", b"/v/bin/dimos"],
+         [b"/v/bin/dimos", b"runs"], [b"sleep", b"600"], [b"/usr/lib/systemd/systemd", b"--user"], []]
+dimos_mine = [mc.is_dimos_run(a) for a in ARGVS]
+dimos_fly = ([re.search(stack_re.group(1), " ".join(x.decode() for x in a).strip()) is not None for a in ARGVS]
+             if stack_re else None)
+check("M3 is_dimos_run (the registry pid's /proc cmdline, read before a stop) agrees with moss-fly.sh's STACK_RE on "
+      "9 command lines: dimos run, with options before run -> yes; dimos status, an editor naming the file, run "
+      "before bin/dimos, 'runs', a sleep, systemd, an empty line -> no",
+      dimos_mine == [True, True, False, False, False, False, False, False, False] and dimos_fly == dimos_mine,
+      f"{dimos_mine} {dimos_fly}")
+
+if not (HAVE_LCM_MSGS and mc.HAVE_MSGS):
+    print("  -- skipped the bus and watchdog checks, no dimos_lcm here")
+else:
+    REG_J = Path(runs, "idle.json")
+    lcm_url_was = os.environ.pop("LCM_DEFAULT_URL", None)      # the cockpit on LCM's default group
+    env_lcm = {k: v for k, v in os.environ.items() if k not in ("DIMOS_TRANSPORT", "TRANSPORT", "LCM_DEFAULT_URL")}
+    FAKE_DIMOS = str(Path(TMP, "venv", "bin", "dimos"))       # only a name in a command line, never run
+
+    def stand_in(env=None, blueprint="moss-dimos.moss-explore"):
+        """A live process /proc shows as a stack: `<python> -c <sleep> <venv>/bin/dimos run <blueprint>`."""
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", FAKE_DIMOS, "run", blueprint],
+                             env=env_lcm if env is None else env, stdin=subprocess.DEVNULL)
+        atexit.register(p.kill)
+        deadline = time.monotonic() + 5.0         # Popen returns before the child's argv is in /proc (vfork)
+        while time.monotonic() < deadline and not mc.is_dimos_run(mc.proc_cmdline(p.pid)):
+            time.sleep(0.01)
+        return p
+
+    STAND_IN = stand_in()                         # a stack on LCM, the cockpit's group
+
+    def reg_j(run_id, blueprint="moss-dimos.moss-explore", ago=1000.0, pid=None):
+        """A registry entry for a stack started `ago` seconds ago (a live stand-in process, on LCM)."""
+        if run_id is None:
+            REG_J.unlink(missing_ok=True)
+            return
+        REG_J.write_text(json.dumps({"run_id": run_id, "pid": pid or STAND_IN.pid, "blueprint": blueprint,
+                                     "started_at": _dt.datetime.fromtimestamp(time.time() - ago, _dt.timezone.utc)
+                                     .isoformat(), "log_dir": "/nowhere"}))
+
+    class FakeLauncher:
+        """Records what the watchdog asks; never runs moss-fly.sh. busy_since: when the busy run
+        began (epoch s, None = unknown); fail: an error to answer, or "raise"."""
+
+        def __init__(self):
+            self.calls, self.busy, self.busy_since, self.fail = [], False, None, None
+
+        def start(self, action, note=None):
+            self.calls.append((action, note))
+            if self.fail == "raise":
+                raise PermissionError("the state dir is not writable")
+            if self.fail:
+                return {"ok": False, "error": self.fail}
+            return {"ok": True, "sent": f"moss-fly.sh {action}", "pid": 1}
+
+        def status(self, lines=True):
+            return {"running": self.busy, "action": "check" if self.busy else None, "started_at": self.busy_since,
+                    "returncode": None, "note": None}
+
+    def idle_cockpit(limit=300.0):
+        c = mc.LiveCockpit(str(Path(TMP, "never_run.sh")))
+        c.launcher = FakeLauncher()
+        c.idle_limit_s = limit
+        c.listening = True                        # as the bus tap sets it once subscribed
+        said = []
+        real_say = c._say
+
+        def say(level, event):
+            said.append((level, event))
+            real_say(level, event)
+        c._say = say
+        return c, said
+
+    def tele_msg(pct, age=0.1):
+        doc = {"fw": "qtpy-mdd3a-v3", "mode": 2, "bus_mV": 11800, "ina_ok": True, "output_pct": pct, "target_pct": pct}
+        if age is not None:
+            doc["firmware_age_s"] = age
+        return String(data=json.dumps(doc)).lcm_encode()
+
+    def hear(c, ago=0.0):
+        """A telemetry line, no track commanded, `ago` s old: the cockpit hears the bus, nothing happened."""
+        c.bus.ingest(mc.CHANNELS["base_telemetry"], tele_msg([0, 0]), mono=time.monotonic() - ago)
+
+    def aged(c, s):
+        """The last activity `s` seconds ago, on the monotonic clock the count runs on."""
+        c.activity_mono = time.monotonic() - s
+
+    def quiet(fn):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return fn()
+
+    def warnings(said):
+        return [event for level, event in said if level == "warning"]
+
+    def resets(c, feed):
+        """Age the count by 1000 s, feed the bus, let the watchdog look: did the count restart?"""
+        aged(c, 1000.0)
+        feed()
+        t = time.monotonic()
+        c.idle_tick()
+        return c.activity_mono >= t - 1.0
+
+    def twist_msg(vx, wz):
+        return Twist(linear=Vector3(x=vx, y=0.0, z=0.0), angular=Vector3(x=0.0, y=0.0, z=wz)).lcm_encode()
+
+    def odom_msg(x, y, yaw_deg=0.0):
+        h = math.radians(yaw_deg) / 2
+        return PoseStamped(header=hdr("world"), pose=pose_of(x, y, qz=math.sin(h), qw=math.cos(h))).lcm_encode()
+
+    def marker_msg(action, name):
+        return String(data=json.dumps({"action": action, "name": name, "ts": time.time()})).lcm_encode()
+
+    reg_j("idle-run-1")
+    c, said = idle_cockpit(limit=3600.0)          # the 1000 s of aging below never reach this limit
+    feed = lambda ch, raw: (lambda: c.bus.ingest(mc.CHANNELS[ch], raw))   # noqa: E731
+    tel = [resets(c, feed("base_telemetry", tele_msg(p))) for p in ([0, 0], [35, 0], [0, -20])]
+    stale_tel = resets(c, lambda: None)           # the last telemetry said [0, -20]; nothing new since
+    check("telemetry output_pct [0, 0] -> no activity; [35, 0] and [0, -20] (a track commanded) -> the count restarts; "
+          "no new telemetry since -> nothing (the last message is not read twice)",
+          tel == [False, True, True] and stale_tel is False, f"{tel} {stale_tel}")
+    lost = [resets(c, feed("base_telemetry", tele_msg([40, 40], age=600.0 + k))) for k in range(5)]
+    by_age = [resets(c, feed("base_telemetry", tele_msg([40, 40], age=a))) for a in (1.0, 1.2, None)]
+    check("M1 a lost board: the coordinator repeats its last line ([40, 40], firmware_age_s 600 s and growing) at "
+          "each look -> no activity, 5 looks; the same line 1.0 s old -> the count restarts; 1.2 s -> not; no age -> "
+          "restarts", lost == [False] * 5 and by_age == [True, False, True], f"{lost} {by_age}")
+    tw = [resets(c, feed("cmd_vel", twist_msg(vx, wz))) for vx, wz in ((0.0, 0.0), (0.12, 0.0), (0.0, -0.4))]
+    stale_tw = resets(c, lambda: None)            # a planner that went silent on a non-zero twist
+    check("cmd_vel (0, 0) -> no activity; (0.12 m/s, 0) and (0, -0.4 rad/s) -> the count restarts; the last non-zero "
+          "twist with nothing new since -> nothing", tw == [False, True, True] and stale_tw is False, f"{tw} {stale_tw}")
+    ex = resets(c, feed("explore_cmd", Bool(data=True).lcm_encode()))
+    done = resets(c, feed("explore_done", Bool(data=True).lcm_encode()))
+    check("explore_cmd (the order to explore) -> the count restarts; explore_done alone -> nothing",
+          ex is True and done is False, f"{ex} {done}")
+    srcs = {}
+    for name, ch, raw in (("telemetry", "base_telemetry", tele_msg([35, 0])),
+                          ("cmd_vel", "cmd_vel", twist_msg(0.2, 0.0)),
+                          ("explore_cmd", "explore_cmd", Bool(data=True).lcm_encode()),
+                          ("goal_request", "goal_request",
+                           PoseStamped(header=hdr("world"), pose=pose_of(2.0, 1.0)).lcm_encode()),
+                          ("episode", "episode_marker", marker_msg("stop", "ep0"))):
+        c.activity_source = "start"
+        srcs[name] = [resets(c, feed(ch, raw)), c.activity_source]
+    check("B2 + M6 each source restarts the count and names itself in idle.last_source: telemetry, cmd_vel, "
+          "explore_cmd, goal_request (a goal on the bus) and episode (an episode_marker on the bus)",
+          srcs == {k: [True, k] for k in srcs}, json.dumps(srcs))
+    c.bus.ingest(mc.CHANNELS["episode_marker"], marker_msg("start", "arm-demo"))
+    held = []
+    for _ in range(3):
+        aged(c, 1000.0)
+        c.activity_source = "start"
+        t = time.monotonic()
+        c.idle_tick()
+        held.append([c.activity_mono >= t - 1.0, c.activity_source])
+    opened = dict(c.episode or {})
+    c.bus.ingest(mc.CHANNELS["episode_marker"], marker_msg("stop", "arm-demo"))
+    c.idle_tick()                                 # the stop marker itself is activity, once
+    after_ep = resets(c, lambda: None)
+    check("B2 an episode opened by a marker on the bus (a script, no page polling) holds the stop: the count restarts "
+          "at each look while it is open (last_source 'episode'); its stop marker closes it, then the count runs",
+          opened.get("name") == "arm-demo" and held == [[True, "episode"]] * 3 and c.episode is None
+          and after_ep is False, json.dumps([opened, held, c.episode, after_ep]))
+
+    odom_runs = [0]
+
+    def odom_looks(poses, dt=1.0):
+        """A fresh cockpit and run; one odom per look, dt s apart on the arrival clock. The looks whose pose
+        counted as a move, and the cockpit."""
+        odom_runs[0] += 1
+        reg_j(f"idle-odom-{odom_runs[0]}")
+        co, _ = idle_cockpit(limit=1e9)
+        base, hits = time.monotonic(), []
+        for k, p in enumerate(poses):
+            co.bus.ingest(mc.CHANNELS["odom"], odom_msg(*p), mono=base + k * dt)
+            before = co.activity_mono
+            co.idle_tick()
+            if co.activity_mono != before:
+                hits.append(k)
+        return hits, co
+
+    drift, _ = odom_looks([(1.0 + 0.00025 * s, 1.0, 0.0) for s in range(1800)])
+    yaw_drift, _ = odom_looks([(1.0, 1.0, 0.01 * s) for s in range(1800)])
+    check("M6 odometry drifting at rest for 30 min, one pose per look: 0.25 mm/s (45 cm in all) and 0.01 deg/s (18 deg "
+          "in all) -> never a move (the pose against the pose 10 s before: 2.5 mm, 0.1 deg)",
+          drift == [] and yaw_drift == [], f"{drift[:8]} {yaw_drift[:8]}")
+    rest = [(1.0, 1.0, 0.0)] * 12
+    push, cp = odom_looks(rest + [(1.05, 1.0, 0.0)] * 15)
+    check("M6 pushed by hand 5 cm between two looks -> a move at that look (last_source 'odom'), and at each look while "
+          "the pose 10 s before is the one before the push (looks 12 to 21), none after",
+          push == list(range(12, 22)) and cp.activity_source == "odom", str(push))
+    small, _ = odom_looks(rest + [(1.015, 1.0, 0.0)] * 5 + [(1.015, 1.0, 1.5)] * 5)
+    turn, _ = odom_looks(rest + [(1.0, 1.0, 2.5)] * 3)
+    check("M6 1.5 cm then 1.5 deg within 10 s -> no move; turned 2.5 deg between two looks -> a move (looks 12 to 14)",
+          small == [] and turn == [12, 13, 14], f"{small} {turn}")
+    reg_j("idle-run-1")
+    resets(c, feed("odom", odom_msg(1.0, 1.0)))   # the run's first pose
+    reg_j("idle-run-1b")
+    od_new = resets(c, feed("odom", odom_msg(5.0, -3.0, 90.0)))
+    check("a new run (its odometry in a new frame): its first pose starts the window again, not a 5 m move",
+          od_new is False, str(od_new))
+
+    srv_j = mc.CockpitServer(("127.0.0.1", 0), c, page_dir)
+    threading.Thread(target=srv_j.serve_forever, daemon=True).start()
+    cj = Client(srv_j.server_address[1])
+    aged(c, 1000.0)
+    cj.json("/state.json")
+    kept_get = c.activity_mono < time.monotonic() - 900
+    cj.post("/cmd/stack", {"action": "check"}, header=False)
+    kept_403 = c.activity_mono < time.monotonic() - 900
+    t = time.monotonic()
+    code_ck, ans_ck = cj.post("/cmd/stack", {"action": "check"})
+    by_post = c.activity_mono >= t - 1.0 and c.activity_source == "post"
+    check("a POST /cmd/* from the page (stack check) restarts the count (last_source 'post'); a GET, or a POST refused "
+          "403 for want of the page's header, does not", by_post and code_ck == 200 and kept_get and kept_403,
+          f"post {by_post} {code_ck} get kept {kept_get} 403 kept {kept_403}")
+    c.idle_limit_s = 300.0
+    hear(c)
+    aged(c, 250.0)
+    _, before_ka = cj.json("/state.json")
+    code_ka403, _ = cj.post("/cmd/keepalive", {}, header=False)
+    kept_ka = c.activity_mono < time.monotonic() - 200
+    t = time.monotonic()
+    code_ka, ans_ka = cj.post("/cmd/keepalive", {})
+    _, after_ka = cj.json("/state.json")
+    ika = (ans_ka or {}).get("idle") or {}
+    check("M5 POST /cmd/keepalive (the idle line's button): idle 250 s -> the answer's idle restarts under 1 s with "
+          "last_source 'keepalive', /state.json says the same; without the page's header -> 403, the count kept",
+          code_ka403 == 403 and kept_ka and code_ka == 200 and ans_ka.get("ok") is True and ika.get("enabled") is True
+          and isinstance(ika.get("idle_s"), float) and ika["idle_s"] < 1.0 and ika.get("last_source") == "keepalive"
+          and (before_ka.get("idle") or {}).get("idle_s", 0) >= 249
+          and (after_ka.get("idle") or {}).get("last_source") == "keepalive" and c.activity_mono >= t - 1.0,
+          json.dumps([code_ka403, code_ka, ans_ka, before_ka.get("idle"), after_ka.get("idle")])[:500])
+
+    # the watchdog
+    c.launcher.calls.clear()
+    reg_j("idle-run-2", ago=1000.0)
+    hear(c)
+    aged(c, 299.0)
+    r0 = c.idle_tick()
+    calls0 = list(c.launcher.calls)
+    said.clear()
+    aged(c, 301.0)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        r1 = c.idle_tick()
+    check("watchdog, limit 300 s: idle 299 s -> nothing; idle 301 s -> one stop: the launcher's 'stop' (the page's "
+          "Stop stack path) with the note '" + MSG5 + "', _say('info', the same), the line in the cockpit's own "
+          "log (its standard output, the service's journal)",
+          r0 is None and calls0 == [] and r1 is not None and r1.get("ok") and c.launcher.calls == [("stop", MSG5)]
+          and said == [("info", MSG5)] and f"moss_cockpit: info: {MSG5}" in out.getvalue(),
+          f"{r0} {calls0} {r1} {c.launcher.calls} {said} {out.getvalue()!r}")
+    again = quiet(lambda: [c.idle_tick() for _ in range(3)])
+    check("the same run, still up (going down) -> no second stop", again == [None] * 3 and len(c.launcher.calls) == 1,
+          f"{again} {c.launcher.calls}")
+    reg_j("idle-run-3", ago=400.0)
+    hear(c)
+    r3, r3b = quiet(lambda: (c.idle_tick(), c.idle_tick()))
+    check("a new run idle past the limit -> stopped again, once",
+          r3 is not None and r3b is None and c.launcher.calls == [("stop", MSG5)] * 2, str(c.launcher.calls))
+    kinds = []
+    for bp in ("other-dimos.explore", "moss-dimos.moss-gamepad", "moss-dimos.moss-base", "moss-dimos.moss-nav"):
+        reg_j("idle-run-4-" + bp.rsplit(".", 1)[-1], bp, ago=5000.0)
+        c4, said4 = idle_cockpit()
+        hear(c4)
+        aged(c4, 5000.0)
+        r4 = quiet(c4.idle_tick)
+        kinds.append([r4 is not None, len(c4.launcher.calls), c4.idle_doc(mc.stack_status())["stop_in_s"]])
+    check("M4 idle 5000 s: a stack that is not MOSS ('other-dimos.explore'), moss-gamepad (the pad on the table, as "
+          "moss-teleop.sh promises) and moss-base -> never stopped, no stop_in_s (the page hides the line); "
+          "moss-nav -> stopped", kinds == [[False, 0, None]] * 3 + [[True, 1, 0.0]], json.dumps(kinds))
+    reg_j("idle-run-5", ago=5000.0)
+    c0, said0 = idle_cockpit(limit=0.0)
+    hear(c0)
+    aged(c0, 5000.0)
+    doc0 = c0.idle_doc(mc.stack_status())
+    check("limit 0 (MOSS_IDLE_STOP_S=0): a MOSS stack idle 5000 s -> never stopped; idle doc enabled false",
+          c0.idle_tick() is None and c0.launcher.calls == [] and doc0["enabled"] is False and doc0["stop_in_s"] is None,
+          json.dumps(doc0))
+    cb, saidb = idle_cockpit()
+    hear(cb)
+    aged(cb, 5000.0)
+    cb.launcher.busy = True
+    rb = cb.idle_tick()
+    cb.launcher.busy = False
+    rb2 = quiet(cb.idle_tick)
+    check("the launcher busy (a check, a launch, a stop of the operator's) -> the watchdog waits; free -> it stops",
+          rb is None and rb2 is not None and cb.launcher.calls == [("stop", MSG5)], str(cb.launcher.calls))
+    cbl, saidbl = idle_cockpit()
+    hear(cbl)
+    aged(cbl, 5000.0)
+    cbl.launcher.busy, cbl.launcher.busy_since = True, time.time() - 60.0
+    rbl1 = cbl.idle_tick()
+    cbl.launcher.busy_since = time.time() - 130.0
+    rbl2 = quiet(cbl.idle_tick)
+    rbl3 = quiet(cbl.idle_tick)
+    check("m5 a launcher busy 60 s -> the watchdog waits; busy 130 s (over 120 s: stuck) -> it stops anyway, once, and "
+          "the journal says so once", rbl1 is None and rbl2 is not None and rbl3 is None
+          and cbl.launcher.calls == [("stop", MSG5)] and len(warnings(saidbl)) == 1
+          and "has run 130 s" in warnings(saidbl)[0], f"{cbl.launcher.calls} {saidbl}")
+    cl_, saidl = idle_cockpit()
+    hear(cl_)
+    aged(cl_, 5000.0)
+    cl_.listening = False
+    docl = cl_.idle_doc(mc.stack_status())
+    check("a cockpit not listening to the bus (it cannot see the activity), a message still in its cache -> never "
+          "stops; idle doc enabled false, blind says why",
+          quiet(cl_.idle_tick) is None and cl_.launcher.calls == [] and docl["enabled"] is False
+          and "does not listen" in (docl.get("blind") or ""), json.dumps(docl))
+    cd_, saidd = idle_cockpit()
+    aged(cd_, 5000.0)
+    rd = quiet(lambda: [cd_.idle_tick() for _ in range(3)])
+    docd = cd_.idle_doc(mc.stack_status())
+    hear(cd_, ago=11.0)
+    rd11 = quiet(cd_.idle_tick)
+    hear(cd_, ago=9.0)
+    rd9 = quiet(cd_.idle_tick)
+    check("B1 a deaf cockpit (subscribed, but nothing on any tapped channel while a MOSS stack runs: another multicast "
+          "route, a firewall) never stops it: 3 looks idle 5000 s -> nothing, idle doc enabled false with blind "
+          "'nothing heard on the bus for 10 s', the journal says it once; the last message 11 s old -> still deaf; "
+          "9 s old -> it hears, the stop goes",
+          rd == [None] * 3 and docd["enabled"] is False and "nothing heard on the bus for 10 s" in (docd.get("blind") or "")
+          and len(warnings(saidd)) == 1 and "nothing heard" in warnings(saidd)[0] and rd11 is None
+          and rd9 is not None and cd_.launcher.calls == [("stop", MSG5)],
+          json.dumps([rd, docd, saidd, rd11, rd9, cd_.launcher.calls])[:600])
+    url_other = "udpm://239.255.76.67:7668?ttl=0"
+    other = stand_in(env=dict(env_lcm, LCM_DEFAULT_URL=url_other))
+    reg_j("idle-run-url", ago=5000.0, pid=other.pid)
+    cu, saidu = idle_cockpit()
+    hear(cu)
+    aged(cu, 5000.0)
+    ru = quiet(cu.idle_tick)
+    docu = cu.idle_doc(mc.stack_status())
+    os.environ["LCM_DEFAULT_URL"] = url_other     # the cockpit on the same group: it sees the run
+    try:
+        docu2 = cu.idle_doc(mc.stack_status())
+        ru2 = quiet(cu.idle_tick)
+    finally:
+        os.environ.pop("LCM_DEFAULT_URL", None)
+    other.kill()
+    other.wait()
+    check("B1 a MOSS stack started with another LCM_DEFAULT_URL than the cockpit's (another bus, even with a message "
+          "in the cache) -> never stopped, blind says why; the cockpit on the same URL -> it stops it",
+          ru is None and docu["enabled"] is False and "LCM_DEFAULT_URL" in (docu.get("blind") or "")
+          and docu2["enabled"] is True and ru2 is not None and cu.launcher.calls == [("stop", MSG5)],
+          json.dumps([docu, docu2, cu.launcher.calls]))
+    zen = stand_in(env=dict(env_lcm, DIMOS_TRANSPORT="zenoh"))
+    reg_j("idle-run-6", ago=5000.0, pid=zen.pid)
+    cz, saidz = idle_cockpit()
+    hear(cz)
+    aged(cz, 5000.0)
+    docz = cz.idle_doc(mc.stack_status())
+    check("a MOSS stack started with DIMOS_TRANSPORT=zenoh (its activity never reaches the LCM tap) -> never stopped; "
+          "idle doc enabled false", quiet(cz.idle_tick) is None and cz.launcher.calls == [] and docz["enabled"] is False,
+          json.dumps(docz))
+    zen.kill()
+    zen.wait()
+    sleeper = subprocess.Popen(["sleep", "600"], env=env_lcm, stdin=subprocess.DEVNULL)
+    atexit.register(sleeper.kill)
+    stale = []
+    for pid in (1, sleeper.pid):
+        reg_j("stale-run-moss-explore", ago=5000.0, pid=pid)
+        cs, saids = idle_cockpit()
+        hear(cs)
+        aged(cs, 5000.0)
+        rs = quiet(lambda: [cs.idle_tick() for _ in range(3)])
+        docs = cs.idle_doc(mc.stack_status())
+        stale.append([rs == [None] * 3, cs.launcher.calls == [], docs["enabled"] is False,
+                      len(warnings(saids)) == 1 and "not a dimos run" in warnings(saids)[0]])
+    sleeper.kill()
+    sleeper.wait()
+    check("M3 a stale registry entry (never stopped: a power cut) whose pid now runs something else (pid 1, a sleep) "
+          "-> never stopped: its /proc cmdline is not a dimos run (the rule of _dimos_run_pid and STACK_RE); the "
+          "journal says it once; the idle doc enabled false", stale == [[True] * 4] * 2, json.dumps(stale))
+
+    class ClockStep:
+        """The time module with the wall clock stepped by `step` s (an NTP step); the monotonic clock untouched."""
+
+        def __init__(self, step):
+            self.step = step
+
+        def __getattr__(self, name):
+            return getattr(time, name)
+
+        def time(self):
+            return time.time() + self.step
+
+    reg_j("idle-run-clock", ago=60.0)
+    ck, _ = idle_cockpit()
+    hear(ck)
+    aged(ck, 10.0)
+    first_ck = ck.idle_tick()                     # the run's start goes to the monotonic clock, once
+    steps = []
+    try:
+        for step in (3600.0, -3600.0):
+            mc.time = ClockStep(step)
+            steps.append([ck.idle_tick(), ck.idle_doc(mc.stack_status())["idle_s"]])
+    finally:
+        mc.time = time
+    check("m1 the wall clock stepped +1 h, then -1 h, under a stack up 60 s with activity 10 s ago -> no stop, idle "
+          "stays about 10 s (the count and the run's start live on the monotonic clock)",
+          first_ck is None and all(r is None and 9.0 <= i <= 12.0 for r, i in steps) and ck.launcher.calls == [],
+          json.dumps(steps))
+    reg_j("idle-run-retry", ago=5000.0)
+    cr, saidr = idle_cockpit()
+    hear(cr)
+    aged(cr, 5000.0)
+    cr.launcher.fail = "raise"
+    tries = quiet(lambda: [cr.idle_tick() for _ in range(3)])
+    cr.launcher.fail = "launcher missing"
+    tries2 = quiet(cr.idle_tick)
+    marked = cr._idle_stopped
+    cr.launcher.fail = None
+    ok_r = quiet(cr.idle_tick)
+    after_r = quiet(cr.idle_tick)
+    check("m4 the launcher raising (state dir not writable) -> nothing escapes the watchdog, the run is not marked, it "
+          "is tried again at each look (3 tries), the journal once per error; answering not ok -> tried again; then "
+          "working -> one stop, marked, no more",
+          all(isinstance(x, dict) and x.get("ok") is False for x in tries) and (tries2 or {}).get("ok") is False
+          and marked is None and (ok_r or {}).get("ok") is True and after_r is None and len(cr.launcher.calls) == 5
+          and len(warnings(saidr)) == 2 and ("info", MSG5) in saidr,
+          json.dumps([tries, tries2, cr.launcher.calls, saidr], default=str)[:600])
+    reg_j(None)
+
+    # the real launcher writes the note where /launch.json reads the launch lines
+    stub_j = Path(TMP, "idle_stub.sh")
+    stub_j.write_text('echo "stub $1 ran"\n')
+    la_j = mc.Launcher(str(stub_j))
+    ans_j = la_j.start("stop", note=MSG5)
+    la_j._procs[-1][2].wait(5)
+    st_j = la_j.status()
+    lines_j = st_j["lines"]
+    check("the launcher with a note: last_launch.log reads '=== " + MSG5 + "  <time> ===', then the stop's own "
+          "header, then the script; status note.text = the message",
+          ans_j["ok"] and len(lines_j) >= 3
+          and re.fullmatch(r"=== stopping the stack to preserve battery \(idle 5 min\)  "
+                           r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d ===", lines_j[0]) is not None
+          and lines_j[1].startswith("=== moss-fly.sh stop  ") and "stub stop ran" in lines_j
+          and (st_j.get("note") or {}).get("text") == MSG5, json.dumps(st_j)[:300])
+    la_j.start("check")
+    la_j._procs[-1][2].wait(5)
+    check("the next launch, the page's -> no note", la_j.status(lines=False)["note"] is None)
+
+    # /state.json, live
+    reg_j("idle-run-7", ago=40.0)
+    c.idle_limit_s = 300.0
+    aged(c, 1000.0)
+    c.launcher = mc.Launcher(str(stub_j))
+    c.launcher.start("stop", note=MSG5)
+    c.launcher._procs[-1][2].wait(5)
+    cj.json("/state.json")                        # the new run: the cockpit drops the last run's messages
+    hear(c)
+    _, stj = cj.json("/state.json")
+    idj = stj.get("idle") or {}
+    check("live /state.json: idle {enabled, idle_s, stop_in_s, limit_s, last_source, blind} next to stack: enabled, "
+          "idle ~40 s (from the stack's start, last_source 'start'), stop in 300 - idle, limit 300, blind null; "
+          "launch.note.text = the message",
+          set(idj) == set(mc.IDLE_KEYS) and idj["enabled"] is True and 39.0 <= idj["idle_s"] <= 45.0
+          and abs(idj["idle_s"] + idj["stop_in_s"] - 300.0) < 0.2 and idj["limit_s"] == 300
+          and idj["last_source"] == "start" and idj["blind"] is None
+          and ((stj.get("launch") or {}).get("note") or {}).get("text") == MSG5,
+          json.dumps({"idle": idj, "launch": stj.get("launch")}))
+    reg_j(None)
+    _, stn = cj.json("/state.json")
+    stn_idle = stn.get("idle") or {}
+    check("live /state.json, no stack: idle enabled, idle_s and stop_in_s null (the page hides the line), blind null",
+          {k: stn_idle.get(k) for k in ("enabled", "idle_s", "stop_in_s", "limit_s", "blind")}
+          == {"enabled": True, "idle_s": None, "stop_in_s": None, "limit_s": 300.0, "blind": None}
+          and stn_idle.get("last_source") in mc.IDLE_SOURCES, json.dumps(stn_idle))
+    srv_j.shutdown()
+    STAND_IN.kill()
+    STAND_IN.wait()
+    if lcm_url_was is not None:
+        os.environ["LCM_DEFAULT_URL"] = lcm_url_was
+mc._dimos_run_pid = real_pid
+
+
+class FakeLcmHandle:
+    """lcm.LCM for the bus tap's loop: handle_timeout returns at once (no message), and ends the
+    loop by raising SystemExit (past its `except Exception` retry) once `stop` is set."""
+    stop = False
+
+    def subscribe(self, channel, fn):
+        return channel
+
+    def unsubscribe(self, sub):
+        pass
+
+    def handle_timeout(self, ms):
+        if FakeLcmHandle.stop:
+            raise SystemExit
+        time.sleep(0.002)
+        return 0
+
+
+real_lcm = mc.lcm
+mc.lcm = types.SimpleNamespace(LCM=FakeLcmHandle)
+cw = mc.LiveCockpit(str(Path(TMP, "never_run.sh")))
+looks = []
+cw.idle_tick = lambda: looks.append(time.monotonic())
+listen_t = threading.Thread(target=cw._listen, daemon=True)
+listen_t.start()
+time.sleep(0.3)
+listening_early = cw.listening
+time.sleep(2.25)
+FakeLcmHandle.stop = True
+listen_t.join(3.0)
+mc.lcm = real_lcm
+gaps = [round(b - a, 3) for a, b in zip(looks, looks[1:])]
+check("M2 the wiring: _listen with a fake lcm whose handle_timeout returns at once -> listening true, the watchdog "
+      "called about once a second (3 looks in 2.55 s, 1.0 s apart: the 1 Hz throttle), the thread ends with the bus",
+      listening_early is True and len(looks) == 3 and all(0.95 <= g <= 1.15 for g in gaps) and not listen_t.is_alive(),
+      f"listening {listening_early}, {len(looks)} looks, gaps {gaps[:5]}")
+
+# the demo: same document; its stack stops itself on the first request past the limit
+dsrv_j, dcl_j = serve(demo=True, page_dir=page_dir)
+_, sd = dcl_j.json("/state.json")
+idd = sd.get("idle") or {}
+check("demo /state.json: idle with the same keys: enabled, limit 300, idle_s a number, stop_in_s = 300 - idle_s, "
+      "blind null",
+      set(idd) == set(mc.IDLE_KEYS) and idd["enabled"] is True and idd["limit_s"] == 300
+      and isinstance(idd["idle_s"], float) and abs(idd["idle_s"] + idd["stop_in_s"] - 300.0) < 0.2
+      and idd["blind"] is None, json.dumps(idd))
+code_dka, dka = dcl_j.post("/cmd/keepalive", {})
+check("demo POST /cmd/keepalive -> ok, its idle restarts (idle_s under 1 s), last_source 'keepalive'",
+      code_dka == 200 and dka.get("ok") is True and (dka.get("idle") or {}).get("last_source") == "keepalive"
+      and (dka.get("idle") or {}).get("idle_s", 9) < 1.0, json.dumps(dka))
+dj = dsrv_j.cockpit
+dj.idle_limit_s = 1.0
+time.sleep(1.2)
+_, sd_drive = dcl_j.json("/state.json")
+check("demo, limit 1 s: the demo rover exploring (driving) is never idle -> its stack stays up (last_source 'demo')",
+      sd_drive["stack"]["running"] is True and sd_drive["idle"]["idle_s"] < 1.0
+      and sd_drive["idle"]["last_source"] == "demo", json.dumps(sd_drive["idle"]))
+dcl_j.post("/cmd/stop", {})                    # halted: the rover stands still from here
+_, sd_a = dcl_j.json("/state.json")
+time.sleep(1.3)
+_, sd_b = dcl_j.json("/state.json")
+_, la_d = dcl_j.json("/launch.json")
+_, lg_d = dcl_j.json("/log.json?n=10")
+MSG1 = "stopping the stack to preserve battery (idle 1 s)"
+note_lines = [ln for ln in la_d["lines"] if MSG1 in ln]
+check("demo, halted, 1.3 s later -> the stack stopped itself: running false, launch.note.text = '" + MSG1 + "', "
+      "/launch.json the line '=== <msg>  <time> === (demo)' then the stop's header, /log.json the message",
+      sd_a["stack"]["running"] is True and sd_b["stack"] == {"running": False}
+      and ((sd_b.get("launch") or {}).get("note") or {}).get("text") == MSG1 and len(note_lines) == 1
+      and la_d["lines"].index(note_lines[0]) + 1 < len(la_d["lines"])
+      and la_d["lines"][la_d["lines"].index(note_lines[0]) + 1].startswith("=== moss-fly.sh stop  ")
+      and any(r.get("event") == MSG1 for r in lg_d["lines"]),
+      json.dumps({"stack": sd_b["stack"], "note": sd_b.get("launch"), "lines": la_d["lines"][-4:]})[:400])
+dcl_j.json("/state.json")
+_, la_d2 = dcl_j.json("/launch.json")
+check("demo: the same (stopped) run -> the line once", sum(MSG1 in ln for ln in la_d2["lines"]) == 1)
+dcl_j.post("/cmd/stack", {"action": "explore"})   # a new run (exploration off: nothing drives)
+_, sd_c = dcl_j.json("/state.json")
+time.sleep(1.3)
+_, sd_d = dcl_j.json("/state.json")
+_, la_d3 = dcl_j.json("/launch.json")
+check("demo: a new stack, nothing driving -> up, then stopped again after the limit (the line twice in all)",
+      sd_c["stack"]["running"] is True and (sd_c.get("launch") or {}).get("note") is None
+      and sd_d["stack"] == {"running": False} and sum(MSG1 in ln for ln in la_d3["lines"]) == 2,
+      json.dumps([sd_c["stack"].get("running"), sd_d["stack"], la_d3["lines"][-3:]])[:300])
+dsrv_j.shutdown()
+dj0 = mc.DemoCockpit()
+dj0.idle_limit_s = 0.0
+dj0.activity_mono = time.monotonic() - 5000.0
+dj0.command("stop", {})
+dj0.activity_mono = time.monotonic() - 5000.0
+sd0 = dj0.state()
+check("demo, limit 0 -> idle enabled false, the halted stack never stopped",
+      sd0["idle"]["enabled"] is False and sd0["stack"]["running"] is True, json.dumps(sd0["idle"]))
+check("the server's docstring and docs/cockpit.md name MOSS_IDLE_STOP_S and the message",
+      "MOSS_IDLE_STOP_S" in (mc.__doc__ or "") and "stopping the stack to preserve battery" in (mc.__doc__ or "")
+      and "MOSS_IDLE_STOP_S" in cockpit_md and "stopping the stack to preserve battery" in cockpit_md)
+idle_md = re.search(r"\*\*The stack stops itself\.\*\*[\s\S]*?first request past the limit\.", cockpit_md)
+idle_par = re.sub(r"\s+", " ", idle_md.group(0)) if idle_md else ""
+idle_says = ("about 2 W more than no stack at all (one measurement at the time of this change)",
+             "`moss-gamepad` and any other MOSS blueprint stay up", "for 10 s", "LCM_DEFAULT_URL", "`goal_request`",
+             "`episode_marker`", "an open episode", "POST /cmd/keepalive", "10 s before", "last_source",
+             "under 30 s is refused", "stopped at 14:05", "a restarted cockpit no longer shows it", "up to 120 s",
+             "no longer a `dimos run`", "tried again each second", "monotonic clock")
+check("docs/cockpit.md, the idle stop paragraph: the power as one measured difference (about 2 W more, no absolute "
+      "watts), moss-nav and moss-explore only (moss-gamepad stays up), the deaf cockpit (10 s) and LCM_DEFAULT_URL, "
+      "goal_request / episode_marker / an open episode, the keepalive button, the 10 s window, last_source, under "
+      "30 s refused, 'stopped at', the note lost with a restart, the 120 s launcher, the stale pid, the retry",
+      bool(idle_par) and all(s in idle_par for s in idle_says) and "6.6 W" not in cockpit_md
+      and "4.7 W" not in cockpit_md and "VDD_IN" not in idle_par,
+      ", ".join(s for s in idle_says if s not in idle_par) or idle_par[:120])
 
 # ---------------------------------------------------------------------------
 print("F. hygiene")

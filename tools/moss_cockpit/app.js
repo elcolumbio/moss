@@ -8,8 +8,8 @@
  *   GET  /map_meta    1 Hz, then /map.png only when map_meta.stamp changed
  *   GET  /log.json    0.5 Hz      GET /preflight.json on load and after a check
  *   GET  /decisions.json?n=30  1 Hz  (the stack's decisions read from its log, and the word for now)
- *   GET  /launch.json while a stack command runs
- *   POST /cmd/<explore|goal|stop|episode|stack>
+ *   GET  /launch.json while a stack command runs (the page's, or one the cockpit runs itself: the idle stop)
+ *   POST /cmd/<explore|goal|stop|episode|stack|keepalive>   (keepalive: the idle line, a button)
  *
  * Each poller waits for its answer before scheduling the next one, so a slow
  * Jetson never gets a queue of requests. Pollers sleep while the tab is hidden.
@@ -29,6 +29,7 @@ var CAM_GRACE_MS = 6000;      // a stream younger than this is not judged dead (
 var STALL_HOLD_S = 4;         // the STALLED badge stays up at least this long after the stall count goes up
 var DEPTH_COLOR = "rgba(255,193,94,.95)";   // amber: depth-camera obstacles, apart from the mint lidar scan
 var DECISION_ROWS = 30;       // the decision feed shows this many, newest on top
+var IDLE_WARN_S = 60;         // the idle line under the chip turns to the warning colour this close to the stop
 // The commanded-motion arrow at the robot: the path a constant (vx, wz) drives in CMD_ARROW_S,
 // so 0.45 m/s is 0.6 m on the map, drawn from the marker's edge (its nose, its tail in reverse)
 // and never shorter on screen than CMD_MIN_RUN; a pivot is an arc around the robot sweeping the
@@ -57,7 +58,8 @@ var S = {
   view: { scale: 40, x: -3, y: 3 }, fitted: false,
   pendingGoal: null, camPaused: false, camOk: false, camAt: 0, camLost: null, pfAll: false,
   stateAt: 0, stallLatch: { count: null, until: 0 },
-  decisions: null, decHtml: null, decKeys: null
+  decisions: null, decHtml: null, decKeys: null,
+  noteTs: undefined             // the launcher note last seen (undefined: no state yet)
 };
 
 function $(id) { return document.getElementById(id); }
@@ -176,6 +178,7 @@ function pollState() {
     if (wasOffline && S.offlineSince && Date.now() - S.offlineSince > RELOAD_AFTER_AWAY_MS) { location.reload(); return; }
     S.state = d; S.online = true; S.stateAt = Date.now(); S.offlineSince = 0;
     if (wasOffline) camRestart("Cockpit back. Reconnecting the stream.");   // its stream died with it
+    followLaunch(d.launch, d.stack);
     render();
   }, function () {
     if (S.online || !S.offlineSince) S.offlineSince = Date.now();
@@ -187,6 +190,7 @@ function pollState() {
 function render() {
   document.body.classList.toggle("offline", !S.online);
   renderHeader();
+  renderIdle();
   renderBase();
   renderSystem();
   renderControls();
@@ -207,6 +211,56 @@ function renderHeader() {
   var name = st.running ? (st.run_id || st.blueprint || "stack") : "no stack";
   if (isDemo()) name += "  ·  demo data";
   setText("run-name", name);
+}
+
+// The idle stop (/state.json "idle"): how long the stack has seen no activity and when the
+// cockpit stops it, one line under the chip: {text, cls, keep}, or null to hide it (no stack the
+// stop applies to, the rule off, a cockpit that cannot see the bus). Dim until half the limit,
+// plain after, the warning colour in the last IDLE_WARN_S seconds. The line is a button: `keep`
+// while a press can still keep the stack up.
+function idleView(idle, st) {
+  if (!st || !st.running || !idle || !idle.enabled) return null;
+  var i = idle.idle_s, left = idle.stop_in_s, lim = idle.limit_s;
+  if (typeof i !== "number" || typeof left !== "number" || typeof lim !== "number") return null;
+  var cls = left < IDLE_WARN_S ? "attn" : i < lim / 2 ? "dim" : "";
+  if (left <= 0) return { text: "idle " + clock(i) + ": stopping the stack to preserve battery", cls: cls, keep: false };
+  return { text: "idle " + clock(i) + ", stops at " + clock(lim) + " to preserve battery  ·  keep the stack up",
+           cls: cls, keep: true };
+}
+
+function renderIdle() {
+  var v = idleView(S.state && S.state.idle, stack()), el = $("idle-note");
+  el.hidden = !v;
+  if (!v) return;
+  setText("idle-note", v.text);
+  el.className = ("num " + v.cls).trim();
+  el.disabled = !v.keep || !S.online;
+}
+
+// A press on the idle line: the cockpit's count starts again (POST /cmd/keepalive) and the line
+// shows it at once, from the "idle" the answer carries.
+function keepUp() {
+  return post("keepalive", {}).then(function (d) {
+    if (!answer(d, "Idle count restarted: the stack stays up.")) return;
+    if (S.state && d.idle) { S.state.idle = d.idle; renderIdle(); }
+  }, function () { say("The cockpit did not answer.", true); });
+}
+
+// "14:05" from epoch seconds, this browser's clock
+function hhmm(ts) { var d = new Date(ts * 1000); return pad2(d.getHours()) + ":" + pad2(d.getMinutes()); }
+
+// A stack command the page did not send (the cockpit's own idle stop, another page's launch):
+// its lines go to the stack tail like the page's own, and the cockpit's note (why it ran) goes
+// to the status line with its time ("..., stopped at 14:05"), where it stays until the next action.
+// On the first state a note is said only when no stack runs: then it is why the stack is down, not
+// news about a later stack. The cockpit keeps the note in memory: a restarted cockpit has none.
+function followLaunch(l, st) {
+  var n = l && l.note, key = n && n.text ? n.ts : null;
+  var said = key !== null && key !== S.noteTs && (S.noteTs !== undefined || !(st && st.running));
+  if (said) say(String(n.text) + (typeof n.ts === "number" && isFinite(n.ts) ? ", stopped at " + hhmm(n.ts) : ""), true);
+  S.noteTs = key;
+  if (l && l.running) S.launchBusy = true;
+  if (said || (l && l.running)) watchLaunch();
 }
 
 function modeName(b) {
@@ -970,6 +1024,7 @@ function watchLaunch() {
 $("b-map").addEventListener("click", function () { stackCmd("map", "Launching the mapping stack."); });
 $("b-explore").addEventListener("click", function () { stackCmd("explore", "Launching the explore stack. Exploration stays off."); });
 $("b-stack-stop").addEventListener("click", function () { stackCmd("stop", "Stopping the stack."); });
+$("idle-note").addEventListener("click", keepUp);
 $("b-check").addEventListener("click", function () { stackCmd("check", "Flight check running."); });
 $("b-check2").addEventListener("click", function () { stackCmd("check", "Flight check running."); });
 
