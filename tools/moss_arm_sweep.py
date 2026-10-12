@@ -24,6 +24,10 @@ Options
   --tolerance   ticks: a waypoint is reached when all five are this close (25)
   --timeout     seconds per waypoint before it counts as a fault (12)
   --seed        the random spread's seed: the same inputs give the same tour (0)
+  --random      a random walk over the allowed cells (any direction, unvisited cells
+                first, the way home always kept) instead of the boundary tour
+  --clearance   grid steps kept clear of any forbidden point (0); a run above speed
+                400 needs 1 or more, because the table knows poses, not overshoot
   --spread      how much the random spread weighs against the nearest move (0.25)
   --log         the JSONL log (arm_sweep.jsonl)
 
@@ -125,7 +129,8 @@ TICKS_PER_SPEED_UNIT = 1.0      # Goal_Speed: steps per second
 TICKS_PER_ACC_UNIT = 100.0      # Acc: 100 steps per second squared per unit
 SETTLE_S = 0.05                 # per move: one poll and the next write
 POLL_S = 0.04
-MAX_SPEED = 400                 # the tour hugs the rover: slow or not at all
+SLOW_SPEED = 400                # above it, --clearance 1 or more is required: a servo overshoots its goal at speed
+MAX_SPEED = 2000                # Goal_Speed ceiling this tool accepts (steps per second)
 BUS_SILENT_S = 1.0              # no complete reading for this long is a fault
 REVERSE_S = 0.4                 # the penalty, in seconds, for each joint a move turns back
 SEARCH_POPS = 50000             # the way to the nearest frontier cell gives up after this many cells
@@ -243,8 +248,9 @@ def _shifted(arr: np.ndarray, o) -> np.ndarray:
 class Planner:
     """The keep-out table as a graph of free cells, and the tour on it."""
 
-    def __init__(self, guard: ArmGuard, calibration: dict, model: SpeedModel, tolerance: int = 25):
+    def __init__(self, guard: ArmGuard, calibration: dict, model: SpeedModel, tolerance: int = 25, clearance: int = 0):
         self.guard, self.model, self.tol = guard, model, int(tolerance)
+        self.clearance = int(clearance)
         self.joints = tuple(guard.joints)
         unknown = [j for j in self.joints if j not in SERVO_IDS]
         if unknown:
@@ -271,6 +277,15 @@ class Planner:
             raise Refused(f"the drive pose {self._fmt(self.drive)} is not allowed: {guard.why(q_drive)}")
 
         occ = guard.occ
+        for _ in range(self.clearance):   # clearance: every grid point within that many steps of a forbidden one counts as forbidden
+            grown = occ.copy()
+            for k in range(occ.ndim):
+                lo = tuple(slice(0, -1) if i == k else slice(None) for i in range(occ.ndim))
+                hi = tuple(slice(1, None) if i == k else slice(None) for i in range(occ.ndim))
+                grown[lo] |= occ[hi]
+                grown[hi] |= occ[lo]
+            occ = grown
+        self.occ_used = occ
         d = occ.ndim
         cells, near = ~occ, occ.copy()
         for k in range(d):     # near: forbidden, or one grid step from a forbidden point along one joint
@@ -455,9 +470,14 @@ class Planner:
                     heapq.heappush(heap, (dm, m))
         return []
 
-    def plan(self, duration: float, seed: int = 0, spread: float = 0.25) -> Plan:
+    def plan(self, duration: float, seed: int = 0, spread: float = 0.25, mode: str = "frontier") -> Plan:
+        """mode "frontier": the tour hugs the forbidden region (the default);
+        mode "random": a random walk over the allowed cells, any direction,
+        unvisited cells first, the time to come home always kept."""
         budget = float(duration)
         rng = np.random.default_rng(seed)
+        if mode == "random":
+            return self._plan_random(budget, rng)
         visited = np.zeros(self.N, dtype=bool)
         cells = []          # the tour's cells, in order
         t, prev_o = 0.0, np.zeros(len(self.joints), dtype=np.int64)
@@ -511,6 +531,55 @@ class Planner:
             if w.kind == "frontier":
                 self._skirt(w)
         plan = Plan(wps, budget, self.model, self.tol, seed)
+        for i in range(1, len(wps)):
+            why = self.move_refused(wps[i - 1].ticks, wps[i].ticks)
+            if why:
+                raise Refused(f"the planned move to waypoint {i} fails its check ({why})")
+        return plan
+
+    def _plan_random(self, budget: float, rng) -> Plan:
+        visited = np.zeros(self.N, dtype=bool)
+        cells, t, cur = [], 0.0, None
+        ok_f = self.cell_ok.ravel()
+        while True:
+            if cur is None:
+                nbr = np.array(sorted(self.drive_next), dtype=np.int64)
+                if not len(nbr):
+                    break
+                costs = np.array([self.to_drive_s(int(n)) for n in nbr])
+                ok = np.ones(len(nbr), dtype=bool)
+            else:
+                nbr = np.clip(cur + self.shift, 0, self.N - 1)
+                costs, ok = self.cost, self.edge[:, cur]
+            m = ok & ok_f[nbr] & (t + costs + self.dist[nbr] <= budget + 1e-9)
+            if not m.any():
+                break
+            idx = np.flatnonzero(m)
+            fresh = idx[~visited[nbr[idx]]]
+            pool = fresh if len(fresh) else idx
+            k = int(pool[int(rng.integers(len(pool)))])
+            n = int(nbr[k])
+            t += float(costs[k])
+            visited[n] = True
+            cells.append(n)
+            cur = n
+        if len(set(cells)) < 3:
+            raise Refused(f"the random walk finds fewer than three allowed cells in reach of the drive pose "
+                          f"in {budget:g} s at speed {self.model.speed}")
+        cells += self.home_cells(cells[-1])
+        wps = [Waypoint(dict(self.drive), "drive")]
+        for n in cells:
+            if n is None:
+                w = Waypoint(dict(self.drive), "drive")
+            else:
+                w = Waypoint(self.centre_ticks(n), "frontier" if self.frontier_f[n] else "pass",
+                             tuple(int(x) for x in np.unravel_index(n, self.cshape)))
+            w.move_s = self.model.move_time(wps[-1].ticks, w.ticks)
+            wps.append(w)
+        for w in wps:
+            if w.kind == "frontier":
+                self._skirt(w)
+        plan = Plan(wps, budget, self.model, self.tol, 0)
         for i in range(1, len(wps)):
             why = self.move_refused(wps[i - 1].ticks, wps[i].ticks)
             if why:
@@ -967,6 +1036,8 @@ def main(argv=None, bus_hook=None, say=print) -> int:
     ap.add_argument("--timeout", type=float, default=12.0)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--spread", type=float, default=0.25)
+    ap.add_argument("--random", action="store_true", help="a random walk over the allowed cells instead of the boundary tour")
+    ap.add_argument("--clearance", type=int, default=0, help="grid steps kept clear of any forbidden point (0); at least 1 above speed 400")
     ap.add_argument("--log", default="arm_sweep.jsonl")
     ap.add_argument("--dry-run", action="store_true", help="a fake bus instead of the arm")
     ap.add_argument("--fast", action="store_true", help="with --dry-run: a virtual clock")
@@ -975,13 +1046,19 @@ def main(argv=None, bus_hook=None, say=print) -> int:
     if not 1 <= a.speed <= MAX_SPEED:
         say(f"refused: --speed {a.speed}: 1 to {MAX_SPEED}")
         return 1
+    if a.speed > SLOW_SPEED and a.clearance < 1:
+        say(f"refused: --speed {a.speed} above {SLOW_SPEED} needs --clearance 1 or more (overshoot at speed is not in the table)")
+        return 1
+    if a.clearance < 0:
+        say("refused: --clearance below 0")
+        return 1
     if not 1 <= a.acc <= 254:
         say(f"refused: --acc {a.acc}: 1 to 254")
         return 1
     try:
         guard, calibration = load(a.table, a.calib)
-        p = Planner(guard, calibration, SpeedModel(a.speed, a.acc, a.tolerance), a.tolerance)
-        plan = p.plan(a.duration, a.seed, a.spread)
+        p = Planner(guard, calibration, SpeedModel(a.speed, a.acc, a.tolerance), a.tolerance, a.clearance)
+        plan = p.plan(a.duration, a.seed, a.spread, "random" if a.random else "frontier")
     except Refused as e:
         say(f"refused: {e}")
         return 1

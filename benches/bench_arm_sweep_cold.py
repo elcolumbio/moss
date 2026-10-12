@@ -494,6 +494,27 @@ check(f"a forbidden waypoint slipped in at {k}: refused before it is written, ex
       forbidden not in gs and code == 2 and "refuses the move to waypoint" in text and P.parked(lines[-1]["ticks"]),
       text.strip().splitlines()[0][:110])
 
+# ── G. the random walk and the clearance ──
+print("G. the random walk and the clearance")
+pr = W.Planner(GUARD, CAL_RUN, M, TOL).plan(25.0, 3, 0.25, "random")
+rt = [w.ticks for w in pr.waypoints]
+check("random: starts and ends at the drive pose, visits at least three cells",
+      rt[0] == DRIVE and rt[-1] == DRIVE and len({tuple(sorted(t.items())) for t in rt[1:-1]}) >= 3, f"{len(rt)} waypoints")
+check("random: every waypoint is allowed by the guard", all(GUARD.allowed_ticks(t) for t in rt))
+check("random: every move passes the segment check", all(not W.Planner.move_refused(P, rt[i - 1], rt[i]) for i in range(1, len(rt))))
+check("random: two seeds give two different tours",
+      [w.ticks for w in W.Planner(GUARD, CAL_RUN, M, TOL).plan(25.0, 4, 0.25, "random").waypoints] != rt)
+try:
+    pc = W.Planner(GUARD, CAL_RUN, M, TOL, clearance=1)
+    cells_c = [w.cell for w in pc.plan(25.0, 3, 0.25, "random").waypoints if w.cell is not None]
+    check("clearance 1: no waypoint cell touches a forbidden grid point of the table",
+          cells_c and all(not near_forbidden(GUARD, c) for c in cells_c), f"{len(cells_c)} cells")
+except W.Refused as e:
+    check("clearance 1: the drive pose stays plannable", False, str(e)[:100])
+r = run(["--random", "--speed", "1500", "--plan-only", "--table", str(table_path), "--calib", str(calib_path),
+         "--duration", "10", "--log", str(TMP / "g.jsonl")])
+check("speed 1500 without --clearance is refused", r[0] == 1 and "needs --clearance" in r[1], r[1].strip().splitlines()[0][:100])
+
 # ── F. the start ──
 print("F. the start")
 clk = W.VirtualClock()
