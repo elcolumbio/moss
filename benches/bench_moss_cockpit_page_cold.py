@@ -127,10 +127,12 @@ check("index.html has #mod-decisions, #now-word, #now-detail, #now-since, #decis
       all(i in E for i in need), ", ".join(i for i in need if i not in E))
 dups = sorted({i for i in el.ids if el.ids.count(i) > 1})
 check("every id in index.html is unique", not dups, ", ".join(dups))
-md, ml = E.get("mod-decisions", {}), E.get("mod-log", {})
-check("#mod-decisions sits ABOVE #mod-log, both in the right column (#col-right)",
-      md and ml and md["pos"] < ml["pos"] and "col-right" in md["in"] and "col-right" in ml["in"],
-      f"decisions {md.get('pos')} {md.get('in')}, log {ml.get('pos')} {ml.get('in')}")
+md, ml, mc = E.get("mod-decisions", {}), E.get("mod-log", {}), E.get("cams", {})
+check("#mod-decisions sits in the map column (#col-map), under the run banner and BEFORE the cameras (#cams); the log stays in the right column",
+      md and ml and mc and "col-map" in md["in"] and md["pos"] < mc["pos"] and "col-right" in ml["in"],
+      f"decisions {md.get('pos')} {md.get('in')}, cams {mc.get('pos')}, log {ml.get('pos')} {ml.get('in')}")
+check("the feed scrolls inside a bounded height under the map (#decisions max-height + overflow-y)",
+      bool(re.search(r"#decisions \{[^}]*max-height: \d+px;[^}]*overflow-y: auto", html)))
 title = re.search(r'<h2 class="title" id="dec-title">([^<]*)</h2>', html)
 check('the module is titled "What it decides." and is labelled by that title',
       bool(title) and title.group(1) == "What it decides."
@@ -155,9 +157,9 @@ check("before the first answer the panel says it does not know: '--' dim, 'Waiti
       json.dumps([nw0.groups() if nw0 else None, nd0.group(1) if nd0 else None, feed0.group(1) if feed0 else None]))
 mob = re.search(r"@media \(max-width: 1099px\) \{([\s\S]*?)\n  \}", html)
 orders = dict(re.findall(r"#(mod-[a-z]+) \{ order: (\d+); \}", mob.group(1))) if mob else {}
-check("phone layout: the decisions stack after the controls and before the log (order 3 < 4 < log)",
-      {"mod-controls", "mod-decisions", "mod-log"} <= set(orders)
-      and int(orders["mod-controls"]) < int(orders["mod-decisions"]) < int(orders["mod-log"])
+check("phone layout: the decisions follow the map (no order rule of their own: they are inside #col-map, which comes first); controls before the log",
+      "mod-decisions" not in orders and {"mod-controls", "mod-log"} <= set(orders)
+      and int(orders["mod-controls"]) < int(orders["mod-log"])
       and len(set(orders.values())) == len(orders), json.dumps(orders))
 read_ids = set(re.findall(r'\$\("([\w-]+)"\)', js)) | set(re.findall(r'setText\("([\w-]+)"', js)) \
     | set(re.findall(r'meter\("([\w-]+)"', js))

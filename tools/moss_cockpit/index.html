@@ -228,7 +228,8 @@
   #now-word.dim { color: var(--ui-dim); }
   #now-detail { font-size: 14px; margin-top: 6px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   #now-since { margin-top: 2px; }
-  #decisions { list-style: none; margin: 0; padding: 0; font-size: 12.5px; line-height: 1.4; }
+  #decisions { list-style: none; margin: 0; padding: 0; font-size: 12.5px; line-height: 1.4; max-height: 200px; overflow-y: auto; scrollbar-width: thin; }
+  #col-map #mod-decisions { flex: none; margin: 14px 0 8px; }
   #decisions li { display: grid; grid-template-columns: 38px 78px 1fr; column-gap: 8px; align-items: baseline;
                   padding: 3px 0; border-bottom: 1px solid rgba(106, 135, 151, .3); }
   #decisions li:last-child { border-bottom: 0; }
@@ -276,7 +277,6 @@
     #col-map { display: flex; order: 1; height: 86vh; min-height: 520px; margin-bottom: 28px; }
     .cams { height: 24vh; column-gap: 10px; }
     #mod-controls { order: 3; }
-    #mod-decisions { order: 4; }
     #mod-flight { order: 5; }
     #mod-base { order: 6; }
     #mod-system { order: 7; }
@@ -409,6 +409,18 @@
       </div>
       <div class="brule" aria-hidden="true"><i id="cap-progress"></i></div>
       <div class="brule-cap"><span id="cap-left">no episode</span><span id="cap-right"></span></div>
+      <section class="mod" id="mod-decisions" aria-labelledby="dec-title">
+        <div class="mod-head">
+          <p class="kicker">DECISIONS</p>
+          <h2 class="title" id="dec-title">What it decides.</h2>
+        </div>
+        <div class="now" data-live>
+          <p id="now-word" class="dim" role="status" aria-live="polite">--</p>
+          <p id="now-detail">Waiting for the cockpit.</p>
+          <p id="now-since" class="small dim num"></p>
+        </div>
+        <ol id="decisions" data-live aria-label="Decisions, newest first"></ol>
+      </section>
       <div class="cams" id="cams" data-live>
         <div class="cam" id="cam-nose">
           <img id="cam-img" alt="Nose camera, live">
@@ -424,7 +436,7 @@
       <div class="cam-cap"><span>Nose camera (RealSense) and wrist camera (arm), 5 fps.</span><button class="btn link" id="b-cam" type="button">Pause video</button></div>
     </div>
 
-    <!-- column 3: controls, decisions, log -->
+    <!-- column 3: controls, log -->
     <div class="col" id="col-right">
       <section class="mod" id="mod-controls" aria-labelledby="ctl-title">
         <div class="mod-head">
@@ -472,18 +484,6 @@
         </div>
       </section>
 
-      <section class="mod" id="mod-decisions" aria-labelledby="dec-title">
-        <div class="mod-head">
-          <p class="kicker">DECISIONS</p>
-          <h2 class="title" id="dec-title">What it decides.</h2>
-        </div>
-        <div class="now" data-live>
-          <p id="now-word" class="dim" role="status" aria-live="polite">--</p>
-          <p id="now-detail">Waiting for the cockpit.</p>
-          <p id="now-since" class="small dim num"></p>
-        </div>
-        <ol id="decisions" data-live aria-label="Decisions, newest first"></ol>
-      </section>
 
       <section class="mod" id="mod-log" aria-labelledby="log-title">
         <div class="mod-head alt">
