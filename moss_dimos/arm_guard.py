@@ -15,7 +15,9 @@ Python + numpy: no mujoco on the robot.
     guard.nearest_allowed(q)  # the closest pose that stays allowed once rounded to ticks
     guard.nearest_allowed_ticks(pose_ticks)          # the same, in servo ticks
 
-The rule is conservative. The table knows grid points only. A pose between
+The table also holds the poses where a payload in the gripper (a soda can,
+held upright and across) touches the rover: a pose it allows is clear with
+the can too. The rule is conservative. The table knows grid points only. A pose between
 them is allowed when every grid point its multilinear interpolation touches is
 free: along each joint, the grid value below and the one above (the value
 itself when the pose sits on it), all their combinations. A pose outside the
@@ -236,7 +238,8 @@ class ArmGuard:
             if arr.size and int(arr.max()) > len(self.part_names):
                 raise ValueError(f"cell_part names part {int(arr.max())}, part_names holds {len(self.part_names)}")
             self.cell_part = arr.reshape(self.shape)
-        self.meta = {k: v for k, v in table.items() if k not in ("occupancy_bits_hex", "cell_part", "pair_cells")}
+        self.meta = {k: v for k, v in table.items()
+                     if k not in ("occupancy_bits_hex", "occupancy_empty_bits_hex", "cell_part", "pair_cells")}
         self.joint_map = joint_map or JointMap.from_docs(None, table)
         self._targets = None
 
@@ -249,9 +252,11 @@ class ArmGuard:
 
     def summary(self) -> str:
         m = self.meta
+        pay = m.get("payload") or {}
+        held = (f", a {pay.get('kind')} held {' and '.join(pay.get('orientations', []))}" if pay else "")
         return (f"arm keep-out: {m.get('cells')} cells {'x'.join(map(str, self.shape))}, "
                 f"{100.0 * float(m.get('forbidden_fraction', 0)):.1f} % forbidden, margin {m.get('margin_m')} m, "
-                f"model {m.get('model', {}).get('path')}")
+                f"model {m.get('model', {}).get('path')}{held}")
 
     # ── poses in model radians ──
 

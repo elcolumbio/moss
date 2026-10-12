@@ -133,8 +133,31 @@ joint_map, plus 3 degrees past each end (travel in the JSON): the guard
 refuses a pose outside the table, so the table must hold every pose the
 arm can reach.
 
+The payload (--payload; the CAD layout: can, the simulation layout: none).
+A pose the table allows must stay clear with a can in the gripper. The can
+is a cylinder (66 mm across, 120 mm tall; cyl:<d>x<h> gives another) added
+to the fingers' body as an arm geom (it meets the rover parts only), the
+fingers closed on it: their pads, the parts of the two fingers past the
+hand's own geoms, read from the finger geoms at the slide values, are its
+diameter apart. It is centred between the pads' inner faces and across
+them, its centre at the pads' middle along the approach (the hand's axis,
+perpendicular to the slide, that points from the hand to the fingers),
+then pushed out along the approach until it clears the hand's other geoms:
+a can cannot go into the palm. It is held two ways: upright, its axis along
+the approach (a can standing on the floor, picked from above), and across,
+its axis across both the slide and the approach (a can lying down, picked
+from the side). The table is the union of the empty gripper (every jaw
+position) and the can held either way: the can is swept alone, the arm at
+the holding gap lying inside the jaws' swept volumes. The JSON records the
+payload: its size, the finger values that hold it, the pads, its pose in
+the fingers' body's frame for each orientation, and the forbidden cells of
+each sweep (payload, occupancy_empty_bits_hex). --reuse-empty takes the
+empty gripper's sweep from an earlier table of the same model (both
+sha256), grid and settings, and sweeps only the payload.
+
 Checks before writing: --check grid points are done again with a full
-mj_forward and must agree, and --check free grid points are done again with
+mj_forward and must agree (the empty gripper's own cells, then the table
+with the payload), and --check free grid points are done again with
 the real fingers closed, half open, open and at a random opening: none may
 touch the rover.
 
@@ -149,7 +172,8 @@ Options: --layout (auto, cad, sim), --steps pan,lift,elbow,flex,roll
 --keep-inside, --stand-in-voxel (0.004 m, 0 = rover meshes left out),
 --root-voxel (0 = the root link's geoms as they are), --root-margin (0 m),
 --root-step-deg (1), --cover-tol (0.002 m), --lidar-xyz x,y,z, --no-lidar,
---fix, --check N (64), --jobs (one per core, up to 16), --quiet.
+--fix, --payload (by layout), --reuse-empty, --check N (64), --jobs (one
+per core, up to 16), --quiet.
 
 The table lists only the parts the sweep hit (part_names); cell_part names
 each forbidden cell's part by its number in that list, one byte per cell
@@ -215,12 +239,13 @@ ARM_BIT = 2
 # the two model layouts (--layout): the defaults each one gives the flags left unset
 LAYOUTS = {
     "sim": {"rover_body": "rover", "arm_root": "shoulder_link", "rover_parts": ",".join(ROVER_PARTS),
-            "visual": "count", "root_voxel": ROOT_VOXEL_M, "lidar": True, "margin": MARGIN_M},
+            "visual": "count", "root_voxel": ROOT_VOXEL_M, "lidar": True, "margin": MARGIN_M, "payload": "none"},
     # the CAD's collision hulls are the parts themselves, and the folded arm
     # rests 3 to 4 mm from the bin's front wall: a 10 mm margin would forbid
     # the robot's own driving pose
+    # the robot's rule: a pose the table allows must stay clear with a can in the gripper
     "cad": {"rover_body": "rover_exterior,base", "arm_root": "shoulder", "rover_parts": "*",
-            "visual": "skip", "root_voxel": 0.0, "lidar": False, "margin": CAD_MARGIN_M},
+            "visual": "skip", "root_voxel": 0.0, "lidar": False, "margin": CAD_MARGIN_M, "payload": "can"},
 }
 CAD_BODY = "rover_exterior"          # the body that tells the CAD scene apart
 # a piece of a CAD part: <part>_NNN (a decomposition's hull) or <part>_envelope,
@@ -231,6 +256,12 @@ MAX_PARTS_U8 = 255                   # cell_part in one byte while the table nam
 ARENA_BYTES = 256 << 20              # MuJoCo's arena per MjData: a pose deep in the rover makes 10000+ contacts
 TOP_PAIRS = 100                      # pair_counts by name: the most frequent pairs (pair_cells holds them all)
 TRAVEL_PAD_DEG = 3.0                 # --calibration: the grid reaches this far past each end of the calibrated travel
+# --payload: what the gripper holds; a pose the table allows stays clear with it
+PAYLOADS = {"can": (0.066, 0.120)}   # a soda can: diameter, height (m)
+PAYLOAD_ORIENTATIONS = ("upright", "across")
+PAD_BAND_M = 0.001                   # a finger's pad: its points within this of the finger's inner face
+PUSH_STEP_M = 0.001                  # the payload leaves the hand in steps of this, then halved down to PUSH_TOL_M
+PUSH_TOL_M = 0.00005
 # the CAD names the gripper's parts after its working code, the first word
 # (two capitals and two digits, sometimes after "MOSS "): the table says "gripper"
 WORK_CODE = re.compile(r"^(?:MOSS )?[A-Z]{2}\d{2} +")
@@ -289,7 +320,8 @@ def layout_of(model_path: Path) -> str:
     """"cad" for the CAD scene (it has a body named rover_exterior), else "sim"."""
     import mujoco
 
-    bodies = {b.name for b in mujoco.MjSpec.from_file(str(model_path)).bodies}
+    spec = mujoco.MjSpec.from_file(str(model_path))       # held while its bodies are read: they live in it
+    bodies = {b.name for b in spec.bodies}
     return "cad" if CAD_BODY in bodies else "sim"
 
 
@@ -440,6 +472,254 @@ def open_fingers(model, qpos: np.ndarray, loose: list[int], couplings: dict) -> 
         q[model.jnt_qposadr[j]] = best[1]
     apply_couplings(model, q, couplings, followers)
     return {j: float(q[model.jnt_qposadr[j]]) for j in loose}
+
+
+def parse_payload(text) -> dict | None:
+    """--payload: "none", "can" (66 mm across, 120 mm tall) or
+    "cyl:<diameter mm>x<height mm>", as {"kind", "diameter_m", "height_m"}
+    (None for none)."""
+    t = str(text or "").strip().lower()
+    if t in ("", "none"):
+        return None
+    if t in PAYLOADS:
+        d, h = PAYLOADS[t]
+        return {"kind": t, "diameter_m": d, "height_m": h}
+    m = re.fullmatch(r"cyl:(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)", t)
+    if not m or float(m.group(1)) <= 0 or float(m.group(2)) <= 0:
+        raise SystemExit(f"--payload takes none, can or cyl:<diameter mm>x<height mm>, not {text!r}")
+    return {"kind": "cyl", "diameter_m": float(m.group(1)) / 1000.0, "height_m": float(m.group(2)) / 1000.0}
+
+
+def payload_label(payload: dict, orientation: str) -> str:
+    """The payload as an arm part of the table: "payload can, upright"."""
+    what = payload["kind"] if payload["kind"] != "cyl" else (
+        f"cylinder {1000 * payload['diameter_m']:g} x {1000 * payload['height_m']:g} mm")
+    return f"payload {what}, {orientation}"
+
+
+def _frame_quat(z_axis, x_axis) -> list[float]:
+    """The quaternion of the frame whose z is z_axis and whose x is x_axis
+    (unit and perpendicular), in the frame they are written in."""
+    import mujoco
+
+    z, x = np.asarray(z_axis, float), np.asarray(x_axis, float)
+    q = np.zeros(4)
+    mujoco.mju_mat2Quat(q, np.column_stack([x, np.cross(z, x), z]).ravel())
+    return [float(v) for v in q]
+
+
+def grip_payload(model, qpos, loose, couplings, counts, payload: dict) -> dict:
+    """Where a cylinder payload sits in the gripper, in the frame of the
+    fingers' body (the hand). The gripper: two fingers on slide joints under
+    one body (a finger a coupling ties to the other follows it). s, the
+    slide axis, is the first finger's joint axis; a, the approach (where the
+    fingers point), is the axis of the hand's frame perpendicular to s that
+    points from the hand's own geoms to the fingers; c = s x a. A finger's
+    pad is its geoms that reach the finger's inner face (its nearest point
+    to the other finger along s, among its points past the hand's own geoms
+    along a), within 1 mm, as far as they reach past the hand. The fingers close
+    until the two faces are the payload's diameter apart (the slides at one
+    value, a coupled joint through its coupling). The payload's centre lies
+    midway between the faces, at the pads' middle across (c) and along the
+    approach (a); from there it is pushed out along a (1 mm steps, then
+    halved down to 0.05 mm) until it clears every other geom of the hand
+    and of its fingers: a can cannot go into the palm. "upright" holds its
+    axis along a (a can standing on the floor, picked from above), "across"
+    along c (a can lying down, picked from the side). qpos: the open pose.
+    counts(geom): an arm geom of the sweep. Returns the hand, the finger
+    values that hold it, the gap, the axes, the pads and a pose per
+    orientation (pos, axis, quat, how far it was pushed out and by what)."""
+    import mujoco
+
+    loose = list(loose)
+    followers = {j for j in loose if j in couplings and couplings[j][0] in loose}
+    slides = [j for j in loose if int(model.jnt_type[j]) == int(mujoco.mjtJoint.mjJNT_SLIDE)]
+    fingers = sorted({int(model.jnt_bodyid[j]) for j in slides})
+    parents = {int(model.body_parentid[b]) for b in fingers}
+    drivers = [j for j in slides if j not in followers]
+    if len(fingers) != 2 or len(parents) != 1 or not drivers:
+        raise SystemExit("--payload: the gripper needs two fingers on slide joints under one body, swept (not "
+                         "pinned with --fix); the arm's unswept joints here: "
+                         + (", ".join(joint_name(model, j) for j in loose) or "none"))
+    hand = parents.pop()
+    for j in drivers:
+        if not model.jnt_limited[j]:
+            raise SystemExit(f"--payload: finger {joint_name(model, j)!r} slides without limits")
+    lo = max(float(model.jnt_range[j][0]) for j in drivers)
+    hi = min(float(model.jnt_range[j][1]) for j in drivers)
+    sub = _subtree(model, hand)
+    geoms = [g for g in range(model.ngeom) if int(model.geom_bodyid[g]) in sub and counts(g)]
+    local = {g: hull_points_local(model, g) for g in geoms}
+    side = [_subtree(model, f) for f in fingers]
+    on = [[g for g in geoms if int(model.geom_bodyid[g]) in side[k]] for k in (0, 1)]
+    own = [g for g in geoms if int(model.geom_bodyid[g]) == hand]
+    if not on[0] or not on[1]:
+        raise SystemExit("--payload: a finger carries no geom")
+    data = mujoco.MjData(model)
+
+    def pose(v):
+        q = np.array(qpos, float)
+        for j in drivers:
+            q[model.jnt_qposadr[j]] = v
+        apply_couplings(model, q, couplings, followers)
+        return q
+
+    def points(q):
+        data.qpos[:] = q
+        mujoco.mj_kinematics(model, data)
+        return {g: _to_body(data, hand, _to_world(data, g, local[g])) for g in geoms}
+
+    pts = points(np.array(qpos, float))
+    j0 = next(j for j in slides if int(model.jnt_bodyid[j]) in side[0])
+    s = np.asarray(data.xmat[hand]).reshape(3, 3).T @ np.asarray(data.xaxis[j0], float)
+    s /= np.linalg.norm(s)
+
+    def cat(gs, pp):
+        return np.concatenate([pp[g] for g in gs])
+
+    if float((cat(on[0], pts) @ s).mean()) > float((cat(on[1], pts) @ s).mean()):
+        s = -s                      # s points from the first finger to the second
+    fp = cat(on[0] + on[1], pts)
+    ref = (fp.min(0) + fp.max(0)) / 2.0
+    if own:
+        hp = cat(own, pts)
+        ref = ref - (hp.min(0) + hp.max(0)) / 2.0
+    ref = ref - (ref @ s) * s
+    cands = [e for e in np.vstack([np.eye(3), -np.eye(3)]) if abs(float(e @ s)) < 1e-3]
+    a = max(cands, key=lambda e: float(e @ ref)) if cands else ref / max(float(np.linalg.norm(ref)), 1e-12)
+    a = np.asarray(a, float)
+    if float(a @ ref) <= 0:
+        raise SystemExit("--payload: the fingers do not reach past the hand's own geoms: no approach direction")
+    s = s - (s @ a) * a
+    s /= np.linalg.norm(s)
+    c = np.cross(s, a)
+    palm = max(float((pts[g] @ a).max()) for g in own) if own else -math.inf
+
+    def faces(v):
+        pp = points(pose(v))
+        out = []
+        for k in (0, 1):
+            proj = []
+            for g in on[k]:
+                x = pp[g][pp[g] @ a > palm + 1e-9]
+                if len(x):
+                    proj.append((g, x, x @ s))
+            if not proj:
+                raise SystemExit("--payload: a finger has nothing past the hand's own geoms")
+            f = max(float(d.max()) for _, _, d in proj) if k == 0 else min(float(d.min()) for _, _, d in proj)
+            # the pad: every geom with a point on the face, as far as it reaches past the hand
+            out.append((f, [(g, x) for g, x, d in proj
+                            if np.any((d >= f - PAD_BAND_M) if k == 0 else (d <= f + PAD_BAND_M))]))
+        return out
+
+    def gap(v):
+        (fa, _), (fb, _) = faces(v)
+        return fb - fa
+
+    dia, height = float(payload["diameter_m"]), float(payload["height_m"])
+    g_lo, g_hi = gap(lo), gap(hi)
+    if not min(g_lo, g_hi) - 1e-9 <= dia <= max(g_lo, g_hi) + 1e-9:
+        raise SystemExit(f"--payload: {1000 * dia:g} mm across does not fit: the pads open from "
+                         f"{1000 * min(g_lo, g_hi):.1f} to {1000 * max(g_lo, g_hi):.1f} mm")
+    v = lo if g_hi == g_lo else lo + (dia - g_lo) * (hi - lo) / (g_hi - g_lo)
+    if abs(gap(v) - dia) > 1e-7:          # the gap is not linear in the slide: halve the interval
+        a_, b_, ga = lo, hi, g_lo
+        for _ in range(60):
+            m_ = (a_ + b_) / 2.0
+            gm = gap(m_)
+            if (gm - dia) * (ga - dia) <= 0:
+                b_ = m_
+            else:
+                a_, ga = m_, gm
+        v = (a_ + b_) / 2.0
+    (fa, pad_a), (fb, pad_b) = faces(v)
+    q_hold = pose(v)
+    pad_ids = sorted({g for g, _ in pad_a + pad_b})
+
+    def middle(pad, axis):
+        x = np.concatenate([x for _, x in pad]) @ axis
+        return (float(x.min()) + float(x.max())) / 2.0
+
+    along_a = (middle(pad_a, a) + middle(pad_b, a)) / 2.0
+    across_c = (middle(pad_a, c) + middle(pad_b, c)) / 2.0
+    pad_pts = np.concatenate([x for _, x in pad_a + pad_b])
+    pad_range = [float((pad_pts @ a).min()), float((pad_pts @ a).max())]
+    centre0 = s * (fa + fb) / 2.0 + a * along_a + c * across_c
+
+    # the hand and its fingers at the holding pose, the pads left out (the
+    # payload touches them), in a small model of their own: MuJoCo says
+    # where the payload goes into one of them
+    data.qpos[:] = q_hold
+    mujoco.mj_kinematics(model, data)
+    rot = np.asarray(data.xmat[hand]).reshape(3, 3)
+    probe = mujoco.MjSpec()
+    if hasattr(mujoco.mjtDisableBit, "mjDSBL_NATIVECCD"):
+        probe.option.disableflags |= int(mujoco.mjtDisableBit.mjDSBL_NATIVECCD)
+    body = probe.worldbody.add_body(name="hand")
+    others = [g for g in geoms if g not in pad_ids]
+    mesh_t = int(mujoco.mjtGeom.mjGEOM_MESH)
+    for k, g in enumerate(others):
+        pos = rot.T @ (np.asarray(data.geom_xpos[g]) - data.xpos[hand])
+        quat = np.zeros(4)
+        mujoco.mju_mat2Quat(quat, (rot.T @ np.asarray(data.geom_xmat[g]).reshape(3, 3)).ravel())
+        if int(model.geom_type[g]) == mesh_t:
+            mesh = probe.add_mesh(name=f"m{k}", uservert=local[g].ravel().tolist())
+            mesh.maxhullvert = -1
+            body.add_geom(name=f"g{k}", type=mujoco.mjtGeom.mjGEOM_MESH, meshname=f"m{k}",
+                          pos=pos.tolist(), quat=quat.tolist())
+        else:
+            body.add_geom(name=f"g{k}", type=mujoco.mjtGeom(int(model.geom_type[g])),
+                          size=[float(x) for x in model.geom_size[g]], pos=pos.tolist(), quat=quat.tolist())
+    body.add_geom(name="payload", type=mujoco.mjtGeom.mjGEOM_CYLINDER, size=[dia / 2.0, height / 2.0, 0.0])
+    pm = probe.compile()
+    pdata = mujoco.MjData(pm)
+    cid = mujoco.mj_name2id(pm, mujoco.mjtObj.mjOBJ_GEOM, "payload")
+    pm.geom_sameframe[cid] = 0         # its pos and quat change below: kinematics must read them
+    probe_ids = [mujoco.mj_name2id(pm, mujoco.mjtObj.mjOBJ_GEOM, f"g{k}") for k in range(len(others))]
+
+    def blocker(t):
+        pm.geom_pos[cid] = centre0 + t * a
+        mujoco.mj_kinematics(pm, pdata)
+        for k, gk in enumerate(probe_ids):
+            if mujoco.mj_geomDistance(pm, pdata, cid, gk, 0.0, None) < 0:
+                return others[k]
+        return None
+
+    poses = {}
+    for o in PAYLOAD_ORIENTATIONS:
+        axis = a if o == "upright" else c
+        quat = _frame_quat(axis, s)
+        pm.geom_quat[cid] = quat
+        t, by = 0.0, blocker(0.0)
+        last = by
+        while by is not None:
+            t += PUSH_STEP_M
+            if t > height + dia:
+                raise SystemExit(f"--payload: held {o}, it goes into {geom_name(model, last)} wherever it sits "
+                                 "along the approach")
+            by = blocker(t)
+            last = by if by is not None else last
+        if t > 0:
+            t_in, t_out = t - PUSH_STEP_M, t
+            while t_out - t_in > PUSH_TOL_M:
+                mid = (t_in + t_out) / 2.0
+                hit = blocker(mid)
+                if hit is None:
+                    t_out = mid
+                else:
+                    t_in, last = mid, hit
+            t = t_out
+        centre = centre0 + t * a
+        ca = float(centre @ a)
+        held = (ca - height / 2.0 < pad_range[1] and ca + height / 2.0 > pad_range[0]) if o == "upright" \
+            else pad_range[0] <= ca <= pad_range[1]
+        if not held:
+            raise SystemExit(f"--payload: held {o}, {geom_name(model, last)} pushes it off the pads")
+        poses[o] = {"pos": centre, "axis": axis, "quat": quat, "pushed_out_m": t,
+                    "pushed_by": last if t > 0 else None}
+    return {"hand": hand, "holding": {j: float(q_hold[model.jnt_qposadr[j]]) for j in loose}, "slide": v,
+            "gap_m": fb - fa, "gap_range_m": [min(g_lo, g_hi), max(g_lo, g_hi)], "s": s, "a": a, "c": c,
+            "pads": pad_ids, "pad_range_m": pad_range, "poses": poses}
 
 
 def _matches(name: str, patterns) -> bool:
@@ -693,7 +973,8 @@ def prepare(model_path: Path, *, arm_root: str = "shoulder_link", rover_body="ro
             rover_parts=ROVER_PARTS, exclude=(), margin: float = MARGIN_M, lidar_xyz=None,
             joints=JOINTS, fixed=None, fingers: str = "swept", voxel: float = VOXEL_M,
             root_voxel: float = ROOT_VOXEL_M, root_margin: float = ROOT_MARGIN_M, cover_tol: float = COVER_TOL_M,
-            visual: str = "count", names=None, keep_inside: bool = False, stand_ins=None) -> Prepared:
+            visual: str = "count", names=None, keep_inside: bool = False, stand_ins=None,
+            payload=None) -> Prepared:
     """Load the MJCF, add the lidar when asked and the model has none, the
     stand-ins of the rover's meshes and of the root link's (root_voxel > 0),
     the fingers' swept volumes, and set the contact masks so that
@@ -706,7 +987,10 @@ def prepare(model_path: Path, *, arm_root: str = "shoulder_link", rover_body="ro
     that counts as it is adds no forbidden pose (an arm geom near it is
     nearer the other): it is left out unless keep_inside. fingers="real"
     keeps the finger geoms as they are (the finger check). stand_ins: from
-    an earlier prepare of the same model (skips the sampling)."""
+    an earlier prepare of the same model (skips the sampling). payload
+    (parse_payload): a cylinder held in the gripper (grip_payload), once
+    per orientation, on the fingers' body; payload_model sweeps those
+    cylinders alone, the fingers at the gap that holds it."""
     import mujoco
 
     if visual not in ("count", "skip"):
@@ -893,6 +1177,13 @@ def prepare(model_path: Path, *, arm_root: str = "shoulder_link", rover_body="ro
         loose.append(j)
     couplings = joint_couplings(m0)
     open_pose = open_fingers(m0, d0.qpos, loose, couplings)
+    grip = None
+    if payload:
+        q_open = np.array(d0.qpos)
+        for j, v in open_pose.items():
+            q_open[m0.jnt_qposadr[j]] = v
+        grip = grip_payload(m0, q_open, loose, couplings,
+                            lambda g: int(m0.geom_bodyid[g]) in arm_bodies and not is_visual(g), payload)
     body_joints: dict[int, list[int]] = {}
     for j in range(m0.njnt):
         body_joints.setdefault(int(m0.jnt_bodyid[j]), []).append(j)
@@ -949,6 +1240,44 @@ def prepare(model_path: Path, *, arm_root: str = "shoulder_link", rover_body="ro
         replaced.append(gname[g])
     if not link_names and not root_names:
         raise SystemExit(f"no geom under {arm_root!r}: nothing to sweep")
+    payload_names, record = {}, None
+    if grip:
+        hand = _name(m0, BODY, grip["hand"])
+        for o, pose in grip["poses"].items():
+            name = _unique_name(taken, f"payload_{o}")
+            spec.body(hand).add_geom(name=name, type=mujoco.mjtGeom.mjGEOM_CYLINDER,
+                                     size=[payload["diameter_m"] / 2.0, payload["height_m"] / 2.0, 0.0],
+                                     pos=[float(v) for v in pose["pos"]], quat=pose["quat"], group=3,
+                                     rgba=[0, 0, 0, 0])
+            payload_names[o] = name
+            arm_label[name] = payload_label(payload, o)
+
+        def vec(v, nd=6):
+            return [round(float(x), nd) + 0.0 for x in v]
+
+        def part_of(g):
+            return display_name(names, part_key(gname[g]))
+
+        record = {"kind": payload["kind"], "diameter_m": payload["diameter_m"], "height_m": payload["height_m"],
+                  "orientations": list(grip["poses"]), "hand": hand,
+                  "fingers": {joint_name(m0, j): round(v, 6) for j, v in grip["holding"].items()},
+                  "gap_m": round(grip["gap_m"], 6), "gap_range_m": vec(grip["gap_range_m"]),
+                  "slide_axis": vec(grip["s"]), "approach_axis": vec(grip["a"]), "across_axis": vec(grip["c"]),
+                  "pads": sorted({part_of(g) for g in grip["pads"]}), "pad_range_m": vec(grip["pad_range_m"]),
+                  "pose": {o: {"pos_m": vec(q["pos"]), "axis": vec(q["axis"]), "quat": vec(q["quat"], 9),
+                               "pushed_out_m": round(q["pushed_out_m"], 6),
+                               "pushed_out_by": part_of(q["pushed_by"]) if q["pushed_by"] is not None else None}
+                           for o, q in grip["poses"].items()},
+                  "frame": f"the frame of the body {hand} (the fingers' body)",
+                  "rule": "a cylinder held between the finger pads, swept once per orientation as an arm geom "
+                          "(it meets the rover parts only), the fingers at the gap that holds it: upright = its "
+                          "axis along the approach (where the fingers point: a can standing on the floor, picked "
+                          "from above), across = its axis across both the slide and the approach (a can lying "
+                          "down, picked from the side). Centred between the pads' inner faces and across them, "
+                          "its centre at the pads' middle along the approach, pushed out along the approach "
+                          "until it clears the hand's other geoms (pushed_out_m, pushed_out_by). The table "
+                          "forbids a cell when the empty gripper (every jaw position) or the payload in either "
+                          "orientation comes within margin_m of a rover part"}
 
     def compile_with(arm_on, part_margin):
         for g in spec.geoms:
@@ -960,32 +1289,45 @@ def prepare(model_path: Path, *, arm_root: str = "shoulder_link", rover_body="ro
                 g.contype, g.conaffinity = 0, 0
         return spec.compile()
 
+    # what the result needs from the first compiled model, read before it
+    # goes: one compiled CAD scene holds some 350 MB
+    jn = {j: joint_name(m0, j) for j in range(m0.njnt)}
+    mount_names = [_name(m0, BODY, b) for b in mount_bodies]
+    loose_ranges = {jn[j]: [float(v) for v in m0.jnt_range[j]] for j in loose}
+    inside_geoms = {gname[g]: gname[o] for g, o in inside.items()}
+    inside_parts = {display_name(names, part_key(gname[g])): display_name(names, part_key(gname[o]))
+                    for g, o in inside.items()}
+    holding = dict(grip["holding"]) if grip else {}
+    m0 = d0 = d = None
     # the root model's parts carry the root margin itself: MuJoCo's box-box
     # contacts inside the margin band report no reliable distance, so the
     # root pass counts every contact MuJoCo makes rather than filtering on it
     model = compile_with(set(link_names), margin)
     root_model = compile_with(set(root_names), root_margin)
+    payload_model = compile_with(set(payload_names.values()), margin) if payload_names else None
     gid = {geom_name(model, g): g for g in range(model.ngeom)}
-    if any(geom_name(root_model, g) != n for n, g in gid.items()):
-        raise SystemExit("the two compiled models number their geoms differently")
+    if any(geom_name(m, g) != n for m in (root_model, payload_model) if m is not None for n, g in gid.items()):
+        raise SystemExit("the compiled models number their geoms differently")
     base_qpos = model.qpos0.copy()
     for n, v in fixed.items():
         base_qpos[model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]] = v
     for j, v in open_pose.items():
         base_qpos[model.jnt_qposadr[j]] = v
+    payload_qpos = base_qpos.copy()
+    for j, v in holding.items():
+        payload_qpos[model.jnt_qposadr[j]] = v
     part_ids = [gid[n] for n in part_names]
     keys = set(label.values()) | set(arm_label.values())
     display = {k: display_name(names, k) for k in keys}
     if lidar.get("added"):
         lidar["overlaps_m"] = lidar_overlaps(model, base_qpos, gid[LIDAR_NAME], part_ids,
                                              {gid[n]: display[label[n]] for n in part_names})
-    jn = {j: joint_name(m0, j) for j in range(m0.njnt)}
     return Prepared(model=model, root_model=root_model, root_bid=root_bid,
                     arm_ids=[gid[n] for n in link_names], root_ids=[gid[n] for n in root_names],
                     part_ids=part_ids, part_label=[label[n] for n in part_names], arm_label=arm_label,
                     display=display, lidar=lidar, stand_ins=stand_ins, base_qpos=base_qpos,
-                    mount_bodies=[_name(m0, BODY, b) for b in mount_bodies],
-                    unused=unused, loose={jn[j]: [float(v) for v in m0.jnt_range[j]] for j in loose},
+                    mount_bodies=mount_names,
+                    unused=unused, loose=loose_ranges,
                     open_pose={jn[j]: round(v, 9) for j, v in open_pose.items()},
                     couplings={jn[j1]: {"follows": jn[j2], "polycoef": c} for j1, (j2, c) in couplings.items()
                                if j1 in loose},
@@ -993,9 +1335,9 @@ def prepare(model_path: Path, *, arm_root: str = "shoulder_link", rover_body="ro
                     fingers=fingers, kept_excludes=kept_excludes, visual=visual, visual_out=visual_out,
                     hull_cap_lifted=hull_cap_lifted, rover_bodies=rover_names, visual_kept=visual_kept,
                     rover_counted=len(as_is), rover_stand_in_meshes=len(meshes) if voxel > 0 else 0,
-                    inside={gname[g]: gname[o] for g, o in inside.items()},
-                    inside_parts={display_name(names, part_key(gname[g])): display_name(names, part_key(gname[o]))
-                                  for g, o in inside.items()})
+                    inside=inside_geoms, inside_parts=inside_parts,
+                    payload=record, payload_model=payload_model, payload_qpos=payload_qpos,
+                    payload_ids={o: gid[n] for o, n in payload_names.items()})
 
 
 def held_inside(model, data, geoms) -> dict[int, int]:
@@ -1201,9 +1543,10 @@ def root_pass(p: Prepared, joint_ids: list[int], grids: list[np.ndarray],
 
 
 def _sweep_range(model, joint_ids, grids, base_qpos, arm_ids, part_ids, margin, part_no, arm_no, root_axes,
-                 root_hits, lo: int, hi: int):
+                 root_hits, split, lo: int, hi: int):
     """The flat cells lo..hi-1: (lo, occupancy, part numbers, pair counts,
-    part counts, collision errors)."""
+    part counts, collision errors, split bits: per cell the OR of split[arm
+    geom] over the arm geoms in contact, every bit after a collision error)."""
     import mujoco
 
     data = mujoco.MjData(model)
@@ -1211,6 +1554,11 @@ def _sweep_range(model, joint_ids, grids, base_qpos, arm_ids, part_ids, margin, 
     err_no = max(part_no.values()) + 1
     occ = np.zeros(hi - lo, np.uint8)
     cell_part = np.zeros(hi - lo, np.uint16)
+    split = split or {}
+    grp = np.zeros(hi - lo, np.uint8)
+    every_bit = 0
+    for bit in split.values():
+        every_bit |= bit
     pair_cells: Counter = Counter()
     part_cells: Counter = Counter()
     errors = 0
@@ -1225,6 +1573,7 @@ def _sweep_range(model, joint_ids, grids, base_qpos, arm_ids, part_ids, margin, 
         if hits is None or root is None:
             errors += 1
             occ[i] = 1
+            grp[i] = every_bit
             cell_part[i] = err_no
             part_cells[err_no] += 1
             data = mujoco.MjData(model)
@@ -1242,7 +1591,9 @@ def _sweep_range(model, joint_ids, grids, base_qpos, arm_ids, part_ids, margin, 
                 pair_cells[pair] += 1
             for k in per_part:
                 part_cells[k] += 1
-    return lo, occ, cell_part, pair_cells, part_cells, errors
+            for a, _, _ in hits:
+                grp[i] |= split.get(a, 0)
+    return lo, occ, cell_part, pair_cells, part_cells, errors, grp
 
 
 _JOB = None     # what a forked worker sweeps (set by sweep() before the pool starts)
@@ -1254,17 +1605,18 @@ def _sweep_job(bounds):
 
 def sweep(model, joint_ids: list[int], grids: list[np.ndarray], base_qpos: np.ndarray,
           arm_ids: list[int], part_ids: list[int], margin: float, part_no=None, root_axes=(), root_hits=None,
-          arm_no=None, progress=None, jobs: int = 1):
+          arm_no=None, progress=None, jobs: int = 1, split=None):
     """The grid, row-major (the last joint fastest). part_no: {rover geom: its
     part number, 1..} (a mesh's stand-ins share one), default one per geom
     in part_ids order; arm_no likewise for the arm geoms (pair counts).
     root_hits: the root link's contacts per index of its own joints
     (root_pass), added to every cell with that index. jobs > 1 splits the
-    grid over forked processes (same result). Returns occupancy (uint8,
-    1 = forbidden), the most-hit part per cell (0 = free, the part number, or
-    the largest part number + 1 for a collision error), the cell counts per
-    (arm number, part number) and per part number, and the number of
-    collision errors."""
+    grid over forked processes (same result). split: {arm geom: a bit} (one
+    payload orientation per bit). Returns occupancy (uint8, 1 = forbidden),
+    the most-hit part per cell (0 = free, the part number, or the largest
+    part number + 1 for a collision error), the cell counts per (arm number,
+    part number) and per part number, the number of collision errors, and
+    per cell the OR of the bits of the arm geoms in contact (uint8)."""
     import multiprocessing
 
     global _JOB
@@ -1272,20 +1624,22 @@ def sweep(model, joint_ids: list[int], grids: list[np.ndarray], base_qpos: np.nd
     total = int(np.prod([len(g) for g in grids]))
     occ = np.zeros(total, np.uint8)
     cell_part = np.zeros(total, np.uint16)
+    grp = np.zeros(total, np.uint8)
     pair_cells: Counter = Counter()
     part_cells: Counter = Counter()
     errors = 0
     size = max(200, total // (max(1, jobs) * 8))
     chunks = [(lo, min(total, lo + size)) for lo in range(0, total, size)]
     job = (model, joint_ids, grids, base_qpos, arm_ids, part_ids, margin, part_no, arm_no or {},
-           tuple(root_axes), root_hits)
+           tuple(root_axes), root_hits, split)
     t0, done, shown = time.monotonic(), 0, 0
 
     def merge(res):
         nonlocal errors, done, shown
-        lo, o, c, pc, partc, e = res
+        lo, o, c, pc, partc, e, gb = res
         occ[lo:lo + len(o)] = o
         cell_part[lo:lo + len(o)] = c
+        grp[lo:lo + len(o)] = gb
         pair_cells.update(pc)
         part_cells.update(partc)
         errors += e
@@ -1305,7 +1659,7 @@ def sweep(model, joint_ids: list[int], grids: list[np.ndarray], base_qpos: np.nd
     else:
         for lo, hi in chunks:
             merge(_sweep_range(*job, lo, hi))
-    return occ, cell_part, pair_cells, part_cells, errors
+    return occ, cell_part, pair_cells, part_cells, errors, grp
 
 
 def _pick(occ: np.ndarray, n: int, rng, free_only: bool = False) -> list[int]:
@@ -1318,9 +1672,10 @@ def _pick(occ: np.ndarray, n: int, rng, free_only: bool = False) -> list[int]:
 
 
 def recheck(p: Prepared, joint_ids, grids, margin, occ, n: int, seed: int = 0,
-            step_rad: float = math.radians(ROOT_STEP_DEG)) -> list[int]:
+            step_rad: float = math.radians(ROOT_STEP_DEG), with_payload: bool = True) -> list[int]:
     """Grid points re-done with a full mj_forward on fresh data, the root
-    link included: the flat indices where the verdict differs from the table
+    link included, and the payload in every orientation when p has one (and
+    with_payload): the flat indices where the verdict differs from the table
     (half the sample from the forbidden cells, half from the free ones)."""
     import mujoco
 
@@ -1330,6 +1685,9 @@ def recheck(p: Prepared, joint_ids, grids, margin, occ, n: int, seed: int = 0,
     shape = tuple(len(g) for g in grids)
     axes, root_hits, _, _ = root_pass(p, joint_ids, grids, step_rad, full=True)
     is_arm, is_part = _masks(p.model, p.arm_ids, p.part_ids)
+    pay = getattr(p, "payload_model", None) if with_payload else None
+    if pay is not None:
+        pay_arm, pay_part = _masks(pay, list(p.payload_ids.values()), p.part_ids)
     bad = []
     for flat in _pick(occ, n, rng):
         idx = np.unravel_index(flat, shape)
@@ -1340,6 +1698,13 @@ def recheck(p: Prepared, joint_ids, grids, margin, occ, n: int, seed: int = 0,
         hits = _touch(p.model, data, is_arm, is_part, margin, full=True) if p.arm_ids else []
         root = root_hits.get(tuple(int(idx[k]) for k in axes), []) if root_hits else []
         hit = hits is None or root is None or bool(hits) or bool(root)
+        if not hit and pay is not None:
+            data = mujoco.MjData(pay)
+            data.qpos[:] = p.payload_qpos
+            for j, g, i in zip(joint_ids, grids, idx):
+                data.qpos[pay.jnt_qposadr[j]] = g[i]
+            held = _touch(pay, data, pay_arm, pay_part, margin, full=True)
+            hit = held is None or bool(held)
         if hit != bool(occ[flat]):
             bad.append(int(flat))
     return bad
@@ -1424,6 +1789,104 @@ def _parse_fixed(text: str) -> dict[str, float]:
 
 
 
+MMAP_THRESHOLD = 128 << 10    # glibc serves allocations this large and larger by mmap: freed, they go back
+
+
+def _lean_malloc() -> None:
+    """One compiled CAD scene holds some 350 MB and its compilation more: with
+    glibc serving every allocation of 128 KB or more by mmap, what a dropped
+    model held goes back to the system instead of staying in the heap."""
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").mallopt(-3, MMAP_THRESHOLD)       # M_MMAP_THRESHOLD
+    except (OSError, AttributeError):
+        pass
+
+
+def _trim() -> None:
+    """Hands the memory a dropped model freed back to the system: MuJoCo's
+    asset cache emptied (a scene loads as fast without it), glibc's free
+    pages returned."""
+    try:
+        import mujoco
+        mujoco.mj_clearCache(mujoco.mj_getCache())
+    except (ImportError, AttributeError, TypeError):
+        pass
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
+REUSE_KEYS = ("mujoco", "layout", "shape", "grid", "margin_m", "pad_deg", "arm_root", "rover_body", "rover_parts",
+              "visual", "exclude", "excludes_kept", "lidar", "mount_parts")
+
+
+def _reuse_view(doc: dict, n_arm: int) -> dict:
+    """What two tables share when one reuses the other's empty-gripper sweep:
+    the model by both hashes, the names, the grid, the margin, the rover's
+    and the arm's settings, the fingers and the arm's parts."""
+    view = {k: doc.get(k) for k in REUSE_KEYS}
+    model = doc.get("model") or {}
+    view["model"] = [model.get("sha256"), model.get("geometry_sha256")]
+    view["names"] = (doc.get("names") or {}).get("sha256")
+    view["root_link"] = {k: (doc.get("root_link") or {}).get(k) for k in ("margin_m", "step_deg", "voxel_m")}
+    view["stand_ins"] = {k: (doc.get("stand_ins") or {}).get(k) for k in ("voxel_m", "cover_tol_m")}
+    view["fingers"] = {k: (doc.get("fingers") or {}).get(k) for k in ("open", "fixed")}
+    view["rover_inside"] = (doc.get("rover_inside") or {}).get("geoms")
+    view["arm_geoms"] = list(doc.get("arm_geoms") or [])[:n_arm]
+    return json.loads(json.dumps(view))      # as a JSON file reads back: lists, string keys
+
+
+def reuse_empty(path: Path, view: dict, n_arm: int, key_no: dict, err_no: int, cells: int):
+    """The empty gripper's sweep from an earlier table (--reuse-empty) that
+    shares view with this run (_reuse_view): its occupancy
+    (occupancy_empty_bits_hex in a table with a payload), the part of each
+    forbidden cell, the pairs of the arm's own parts, the cells per part and
+    its collision errors, numbered for this run; and its sweep's record."""
+    path = Path(path)
+    try:
+        old = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"--reuse-empty {path}: {exc}") from None
+    if not isinstance(old, dict) or old.get("format") != FORMAT:
+        raise SystemExit(f"--reuse-empty {path}: not a keep-out table")
+    theirs = _reuse_view(old, n_arm)
+    differ = sorted(k for k in view if view[k] != theirs.get(k))
+    if differ:
+        raise SystemExit(f"--reuse-empty {path.name}: another sweep ({', '.join(differ)} differ)")
+    pay = old.get("payload") or {}
+    bits = old["occupancy_empty_bits_hex"] if pay else old["occupancy_bits_hex"]
+    occ = np.unpackbits(np.frombuffer(bytes.fromhex(bits), np.uint8))[:cells].astype(np.uint8)
+    keys = list(old.get("part_keys") or [])
+    lut = np.zeros(len(keys) + 1, np.uint16)
+    for i, k in enumerate(keys, start=1):
+        if k != COLLISION_ERROR and k not in key_no:
+            raise SystemExit(f"--reuse-empty {path.name}: part {k} is not a rover part of this model")
+        lut[i] = err_no if k == COLLISION_ERROR else key_no[k]
+    cell = np.asarray(old["cell_part"], np.int64)
+    if len(occ) != cells or len(cell) != cells:
+        raise SystemExit(f"--reuse-empty {path.name}: {len(occ)} cells, this grid has {cells}")
+    cell_raw = np.where(occ > 0, lut[cell], 0).astype(np.uint16)
+    if np.any((occ > 0) & (cell_raw == 0)):
+        raise SystemExit(f"--reuse-empty {path.name}: a forbidden cell names no part")
+    pair_cells: Counter = Counter()
+    for a, k, c in old.get("pair_cells") or []:
+        if int(a) < n_arm:
+            pair_cells[(int(a), int(lut[int(k) + 1]))] += int(c)
+    number = {name: int(lut[i]) for i, name in enumerate(old.get("part_names") or [], start=1)}
+    part_cells: Counter = Counter()
+    for name, c in (old.get("part_counts") or {}).items():
+        if c:
+            part_cells[number[name]] += int(c)
+    errors = int(old.get("collision_errors", 0)) - int(pay.get("collision_errors", 0))
+    src = old.get("empty_sweep") or old
+    record = {k: src.get(k) for k in ("sweep_time_s", "sweep_jobs", "sweep_ms_per_pose")}
+    record["reused_from"] = {"file": path.name, "sha256": sha256_of(path)}
+    return occ, cell_raw, pair_cells, part_cells, errors, record
+
+
 def run(args) -> int:
     import mujoco
 
@@ -1462,6 +1925,7 @@ def run(args) -> int:
         lidar_xyz = profile_lidar_xyz()
     else:
         lidar_xyz = None
+    payload = parse_payload(args.payload if args.payload is not None else L["payload"])
     names = load_names(args.names) if args.names else {}
     jm, basis = keep_joint_map(Path(args.out), joints)
     travel = calibrated_travel(args.calibration, joints, jm) if args.calibration else {}
@@ -1473,7 +1937,7 @@ def run(args) -> int:
                   margin=args.margin, lidar_xyz=lidar_xyz, joints=joints, fixed=fixed,
                   voxel=args.stand_in_voxel, root_voxel=root_voxel, root_margin=args.root_margin,
                   cover_tol=args.cover_tol, visual=visual, names=names, keep_inside=args.keep_inside)
-    p = prepare(model_path, **common)
+    p = prepare(model_path, **common, payload=payload)
     model = p.model
     lidar = p.lidar
     if lidar_xyz is not None and not lidar["added"]:
@@ -1498,6 +1962,9 @@ def run(args) -> int:
     n_as_is = len(p.part_ids) - n_stand
     meshes_in = sum(1 for r in p.stand_ins["per_mesh"].values() if r.get("boxes"))
     arm_keys = sorted({p.arm_label[geom_name(model, g)] for g in p.arm_ids + p.root_ids})
+    orients = list(p.payload["orientations"]) if p.payload else []
+    pay_ids = [p.payload_ids[o] for o in orients]
+    arm_names = [p.display[k] for k in arm_keys] + [p.arm_label[geom_name(model, g)] for g in pay_ids]
     say(f"model {model_label(model_path)} (layout {layout}): {len(p.arm_ids)} link geoms "
         f"({len(p.replaced)} finger geoms as swept volumes), root link {len(p.root_ids)} geoms "
         f"({len(p.stand_ins['root_boxes'])} stand-in boxes), {len(arm_keys)} arm parts; "
@@ -1519,6 +1986,14 @@ def run(args) -> int:
             + "; open (the widest, the sweep's base pose): " + ", ".join(f"{j} {v:g}" for j, v in p.open_pose.items())
             + (" (" + ", ".join(f"{j} follows {c['follows']}" for j, c in p.couplings.items()) + ")"
                if p.couplings else ""))
+    if p.payload:
+        r = p.payload
+        say(f"payload {r['kind']} ({1000 * r['diameter_m']:g} mm across, {1000 * r['height_m']:g} mm long) in "
+            f"{r['hand']}, held at a {1000 * r['gap_m']:.1f} mm gap ("
+            + ", ".join(f"{j} {v:g}" for j, v in r["fingers"].items()) + f") between {', '.join(r['pads'])}; "
+            + "; ".join(f"{o}: centre {[round(1000 * v, 2) for v in q['pos_m']]} mm, axis {q['axis']}"
+                        + (f", pushed out {1000 * q['pushed_out_m']:.2f} mm by {q['pushed_out_by']}"
+                           if q["pushed_out_by"] else "") for o, q in r["pose"].items()))
     say(f"grid {'x'.join(map(str, shape))} = {total} poses, margin {args.margin} m, pad {args.pad_deg} deg, "
         f"{jobs} job(s){', fixed: ' + ', '.join(f'{k}={v:g}' for k, v in fixed.items()) if fixed else ''}")
     if travel:
@@ -1534,51 +2009,15 @@ def run(args) -> int:
     key_of = dict(zip(p.part_ids, p.part_label))
     arm_no = {g: arm_keys.index(p.arm_label[geom_name(model, g)]) for g in p.arm_ids + p.root_ids}
 
-    t0 = time.monotonic()
     root_axes, root_hits, ignore, root_samples = root_pass(p, joint_ids, grids, root_step)
     mount = sorted({p.display[key_of[r]] for _, r in ignore})
     if mount:
         say("the root link touches these at every value of its joints (those contacts are not counted): "
             + ", ".join(mount))
-
-    def progress(done, tot, dt):
-        say(f"  {done}/{tot} poses, {dt:.0f} s, about {dt / done * (tot - done):.0f} s left")
-
-    occ, cell_raw, pair_cells, part_cells, errors = sweep(model, joint_ids, grids, p.base_qpos, p.arm_ids, p.part_ids,
-                                                          args.margin, part_no, root_axes, root_hits, arm_no,
-                                                          progress=None if args.quiet else progress, jobs=jobs)
-    sweep_s = time.monotonic() - t0
-    bad = recheck(p, joint_ids, grids, args.margin, occ, args.check, step_rad=root_step)
-    if bad:
-        print(f"{len(bad)} grid point(s) differ between mj_kinematics+mj_collision and a full mj_forward "
-              f"(first flat index {bad[0]}): table not written", file=sys.stderr)
-        return 3
-    real = prepare(model_path, **common, fingers="real", stand_ins=p.stand_ins) if p.loose else None
-    checked, touched = finger_check(real, joint_ids, grids, args.margin, occ, args.check) if real else (0, [])
-    if touched:
-        print(f"{len(touched)} free grid point(s) touch the rover with the real fingers "
-              f"(first: flat {touched[0][0]}, fingers {touched[0][1]}): table not written", file=sys.stderr)
-        return 3
-
-    forbidden = int(occ.sum())
-    # the parts hit, numbered 1.. from the most frequent most-hit part down, so
-    # the common ones take one digit in cell_part; the parts never hit are not listed
-    top = Counter(int(v) for v in cell_raw[occ.astype(bool)])
-    order = sorted(set(top) | set(part_cells), key=lambda k: (-top.get(k, 0), -part_cells.get(k, 0), label_name[k]))
-    lut = np.zeros(len(keys) + 2, np.uint16)
-    for new_no, k in enumerate(order, start=1):
-        lut[k] = new_no
-    cell_part = lut[cell_raw]
-    # one byte per cell while the table names 255 parts or fewer
-    dtype = np.uint8 if len(order) <= MAX_PARTS_U8 else np.uint16
-    cell_part = cell_part.astype(dtype)
-    pairs = sorted(((p.display[arm_keys[a]], label_name[k], c) for (a, k), c in pair_cells.items()),
-                   key=lambda t: (-t[2], t[0], t[1]))
-    pair_rows = sorted(([a, int(lut[k]) - 1, c] for (a, k), c in pair_cells.items()), key=lambda t: (-t[2], t[0], t[1]))
-    run_s = time.monotonic() - t_start
     per_mesh = dict(sorted(p.stand_ins["per_mesh"].items(), key=lambda kv: -kv[1].get("outside_fraction", 0)))
     stand_keys = {part_key(m) for m in per_mesh}
-    doc = {
+    # what the table says before any sweep: the model, the grid and the settings
+    head = {
         "format": FORMAT,
         "made_by": "tools/moss_arm_keepout.py",
         "model": {"path": model_label(model_path), "sha256": sha256_of(model_path), "geometry_sha256": p.geometry_sha256},
@@ -1611,7 +2050,7 @@ def run(args) -> int:
         "excludes_kept": p.kept_excludes,
         "hull_vertex_cap_lifted": p.hull_cap_lifted,
         "mount_bodies": p.mount_bodies,
-        "arm_geoms": [p.display[k] for k in arm_keys],
+        "arm_geoms": arm_names,
         "rover_geoms": sorted({p.display[k] for k in set(p.part_label) - stand_keys}),
         "rover_parts_total": len(keys),
         "rover_geoms_counted": p.rover_counted,
@@ -1643,14 +2082,107 @@ def run(args) -> int:
                             "the sweep's base pose holds the fingers open: each at the end of its range that "
                             "spreads the gripper the most, a joint a model equality ties to another following it"},
         "unswept_joints": {"swept_volume": p.loose, "fixed": p.fixed, "replaced_geoms": p.replaced},
+    }
+
+    def progress(done, tot, dt):
+        say(f"  {done}/{tot} poses, {dt:.0f} s, about {dt / done * (tot - done):.0f} s left")
+
+    # the empty gripper: swept here, or taken from an earlier table of the same sweep
+    t0 = time.monotonic()
+    if args.reuse_empty:
+        occ0, cell0, pairs0, parts0, err0, empty_rec = reuse_empty(
+            Path(args.reuse_empty), _reuse_view(head, len(arm_keys)), len(arm_keys), key_no, len(keys) + 1, total)
+        empty_s = 0.0
+        say(f"empty gripper: {int(occ0.sum())} forbidden cells taken from {Path(args.reuse_empty).name} "
+            "(the same model, grid and settings)")
+    else:
+        occ0, cell0, pairs0, parts0, err0, _ = sweep(model, joint_ids, grids, p.base_qpos, p.arm_ids, p.part_ids,
+                                                     args.margin, part_no, root_axes, root_hits, arm_no,
+                                                     progress=None if args.quiet else progress, jobs=jobs)
+        empty_s = time.monotonic() - t0
+        empty_rec = {"sweep_time_s": round(empty_s, 1), "sweep_jobs": jobs,
+                     "sweep_ms_per_pose": round(1000.0 * empty_s * jobs / total, 3), "reused_from": None}
+    # the payload: its cylinders alone (the arm at the holding gap lies inside the jaws' swept volumes)
+    occ, cell_raw, pair_cells, part_cells, errors = occ0, cell0, Counter(pairs0), parts0, err0
+    pay_s, pay_parts, pay_err, grp = 0.0, Counter(), 0, np.zeros(total, np.uint8)
+    if pay_ids:
+        say(f"payload sweep: the {payload['kind']} alone, held {' and '.join(orients)}")
+        t1 = time.monotonic()
+        occ_p, cell_p, pairs_p, pay_parts, pay_err, grp = sweep(
+            p.payload_model, joint_ids, grids, p.payload_qpos, pay_ids, p.part_ids, args.margin, part_no,
+            arm_no={g: len(arm_keys) + i for i, g in enumerate(pay_ids)},
+            progress=None if args.quiet else progress, jobs=jobs, split={g: 1 << i for i, g in enumerate(pay_ids)})
+        pay_s = time.monotonic() - t1
+        occ = occ0 | occ_p
+        cell_raw = np.where(occ0 > 0, cell0, cell_p).astype(np.uint16)
+        pair_cells = pair_cells + pairs_p
+        errors = err0 + pay_err
+    sweep_s = empty_s + pay_s
+    bad = recheck(p, joint_ids, grids, args.margin, occ0, args.check, step_rad=root_step, with_payload=False)
+    if not bad and pay_ids:
+        bad = recheck(p, joint_ids, grids, args.margin, occ, args.check, seed=2, step_rad=root_step)
+    if bad:
+        print(f"{len(bad)} grid point(s) differ between mj_kinematics+mj_collision and a full mj_forward "
+              f"(first flat index {bad[0]}): table not written", file=sys.stderr)
+        return 3
+    p.model = p.root_model = p.payload_model = model = None      # the finger check compiles its own
+    _trim()
+    real = prepare(model_path, **common, fingers="real", stand_ins=p.stand_ins) if p.loose else None
+    checked, touched = finger_check(real, joint_ids, grids, args.margin, occ, args.check) if real else (0, [])
+    real = None
+    _trim()
+    if touched:
+        print(f"{len(touched)} free grid point(s) touch the rover with the real fingers "
+              f"(first: flat {touched[0][0]}, fingers {touched[0][1]}): table not written", file=sys.stderr)
+        return 3
+
+    forbidden = int(occ.sum())
+    # the parts hit, numbered 1.. from the most frequent most-hit part down, so
+    # the common ones take one digit in cell_part; the parts never hit are not listed
+    top = Counter(int(v) for v in cell_raw[occ.astype(bool)])
+    order = sorted(set(top) | set(part_cells) | set(pay_parts),
+                   key=lambda k: (-top.get(k, 0), -part_cells.get(k, 0), -pay_parts.get(k, 0), label_name[k]))
+    lut = np.zeros(len(keys) + 2, np.uint16)
+    for new_no, k in enumerate(order, start=1):
+        lut[k] = new_no
+    cell_part = lut[cell_raw]
+    # one byte per cell while the table names 255 parts or fewer
+    dtype = np.uint8 if len(order) <= MAX_PARTS_U8 else np.uint16
+    cell_part = cell_part.astype(dtype)
+    pairs = sorted(((arm_names[a], label_name[k], c) for (a, k), c in pair_cells.items()),
+                   key=lambda t: (-t[2], t[0], t[1]))
+    pair_rows = sorted(([a, int(lut[k]) - 1, c] for (a, k), c in pair_cells.items()), key=lambda t: (-t[2], t[0], t[1]))
+    record = None
+    if pay_ids:
+        empty_b = occ0.astype(bool)
+        bits = {o: ((grp >> i) & 1).astype(bool) for i, o in enumerate(orients)}
+        record = dict(p.payload)
+        record["forbidden"] = {"empty": int(empty_b.sum()), **{o: int(b.sum()) for o, b in bits.items()},
+                               "union": forbidden}
+        record["added"] = {**{o: int((b & ~empty_b).sum()) for o, b in bits.items()},
+                           "total": forbidden - int(empty_b.sum())}
+        record["part_counts"] = {label_name[k]: pay_parts[k] for k in order if pay_parts.get(k)}
+        record["collision_errors"] = pay_err
+        record["sweep_time_s"] = round(pay_s, 1)
+        record["sweep_ms_per_pose"] = round(1000.0 * pay_s * jobs / total, 3)
+        record["counts_rule"] = ("forbidden: the cells where the empty gripper, the payload held each way, and any "
+                                 "of them (union, the table) come within margin_m of a rover part; added: those of "
+                                 "them the empty gripper leaves free; part_counts: the cells where the payload, "
+                                 "either way, touches that part")
+    run_s = time.monotonic() - t_start
+    doc = dict(head)
+    doc.update({
+        "payload": record,
+        "empty_sweep": empty_rec,
         "collision_errors": errors,
         "cells": total,
         "forbidden": forbidden,
         "forbidden_fraction": round(forbidden / total, 6),
         "part_names": [label_name[k] for k in order],
         "part_keys": [label_key[k] for k in order],
-        "part_counts": {label_name[k]: part_cells[k] for k in order},
-        "part_counts_rule": "cells where the arm touches this part (a cell counts for every part it touches)",
+        "part_counts": {label_name[k]: part_cells[k] for k in order if part_cells.get(k)},
+        "part_counts_rule": "cells where the arm, the gripper empty, touches this part (a cell counts for every "
+                            "part it touches); payload.part_counts the same for the payload",
         "part_top_counts": {label_name[k]: top.get(k, 0) for k in order},
         "pair_counts": {f"{a}|{r}": c for a, r, c in pairs[:TOP_PAIRS]},
         "pair_counts_rule": f"cells where this arm part and this rover part touch: the {TOP_PAIRS} most frequent "
@@ -1659,7 +2191,7 @@ def run(args) -> int:
         "run_time_s": round(run_s, 1),
         "sweep_time_s": round(sweep_s, 1),
         "sweep_jobs": jobs,
-        "sweep_ms_per_pose": round(1000.0 * sweep_s * jobs / total, 3),
+        "sweep_ms_per_pose": empty_rec.get("sweep_ms_per_pose"),
         "rechecked_with_mj_forward": args.check,
         "finger_check": {"poses": checked, "touching": len(touched)},
         "ticks_per_rev": TICKS_PER_REV,
@@ -1668,22 +2200,33 @@ def run(args) -> int:
         "joint_map_rule": "rad = sign * (ticks - model_zero_ticks) * 2 pi / ticks_per_rev; "
                           "ticks as the servo reports them (homing offset applied); align with two poses (docs/arm.md)",
         "occupancy_rule": "occupancy: one uint8 per cell, 1 = forbidden, flat in row-major order, packed 8 cells "
-                          "per byte (numpy packbits, first cell in the high bit), written in hex",
-        "cell_part_rule": "0 = free, k = part_names[k - 1]: the rover part with the most contacts in that cell",
+                          "per byte (numpy packbits, first cell in the high bit), written in hex; with a payload, "
+                          "occupancy_empty_bits_hex holds the empty gripper's alone, the same way",
+        "cell_part_rule": "0 = free, k = part_names[k - 1]: the rover part with the most contacts in that cell "
+                          "(the empty gripper's where it forbids the cell, else the payload's)",
         "cell_part_dtype": np.dtype(dtype).name,
         "occupancy_bits_hex": np.packbits(occ).tobytes().hex(),
-    }
+    })
+    if record is not None:
+        doc["occupancy_empty_bits_hex"] = np.packbits(occ0).tobytes().hex()
     size = write_table(Path(args.out), doc, {"pair_cells": pair_rows, "cell_part": cell_part.tolist()})
 
     say(f"{total} cells, {forbidden} forbidden ({100.0 * forbidden / total:.1f} %), "
-        f"sweep {sweep_s:.1f} s ({1000.0 * sweep_s * jobs / total:.2f} ms per pose and job), total {run_s:.1f} s, "
-        f"{size / 1e6:.2f} MB -> {args.out}")
+        + (f"empty gripper taken from {empty_rec['reused_from']['file']}" if empty_rec["reused_from"]
+           else f"sweep {empty_s:.1f} s ({1000.0 * empty_s * jobs / total:.2f} ms per pose and job)")
+        + (f", payload sweep {pay_s:.1f} s" if pay_ids else "")
+        + f", total {run_s:.1f} s, {size / 1e6:.2f} MB -> {args.out}")
+    if record is not None:
+        f, a = record["forbidden"], record["added"]
+        say(f"payload: empty gripper {f['empty']} cells, " + ", ".join(
+            f"{o} {f[o]} ({a[o]} the empty gripper leaves free)" for o in orients) + f", union {f['union']}")
     if errors:
         say(f"warning: {errors} pose(s) where MuJoCo's collision failed, marked forbidden")
     n_hit = sum(1 for k in order if k <= len(keys))
     say(f"rover parts hit: {n_hit} of {len(keys)}{' (and the collision errors)' if errors else ''}, "
         f"cell_part {np.dtype(dtype).name}")
-    say("rover parts hit (cells): " + ", ".join(f"{label_name[k]} {part_cells[k]}" for k in order[:12]))
+    say("rover parts hit (cells): " + ", ".join(f"{label_name[k]} {part_cells.get(k, 0) or pay_parts.get(k, 0)}"
+                                               for k in order[:12]))
     say("worst pairs (cells): " + ", ".join(f"{a}|{r} {c}" for a, r, c in pairs[:8]))
     if checked:
         say(f"finger check: {checked} poses of free grid points with the real fingers, none touches")
@@ -1691,6 +2234,7 @@ def run(args) -> int:
 
 
 def main(argv=None) -> int:
+    _lean_malloc()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--model", required=True, help="the robot's MJCF")
     ap.add_argument("--out", default=str(DEFAULT_OUT), help="the table (default config/arm_keepout.json)")
@@ -1731,6 +2275,12 @@ def main(argv=None) -> int:
     ap.add_argument("--lidar-xyz", default="", help="x,y,z of the lidar's centre on the first rover body (m)")
     ap.add_argument("--no-lidar", action="store_true", help="do not add the lidar")
     ap.add_argument("--fix", default="", help="name=value,... pins unswept arm joints (else swept as volumes)")
+    ap.add_argument("--payload", default=None,
+                    help="what the gripper holds, swept upright and across: none, can (66 x 120 mm) or "
+                         "cyl:<diameter mm>x<height mm> (layout: none; can)")
+    ap.add_argument("--reuse-empty", default="",
+                    help="an earlier table of the same model, grid and settings: its empty-gripper sweep is taken "
+                         "as it is and only the payload is swept")
     ap.add_argument("--check", type=int, default=CHECK_N,
                     help="grid points re-done with mj_forward, and free ones with the real fingers")
     ap.add_argument("--jobs", type=int, default=0, help="processes for the sweep (0: one per core, up to 16)")
@@ -1744,7 +2294,12 @@ def main(argv=None) -> int:
     if (args.root_voxel is not None and args.root_voxel < 0) or args.root_step_deg <= 0:
         print("--root-voxel must be 0 or more and --root-step-deg positive", file=sys.stderr)
         return 2
-    return run(args)
+    try:
+        return run(args)
+    finally:
+        import gc
+        gc.collect()
+        _trim()                         # the run's models are gone: hand their memory back
 
 
 if __name__ == "__main__":

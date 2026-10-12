@@ -25,6 +25,16 @@ Known input -> known output, in radians and metres:
      - a slide finger whose pad passes a post only between its two ends:
        the swept volume forbids it, the open-only and closed-only sweeps miss
        it, the real-finger check passes
+     - a payload: a two-finger hand at the tip holds a cylinder 40 mm
+       across and 100 mm long (--payload cyl:40x100), a wall 0.6 m wide
+       ahead (the reach decides, not its ends): the fingers close to
+       10 mm each (40 mm apart), the cylinder held upright is pushed out of
+       the palm to 48 mm, held across it sits at the pads' middle (20 mm);
+       the table matches the analytic union (the empty hand OR the cylinder
+       either way within 5 mm of the wall) at every grid point, --payload
+       none matches the empty hand alone, and the band at j2 = 0 is wider
+       on both ends with the cylinder; a cylinder wider than the hand
+       opens and a hand with no slide fingers are refused
      - a MuJoCo collision error (mujoco.FatalError) marks its cell forbidden
        and is counted, and why() says so
      - a re-sweep keeps the joint_map; the table records both hashes, the
@@ -43,7 +53,8 @@ Known input -> known output, in radians and metres:
      coarse sweep (8,8,8,6,4) finds forbidden cells, the hull or the bin
      among the parts hit, the lidar added at the profile's height; the arm
      straight up is free and allowed; the robot model (moss_robot.xml next
-     to it) at --margin 0.03 finishes
+     to it) at --margin 0.03 finishes; --payload can on it holds the can
+     between its two pads at 66 mm (29 mm of slide each)
   E. the CAD scene (MOSS_ARM_CAD, else ~/moss-*/cad/*/MOSS_R31.xml, with its
      parts_manifest.json): a CAD piece answers to its part
      (col_part_0996_017 -> col_part_0996), --names gives col_part_0996 its
@@ -61,7 +72,19 @@ Known input -> known output, in radians and metres:
      margin forbids cells a 0 mm margin leaves free; every hull is whole
      (the scene's 128-vertex cap lifted); the geoms held inside another
      change no verdict (--keep-inside); drive and look at their exact angles
-     stay clear of the rover by the margin
+     stay clear of the rover by the margin, with the can held either way
+     too. The payload (a can by default here): two cylinders 66 mm across
+     and 120 mm long on nc90_tool, the jaws at 12 mm each, both TPU pads
+     within 1 mm of the can's surface (checked on the scene's own pad
+     meshes, apart from the tool), upright pushed out of the gripper's
+     rails, across at the pads; --payload none gives the empty gripper's
+     table, the same cells the can's table records as its empty sweep, and
+     the can forbids more; a pose with the gripper over the bin's rim is
+     clear of the rover empty and goes into the bin with the can upright;
+     three postures of an independent clearance study (travel, pick,
+     clear: the pan turned from +110 deg down) touch where it found: the
+     left jaw or its pad against the bin near -46 deg, the can before the
+     arm against the left road-wheel shaft near -45, nothing
   F. the committed table (config/arm_keepout.json) - it loads, 16x16x16x12x8,
      under 2 MB; from the CAD scene: drive and look are allowed, the parts
      carry their CAD names, margin 2 mm, the lidar itself among the parts
@@ -70,7 +93,13 @@ Known input -> known output, in radians and metres:
      config/arm_calibration.json, MOSS_ARM_CALIBRATION, or
      ~/moss-*/docs/arm_calibration_*.json); when the model it names is here
      (next to D's or E's): both hashes match, 200 cells re-done with
-     mj_forward agree, free cells stay free with the real fingers, every
+     mj_forward agree (the can held either way included, and the empty
+     gripper's own cells alone), free cells stay free with the real fingers,
+     the payload record (a can, both orientations, the empty gripper's cells
+     inside the table's), the pose over the bin's rim free for the empty
+     gripper and refused with the can (why() names the bin), the study's
+     postures (clear allowed at every pan, travel and pick refused where it
+     found contacts), every
      rover geom counts (the CAD scene: every collision geom of the model
      accounted for; the simulation model: every rover mesh the named parts
      miss has stand-ins, the camera poses a review found are refused),
@@ -78,7 +107,7 @@ Known input -> known output, in radians and metres:
      with a fine sampling
 
 Needs mujoco (the sweep). Without it: one line "skipped: mujoco not installed",
-exit 0.
+exit 0. Every sweep here runs in one process (--jobs 1).
 
 Run:  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python3 benches/bench_arm_guard_cold.py
 """
@@ -106,6 +135,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
 import moss_arm_keepout as K  # noqa: E402
+K._lean_malloc()     # the CAD scene is loaded a dozen times here: what each load frees goes back to the system
 from moss_dimos import robot_profile  # noqa: E402
 from moss_dimos.arm_guard import POSE_A, POSE_B, ArmGuard, JointMap, align_from_two_poses, align_joint_map  # noqa: E402
 
@@ -423,6 +453,177 @@ for v in ("0.06", "0"):
 check("pinned open (--fix finger=0.06) or closed (finger=0), j1 = 0 comes back free: one end alone misses the post",
       all(ends))
 
+# a payload: a hand at the tip of link2 (0.05 m out) with a palm and two slide
+# fingers; everything is a prism over the plane of the arm within the wall's
+# height, so the clearances are 2-D (convex polygons and a circle)
+HAND_AT = 0.06
+PWALL_C, PWALL_H = (0.31, 0.0, 0.0), (0.02, 0.3, 0.05)    # a wide wall: the reach decides, not the wall's ends
+PALM_X, PALM_HY = (-0.012, -0.002), 0.04
+PAD_X, PAD_T, PAD_FACE0, PAD_TRAVEL = (0.005, 0.035), 0.006, 0.030, 0.02
+CYL_D, CYL_H = 0.040, 0.100
+box_obj(TMP / "palm.obj", ((PALM_X[1] - PALM_X[0]) / 2, PALM_HY, 0.02))
+box_obj(TMP / "pad.obj", ((PAD_X[1] - PAD_X[0]) / 2, PAD_T / 2, 0.015))
+pay_xml = f"""<mujoco model="toy_payload">
+  <compiler angle="radian" autolimits="true" meshdir="{TMP}"/>
+  <asset><mesh name="palm" file="palm.obj"/><mesh name="pad" file="pad.obj"/></asset>
+  <worldbody>
+    <body name="base">
+      <geom name="wall" type="box" pos="{PWALL_C[0]} {PWALL_C[1]} {PWALL_C[2]}" size="{PWALL_H[0]} {PWALL_H[1]} {PWALL_H[2]}"/>
+      <body name="link1">
+        <joint name="j1" type="hinge" axis="0 0 1" range="{J1[0]} {J1[1]}"/>
+        <inertial pos="0.1 0 0" mass="0.05" diaginertia="1e-4 1e-4 1e-4"/>
+        <body name="link2" pos="{L1} 0 0">
+          <joint name="j2" type="hinge" axis="0 0 1" range="{J2[0]} {J2[1]}"/>
+          <body name="hand" pos="{HAND_AT} 0 0">
+            <geom name="palm" type="mesh" mesh="palm" pos="{sum(PALM_X) / 2} 0 0"/>
+            <body name="finger_a">
+              <joint name="finger_a" type="slide" axis="0 1 0" range="0 {PAD_TRAVEL}"/>
+              <geom name="pad_a" type="mesh" mesh="pad" pos="{sum(PAD_X) / 2} {-(PAD_FACE0 + PAD_T / 2)} 0"/>
+            </body>
+            <body name="finger_b">
+              <joint name="finger_b" type="slide" axis="0 -1 0" range="0 {PAD_TRAVEL}"/>
+              <geom name="pad_b" type="mesh" mesh="pad" pos="{sum(PAD_X) / 2} {PAD_FACE0 + PAD_T / 2} 0"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>
+"""
+PAY = ["--no-lidar", "--rover-parts", "wall"]
+WALL2 = np.array([[PWALL_C[0] - PWALL_H[0], -PWALL_H[1]], [PWALL_C[0] + PWALL_H[0], -PWALL_H[1]],
+                  [PWALL_C[0] + PWALL_H[0], PWALL_H[1]], [PWALL_C[0] - PWALL_H[0], PWALL_H[1]]])
+
+
+def rect(x0, x1, y0, y1):
+    return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], float)
+
+
+def _seg(p, a, b):
+    ab = b - a
+    t = min(1.0, max(0.0, float(np.dot(p - a, ab) / max(float(np.dot(ab, ab)), 1e-18))))
+    return float(np.linalg.norm(p - (a + t * ab)))
+
+
+def _apart(P, Q):
+    """A separating axis between the convex polygons (or points) P and Q."""
+    for poly in (P, Q):
+        for i in range(len(poly)):
+            e = poly[(i + 1) % len(poly)] - poly[i]
+            n = np.array([-e[1], e[0]])
+            if np.dot(n, n) > 0 and ((P @ n).max() < (Q @ n).min() or (Q @ n).max() < (P @ n).min()):
+                return True
+    return False
+
+
+def poly_clear(P, Q):
+    """Analytic: the distance between two convex polygons, -1 when they overlap."""
+    if not _apart(P, Q):
+        return -1.0
+    return min(min(_seg(p, Q[i], Q[(i + 1) % len(Q)]) for p in P for i in range(len(Q))),
+               min(_seg(q, P[i], P[(i + 1) % len(P)]) for q in Q for i in range(len(P))))
+
+
+def circle_clear(c, r, Q):
+    """Analytic: a disc to a convex polygon, -1 when they overlap."""
+    if not _apart(np.array([c]), Q):
+        return -1.0
+    d = min(_seg(np.asarray(c), Q[i], Q[(i + 1) % len(Q)]) for i in range(len(Q))) - r
+    return d if d > 0 else -1.0
+
+
+def hand_world(P, j1, j2):
+    """Hand-frame points (x, y) -> the base's frame."""
+    th = j1 + j2
+    rot = np.array([[math.cos(th), -math.sin(th)], [math.sin(th), math.cos(th)]])
+    return P @ rot.T + np.array([L1 * math.cos(j1) + HAND_AT * math.cos(th), L1 * math.sin(j1) + HAND_AT * math.sin(th)])
+
+
+def empty_hand_clear(j1, j2):
+    """The palm and the two pads' swept volumes (each pad over its whole slide) to the wall."""
+    shapes = [rect(PALM_X[0], PALM_X[1], -PALM_HY, PALM_HY),
+              rect(PAD_X[0], PAD_X[1], -(PAD_FACE0 + PAD_T), -(PAD_FACE0 - PAD_TRAVEL)),
+              rect(PAD_X[0], PAD_X[1], PAD_FACE0 - PAD_TRAVEL, PAD_FACE0 + PAD_T)]
+    return min(poly_clear(hand_world(s, j1, j2), WALL2) for s in shapes)
+
+
+def can_clear(j1, j2, upright_x, across_x):
+    """The cylinder held upright (its axis along the fingers: its outline in the plane is a rectangle) and
+    held across (its axis vertical: a disc) to the wall."""
+    up = poly_clear(hand_world(rect(upright_x - CYL_H / 2, upright_x + CYL_H / 2, -CYL_D / 2, CYL_D / 2), j1, j2), WALL2)
+    across = circle_clear(hand_world(np.array([[across_x, 0.0]]), j1, j2)[0], CYL_D / 2, WALL2)
+    return min(up, across)
+
+
+rc_p, _, t_pay = sweep_toy("toy_pay", PAY + ["--payload", f"cyl:{1000 * CYL_D:g}x{1000 * CYL_H:g}"], xml=pay_xml)
+rc_n, _, t_pn = sweep_toy("toy_pay_none", PAY + ["--payload", "none"], xml=pay_xml)
+pp = t_pay.get("payload") or {}
+pose_u = pp.get("pose", {}).get("upright", {})
+pose_a = pp.get("pose", {}).get("across", {})
+want_up = PALM_X[1] + CYL_H / 2           # pushed out of the palm: its end on the palm's face
+want_across = sum(PAD_X) / 2              # at the pads' middle, 2 mm clear of the palm
+check(f"a cylinder {1000 * CYL_D:g} x {1000 * CYL_H:g} mm in a two-finger hand: both fingers at 10 mm (40 mm apart), "
+      f"upright along the fingers pushed out of the palm to {1000 * want_up:g} mm, across (vertical) at the pads' "
+      f"middle ({1000 * want_across:g} mm), the palm named as what pushed it",
+      rc_p == 0 and pp.get("kind") == "cyl" and pp.get("diameter_m") == CYL_D and pp.get("height_m") == CYL_H
+      and pp.get("orientations") == ["upright", "across"] and pp.get("hand") == "hand"
+      and pp.get("fingers") == {"finger_a": 0.01, "finger_b": 0.01} and abs(pp.get("gap_m", 0) - CYL_D) < 1e-9
+      and np.allclose(pose_u.get("pos_m", [9] * 3), [want_up, 0, 0], atol=1e-4)
+      and np.allclose(np.abs(pose_u.get("axis", [0] * 3)), [1, 0, 0]) and pose_u.get("pushed_out_by") == "palm"
+      and np.allclose(pose_a.get("pos_m", [9] * 3), [want_across, 0, 0], atol=1e-4)
+      and np.allclose(np.abs(pose_a.get("axis", [0] * 3)), [0, 0, 1]) and pose_a.get("pushed_out_m") == 0.0,
+      f"upright {pose_u.get('pos_m')}, across {pose_a.get('pos_m')}, fingers {pp.get('fingers')}")
+occ_pay = occ_of(t_pay) if t_pay else np.zeros(0, bool)
+occ_pn = occ_of(t_pn) if t_pn else np.zeros(0, bool)
+ux = pose_u.get("pos_m", [want_up])[0]
+ax_ = pose_a.get("pos_m", [want_across])[0]
+gp1, gp2 = (t_pay.get("grid", {}).get(j, []) for j in ("j1", "j2"))
+bad_u, bad_n, band_only = 0, 0, []
+for a, v1 in enumerate(gp1):
+    for b, v2 in enumerate(gp2):
+        flat = a * len(gp2) + b
+        ce, cc = empty_hand_clear(v1, v2), can_clear(v1, v2, ux, ax_)
+        cu = min(ce, cc)
+        bad_u += abs(cu - MARGIN) > 1e-4 and bool(occ_pay[flat]) != (cu < MARGIN)
+        bad_n += abs(ce - MARGIN) > 1e-4 and bool(occ_pn[flat]) != (ce < MARGIN)
+        if cc < MARGIN - 1e-4 and ce > MARGIN + 1e-4:
+            band_only.append(flat)
+check("every grid point matches the analytic verdicts: with the cylinder, the empty hand OR the cylinder (upright "
+      "OR across) within 5 mm of the wall; --payload none, the empty hand alone; the cylinder adds the cells only "
+      "it reaches",
+      rc_p == 0 and rc_n == 0 and len(occ_pay) == len(gp1) * len(gp2) and bad_u == 0 and bad_n == 0
+      and band_only and occ_pay[band_only].all() and not occ_pn[band_only].any(),
+      f"{int(occ_pn.sum())} cells empty, {int(occ_pay.sum())} with the cylinder, {len(band_only)} only it reaches, "
+      f"{bad_u} + {bad_n} differ")
+row_u, row_n = occ_pay.reshape(61, 11)[:, 5], occ_pn.reshape(61, 11)[:, 5]
+ku, kn = np.flatnonzero(row_u), np.flatnonzero(row_n)
+pf = pp.get("forbidden", {})
+check("at j2 = 0 the cylinder hits the wall sooner on both sides: its band is wider than the empty hand's at both "
+      "ends; the JSON counts add up (empty = --payload none, union = the table)",
+      len(ku) and len(kn) and ku[0] < kn[0] and ku[-1] > kn[-1]
+      and pf.get("empty") == int(occ_pn.sum()) == t_pn.get("forbidden") and pf.get("union") == t_pay.get("forbidden")
+      and pp.get("added", {}).get("total") == t_pay.get("forbidden", 0) - int(occ_pn.sum())
+      and t_pn.get("payload") is None,
+      f"j1 {gp1[ku[0]]:+.2f}..{gp1[ku[-1]]:+.2f} with the cylinder, {gp1[kn[0]]:+.2f}..{gp1[kn[-1]]:+.2f} without; "
+      f"{pf}" if len(ku) and len(kn) else str(pf))
+CYL_ARG = ["--payload", f"cyl:{1000 * CYL_D:g}x{1000 * CYL_H:g}"]
+rc_re, _, t_re = sweep_toy("toy_pay_reuse", PAY + CYL_ARG + ["--reuse-empty", str(TMP / "toy_pay_none.json")], xml=pay_xml)
+rc_rx, _, _ = sweep_toy("toy_pay_reuse_x", PAY + CYL_ARG + ["--reuse-empty", str(TMP / "toy_pay_none.json"),
+                                                            "--margin", "0.004"], xml=pay_xml)
+same = [k for k in ("occupancy_bits_hex", "occupancy_empty_bits_hex", "cell_part", "pair_cells", "part_names",
+                    "part_counts", "forbidden") if t_re.get(k) != t_pay.get(k)]
+check("--reuse-empty: the empty hand taken from the --payload none table, only the cylinder swept, gives the same "
+      "table; a table swept at another margin is refused",
+      rc_re == 0 and not same and (t_re.get("empty_sweep") or {}).get("reused_from", {}).get("file") == "toy_pay_none.json"
+      and rc_rx not in (0, None), f"differ: {same}, refused: {rc_rx!r}"[:160])
+refusals = []
+for extra, xml in ((["--payload", "cyl:70x100"], pay_xml), (["--payload", "can"], None)):
+    rc_r, _, _ = sweep_toy("toy_refused", PAY + extra, xml=xml)
+    refusals.append(rc_r not in (0, None))
+check("refused: a cylinder 70 mm across in a hand that opens 60 mm, and a payload on an arm with no slide fingers",
+      all(refusals), str(refusals))
+
 # a MuJoCo collision error at one grid point
 bad_j1 = float(g1[40])
 real_collision, real_forward = mujoco.mj_collision, mujoco.mj_forward
@@ -626,7 +827,7 @@ if not model_path or not Path(model_path).is_file():
 else:
     print(f"  model {Path(model_path).name}")
     outd = TMP / "real.json"
-    rc = K.main(["--model", model_path, "--out", str(outd), "--steps", "8,8,8,6,4", "--quiet"])
+    rc = K.main(["--model", model_path, "--out", str(outd), "--steps", "8,8,8,6,4", "--quiet", "--jobs", "1"])
     td = json.loads(outd.read_text()) if outd.exists() else {}
     check("the coarse sweep 8,8,8,6,4 exits 0 (its mj_forward and real-finger checks agree)", rc == 0, f"rc {rc}")
     check("at least one forbidden cell", td.get("forbidden", 0) >= 1,
@@ -679,10 +880,22 @@ else:
           f"tool centre z {best[0]:.3f} m")
     check("the arm straight up touches nothing (model) and the guard allows it",
           not contacts_up and gd.allowed(up), gd.why(up))
+    outdc = TMP / "real_can.json"
+    rc = K.main(["--model", model_path, "--out", str(outdc), "--steps", "8,8,8,6,4", "--quiet", "--jobs", "1",
+                 "--payload", "can"])
+    tdc = json.loads(outdc.read_text()) if outdc.exists() else {}
+    pdc = tdc.get("payload") or {}
+    check("--payload can on the simulation model: the can between pad_left and pad_right at a 66 mm gap (both "
+          "fingers at 29 mm), held both ways, the empty gripper's cells the same as without it, and more forbidden",
+          rc == 0 and pdc.get("pads") == ["pad_left", "pad_right"] and abs(pdc.get("gap_m", 0) - 0.066) < 1e-6
+          and all(abs(v - 0.029) < 1e-6 for v in pdc.get("fingers", {"x": 0}).values())
+          and pdc.get("forbidden", {}).get("empty") == td.get("forbidden") and tdc.get("forbidden", 0) > td["forbidden"],
+          f"{pdc.get('fingers')}, {pdc.get('forbidden')}")
     robot = Path(model_path).parent / "moss_robot.xml"
     if robot.is_file():
         outm = TMP / "margin.json"
-        rc = K.main(["--model", str(robot), "--out", str(outm), "--steps", "8,8,8,6,4", "--margin", "0.03", "--quiet"])
+        rc = K.main(["--model", str(robot), "--out", str(outm), "--steps", "8,8,8,6,4", "--margin", "0.03", "--quiet",
+                     "--jobs", "1"])
         tm3 = json.loads(outm.read_text()) if outm.exists() else {}
         check("the robot model at --margin 0.03 finishes and writes its table (collision errors, if any, counted)",
               rc == 0 and tm3.get("margin_m") == 0.03, f"rc {rc}, {tm3.get('collision_errors')} collision errors, "
@@ -692,6 +905,17 @@ print("E. the CAD scene")
 # the two poses the robot stands in every day, in servo ticks (homing offset applied)
 DRIVE = {"shoulder_pan": 2857, "shoulder_lift": 860, "elbow_flex": 3206, "wrist_flex": 868, "wrist_roll": 3221}
 LOOK = {"shoulder_pan": 2869, "shoulder_lift": 1057, "elbow_flex": 3208, "wrist_flex": 2018, "wrist_roll": 3220}
+# three postures of an independent clearance study on the same scene (model radians; the pan turned from
+# +110 deg down, the rest held), with a can upright in the gripper: travel first touches near -46 deg (the
+# left jaw and its pad against the bin, contacts down to -94), pick near -45 deg (the can against the left
+# road-wheel shaft and collar before the arm, contacts down to -110), clear never
+STUDY = {"travel": {"shoulder_lift": -0.8097555478420315, "elbow_flex": 0.3832857982375162,
+                    "wrist_flex": 1.5518884280412557, "wrist_roll": -0.6859999406231995},
+         "pick": {"shoulder_lift": 0.5532629270078482, "elbow_flex": -0.08444815096969016,
+                  "wrist_flex": 1.1019852841030555, "wrist_roll": -1.585330564271262},
+         "clear": {"shoulder_lift": -1.2339528188850326, "elbow_flex": -0.3445092260113539,
+                   "wrist_flex": 1.651086912169343, "wrist_roll": -1.5853578786239502}}
+STUDY_CONTACTS = {"travel": (-46, -94), "pick": (-45, -110)}
 CAD_MARGIN = 0.002          # the CAD layout's margin: the largest at which drive and look stay allowed
 # a CAD working code (two capitals and two digits, as a word): never in the public table
 WORK_CODE = re.compile(r"\b[A-Z]{2}\d{2}\b")
@@ -755,6 +979,36 @@ else:
     raw_names = {p["id"]: p["name"] for p in json.loads(manifest.read_text())["parts"]} if manifest.is_file() else {}
     cad_model = mujoco.MjModel.from_xml_path(cad_path)
     geoms = {mujoco.mj_id2name(cad_model, mujoco.mjtObj.mjOBJ_GEOM, g) for g in range(cad_model.ngeom)}
+
+    def hull_verts(m, g):
+        adr = int(m.mesh_graphadr[m.geom_dataid[g]])
+        return int(m.mesh_graph[adr]) if adr >= 0 else 0
+
+    # what the checks below read from the scene as MuJoCo loads it, taken now: the model then goes (some 350 MB)
+    drive_geoms = [mujoco.mj_id2name(cad_model, mujoco.mjtObj.mjOBJ_GEOM, g) for g in range(cad_model.ngeom)
+                   if cad_model.geom_bodyid[g] == mujoco.mj_name2id(cad_model, mujoco.mjtObj.mjOBJ_BODY, "nc90_drive")]
+    cap_0280 = hull_verts(cad_model, mujoco.mj_name2id(cad_model, mujoco.mjtObj.mjOBJ_GEOM, "col_part_0280"))
+    JAW_TRAVEL = 0.045
+
+    def pad_points(slide):
+        """The two TPU pads' mesh vertices in nc90_tool's frame, both jaws at `slide`."""
+        dd = mujoco.MjData(cad_model)
+        for j in ("nc90_jaw_left_slide", "nc90_jaw_right_slide"):
+            dd.qpos[cad_model.jnt_qposadr[mujoco.mj_name2id(cad_model, mujoco.mjtObj.mjOBJ_JOINT, j)]] = slide
+        mujoco.mj_kinematics(cad_model, dd)
+        tb = mujoco.mj_name2id(cad_model, mujoco.mjtObj.mjOBJ_BODY, "nc90_tool")
+        rot, at = np.asarray(dd.xmat[tb]).reshape(3, 3), np.asarray(dd.xpos[tb])
+        out = []
+        for pad in ("col_part_0316", "col_part_0317"):
+            g = mujoco.mj_name2id(cad_model, mujoco.mjtObj.mjOBJ_GEOM, pad)
+            mid = int(cad_model.geom_dataid[g])
+            v = cad_model.mesh_vert[cad_model.mesh_vertadr[mid]:cad_model.mesh_vertadr[mid] + cad_model.mesh_vertnum[mid]]
+            out.append(((v @ np.asarray(dd.geom_xmat[g]).reshape(3, 3).T + dd.geom_xpos[g]) - at) @ rot)
+        return out
+
+    pads_open, pads_closed = pad_points(0.0), pad_points(JAW_TRAVEL)   # a slide moves them along a line
+    cad_model = None
+    K._trim()
     piece = "col_part_0996_017" if "col_part_0996_017" in geoms else next(
         (n for n in sorted(geoms) if n and K.PIECE.match(n)), "")
     check("a CAD piece answers to its part: col_part_0996_017 -> col_part_0996, col_part_0277_envelope -> col_part_0277, "
@@ -773,8 +1027,8 @@ else:
           K.layout_of(Path(cad_path)) == "cad" and (not model_path or K.layout_of(Path(model_path)) == "sim"))
     oute = TMP / "cad.json"
     cal_args = ["--calibration", str(cal_path)] if calibration else []
-    rc = K.main(["--model", cad_path, "--names", str(manifest), "--out", str(oute), "--steps", "8,8,8,6,4", "--quiet"]
-                + cal_args)
+    rc = K.main(["--model", cad_path, "--names", str(manifest), "--out", str(oute), "--steps", "8,8,8,6,4", "--quiet",
+                 "--jobs", "1"] + cal_args)
     te = json.loads(oute.read_text()) if oute.exists() else {}
     check("the coarse sweep 8,8,8,6,4 exits 0 (its mj_forward and real-finger checks agree), no collision error",
           rc == 0 and te.get("collision_errors") == 0, f"rc {rc}, {te.get('collision_errors')} errors")
@@ -795,8 +1049,6 @@ else:
           and te["visual_left_out"]["arm"] > 0 and te.get("margin_m") == CAD_MARGIN
           and te.get("excludes_kept") == [["base", "shoulder"]], f"visual left out {te.get('visual_left_out')}")
     kept = te.get("visual_kept", {}).get("geoms", [])
-    drive_geoms = [mujoco.mj_id2name(cad_model, mujoco.mjtObj.mjOBJ_GEOM, g) for g in range(cad_model.ngeom)
-                   if cad_model.geom_bodyid[g] == mujoco.mj_name2id(cad_model, mujoco.mjtObj.mjOBJ_BODY, "nc90_drive")]
     check("the gripper's drive (gear, servo horn: visual meshes only, no collision geom) counts: its visual meshes "
           "are arm geoms, swept over the pinion, named after their parts",
           drive_geoms and sorted(kept) == sorted(drive_geoms)
@@ -815,7 +1067,7 @@ else:
           ", ".join(sorted(set(WORK_CODE.findall(text_e)))))
     out0 = TMP / "cad_margin0.json"
     rc0 = K.main(["--model", cad_path, "--out", str(out0), "--steps", "8,8,8,6,4", "--quiet", "--margin", "0",
-                  "--check", "0"] + cal_args)
+                  "--check", "0", "--jobs", "1"] + cal_args)
     t0 = json.loads(out0.read_text()) if out0.exists() else {}
     occ_e = np.unpackbits(np.frombuffer(bytes.fromhex(te.get("occupancy_bits_hex", "")), np.uint8))
     occ_0 = np.unpackbits(np.frombuffer(bytes.fromhex(t0.get("occupancy_bits_hex", "")), np.uint8))
@@ -843,9 +1095,10 @@ else:
           and fing.get("coupled", {}).get("nc90_jaw_right_slide", {}).get("follows") == "nc90_jaw_left_slide"
           and fing.get("coupled", {}).get("nc90_pinion", {}).get("follows") == "nc90_jaw_left_slide"
           and te["unswept_joints"]["replaced_geoms"] and te["finger_check"]["touching"] == 0, str(fing.get("open")))
-    every = all(te["part_counts"].get(n, 0) > 0 for n in hit) and len(hit) <= te.get("rover_parts_total", 0)
-    check("the parts list is built from the hits (every listed part was hit), one byte per cell while it is "
-          "255 parts or fewer, pairs named by part",
+    every = all(te["part_counts"].get(n, 0) > 0 or (te.get("payload") or {}).get("part_counts", {}).get(n, 0) > 0
+                for n in hit) and len(hit) <= te.get("rover_parts_total", 0)
+    check("the parts list is built from the hits (every listed part was hit, by the arm or by the can), one byte "
+          "per cell while it is 255 parts or fewer, pairs named by part",
           every and te.get("cell_part_dtype") == ("uint8" if len(hit) <= 255 else "uint16")
           and all("|" in k for k in te.get("pair_counts", {})) and len(te.get("pair_cells", [])) == te.get("pairs"),
           f"{len(hit)} parts of {te.get('rover_parts_total')}, {te.get('pairs')} pairs")
@@ -855,44 +1108,160 @@ else:
           and "drive" in te.get("joint_map_basis", "") and te["model"]["path"] == Path(cad_path).name
           and te["model"]["sha256"] == K.sha256_of(Path(cad_path))
           and te.get("names", {}).get("sha256") == K.sha256_of(manifest))
-    pce = K.prepare(Path(cad_path), arm_root="shoulder", rover_body="rover_exterior,base", rover_parts=("*",),
-                    visual="skip", root_voxel=0.0, margin=te["margin_m"], root_margin=0.0)
-    cap = mujoco.MjModel.from_xml_path(cad_path)
-    gid = mujoco.mj_name2id(pce.model, mujoco.mjtObj.mjOBJ_GEOM, "col_part_0280")
-
-    def hull_verts(m, g):
-        adr = int(m.mesh_graphadr[m.geom_dataid[g]])
-        return int(m.mesh_graph[adr]) if adr >= 0 else 0
-
-    check("every collision mesh as its whole hull: the scene caps hulls at 128 vertices, the sweep lifts the cap",
-          hull_verts(pce.model, gid) > 128 >= hull_verts(cap, mujoco.mj_name2id(cap, mujoco.mjtObj.mjOBJ_GEOM, "col_part_0280"))
-          and te.get("hull_vertex_cap_lifted", 0) > 0,
-          f"col_part_0280: {hull_verts(cap, mujoco.mj_name2id(cap, mujoco.mjtObj.mjOBJ_GEOM, 'col_part_0280'))} "
-          f"-> {hull_verts(pce.model, gid)} vertices")
     outk = TMP / "cad_keep.json"
-    rc = K.main(["--model", cad_path, "--out", str(outk), "--steps", "8,8,8,6,4", "--quiet", "--keep-inside", "--check", "0"]
-                + cal_args)
+    rc = K.main(["--model", cad_path, "--out", str(outk), "--steps", "8,8,8,6,4", "--quiet", "--keep-inside", "--check", "0",
+                 "--jobs", "1"] + cal_args)
     tk = json.loads(outk.read_text()) if outk.exists() else {}
     check("the rover geoms held whole inside another add no forbidden pose: the same occupancy with --keep-inside",
           rc == 0 and te["rover_inside"]["geoms"] > 0 and tk.get("occupancy_bits_hex") == te["occupancy_bits_hex"],
           f"{te['rover_inside']['geoms']} geoms left out, {tk.get('forbidden')} vs {te.get('forbidden')} forbidden")
+    # the sweeps first, then the models the checks below hold (one compiled scene is some 350 MB)
+    outn = TMP / "cad_none.json"
+    rcn = K.main(["--model", cad_path, "--names", str(manifest), "--out", str(outn), "--steps", "8,8,8,6,4", "--quiet",
+                  "--jobs", "1", "--check", "0", "--payload", "none"] + cal_args)
+    tn = json.loads(outn.read_text()) if outn.exists() else {}
+    pce = K.prepare(Path(cad_path), arm_root="shoulder", rover_body="rover_exterior,base", rover_parts=("*",),
+                    visual="skip", root_voxel=0.0, margin=te["margin_m"], root_margin=0.0, names=names,
+                    payload=K.parse_payload("can"))
+    gid = mujoco.mj_name2id(pce.model, mujoco.mjtObj.mjOBJ_GEOM, "col_part_0280")
+    check("every collision mesh as its whole hull: the scene caps hulls at 128 vertices, the sweep lifts the cap",
+          hull_verts(pce.model, gid) > 128 >= cap_0280 and te.get("hull_vertex_cap_lifted", 0) > 0,
+          f"col_part_0280: {cap_0280} -> {hull_verts(pce.model, gid)} vertices")
     # the two poses in the model, at their exact angles (first alignment: 2048 and +1)
     jm0 = JointMap.from_docs(None, {"joints": list(K.JOINTS)})
     is_arm_e, is_part_e = K._masks(pce.model, pce.arm_ids, pce.part_ids)
     is_root_e, _ = K._masks(pce.root_model, pce.root_ids, pce.part_ids)
-    free_at = {}
-    for name, ticks in (("drive", DRIVE), ("look", LOOK)):
-        q = jm0.pose_to_rad(ticks)
-        touch = []
-        for mdl, isa, mg in ((pce.model, is_arm_e, te["margin_m"]), (pce.root_model, is_root_e, 1e-12)):
+    is_pay_e, _ = K._masks(pce.payload_model, list(pce.payload_ids.values()), pce.part_ids)
+    part_name_e = dict(zip(pce.part_ids, [pce.display[k] for k in pce.part_label]))
+
+    def touching(q, models):
+        """The (arm geom, rover part name) contacts closer than the margin at q, in each model."""
+        out = []
+        for mdl, isa, mg, base in models:
             dd = mujoco.MjData(mdl)
-            dd.qpos[:] = pce.base_qpos
+            dd.qpos[:] = base
             for j, v in q.items():
                 dd.qpos[mdl.jnt_qposadr[mujoco.mj_name2id(mdl, mujoco.mjtObj.mjOBJ_JOINT, j)]] = v
-            touch += K._touch(mdl, dd, isa, is_part_e, mg) or []
-        free_at[name] = not touch
-    check("drive and look, at their exact angles, come no closer than the margin to the rover (the model)",
-          all(free_at.values()), str(free_at))
+            out += [(a, part_name_e[r]) for a, r, _ in (K._touch(mdl, dd, isa, is_part_e, mg) or [])]
+        return out
+
+    EMPTY_E = ((pce.model, is_arm_e, te["margin_m"], pce.base_qpos), (pce.root_model, is_root_e, 1e-12, pce.base_qpos))
+    CAN_E = ((pce.payload_model, is_pay_e, te["margin_m"], pce.payload_qpos),)
+    free_at = {name: (not touching(jm0.pose_to_rad(t), EMPTY_E), not touching(jm0.pose_to_rad(t), CAN_E))
+               for name, t in (("drive", DRIVE), ("look", LOOK))}
+    check("drive and look, at their exact angles, come no closer than the margin to the rover (the model), the can "
+          "held either way too", all(all(v) for v in free_at.values()), f"(empty, can): {free_at}")
+    pay = te.get("payload") or {}
+    tool = mujoco.mj_name2id(pce.payload_model, mujoco.mjtObj.mjOBJ_BODY, "nc90_tool")
+    can_geoms = [(o, g) for o, g in pce.payload_ids.items()]
+    check("the can: two cylinders 66 mm across and 120 mm long on nc90_tool (upright, across), the jaws at 12 mm "
+          "each (66 mm apart)",
+          [o for o, _ in can_geoms] == ["upright", "across"]
+          and all(int(pce.payload_model.geom_bodyid[g]) == tool
+                  and int(pce.payload_model.geom_type[g]) == int(mujoco.mjtGeom.mjGEOM_CYLINDER)
+                  and np.allclose(pce.payload_model.geom_size[g][:2], [0.033, 0.060]) for _, g in can_geoms)
+          and abs(pay.get("fingers", {}).get("nc90_jaw_left_slide", 0) - 0.012) < 1e-6
+          and abs(pay.get("fingers", {}).get("nc90_jaw_right_slide", 0) - 0.012) < 1e-6
+          and abs(pay.get("gap_m", 0) - 0.066) < 1e-6,
+          f"fingers {pay.get('fingers')}, gap {pay.get('gap_m')}")
+
+    def pad_contact(slide, pose, grow):
+        """Does the can (radius grown by `grow`, at pose in nc90_tool's frame) reach each TPU pad, the jaws at
+        `slide`? Built apart from the tool: the scene's own pad meshes and a cylinder, nothing else."""
+        sp = mujoco.MjSpec()
+        sp.option.disableflags |= int(mujoco.mjtDisableBit.mjDSBL_NATIVECCD)
+        body = sp.worldbody.add_body(name="b")
+        for k, (v0, v1) in enumerate(zip(pads_open, pads_closed)):
+            mesh = sp.add_mesh(name=f"pad{k}", uservert=(v0 + (slide / JAW_TRAVEL) * (v1 - v0)).ravel().tolist())
+            mesh.maxhullvert = -1
+            body.add_geom(name=f"pad{k}", type=mujoco.mjtGeom.mjGEOM_MESH, meshname=f"pad{k}")
+        body.add_geom(name="can", type=mujoco.mjtGeom.mjGEOM_CYLINDER, size=[0.033 + grow, 0.060, 0],
+                      pos=pose["pos_m"], quat=pose["quat"])
+        mm = sp.compile()
+        md = mujoco.MjData(mm)
+        mujoco.mj_kinematics(mm, md)
+        can = mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, "can")
+        return [mujoco.mj_geomDistance(mm, md, can, mujoco.mj_name2id(mm, mujoco.mjtObj.mjOBJ_GEOM, f"pad{k}"),
+                                       0.0, None) < 0 for k in (0, 1)]
+
+    hold = pay.get("fingers", {}).get("nc90_jaw_left_slide", 0.012)
+    pads_ok = {o: (pad_contact(hold, q, 0.001), pad_contact(hold, q, -0.001)) for o, q in pay.get("pose", {}).items()}
+    check("both TPU pads within 1 mm of the can's surface, either way: 1 mm wider it goes into both, 1 mm narrower "
+          "it touches neither (the scene's pad meshes, apart from the tool)",
+          set(pads_ok) == {"upright", "across"} and all(g == [True, True] and s == [False, False]
+                                                       for g, s in pads_ok.values())
+          and sorted(pay.get("pads", [])) == sorted(K.display_name(names, p) for p in ("col_part_0316", "col_part_0317")),
+          f"(wider, narrower): {pads_ok}")
+    pu, pa = pay.get("pose", {}).get("upright", {}), pay.get("pose", {}).get("across", {})
+    check("upright: the can along the approach (-z of the tool), pushed out until it clears the gripper's rails "
+          "(centre 67.5 mm out); across: along x, its centre among the pads (18 to 54 mm out)",
+          pay.get("approach_axis") == [0.0, 0.0, -1.0] and np.allclose(np.abs(pay.get("slide_axis", [0] * 3)), [0, 1, 0])
+          and np.allclose(pu.get("pos_m", [9] * 3), [0, 0, -0.0675], atol=5e-4)
+          and np.allclose(np.abs(pu.get("axis", [0] * 3)), [0, 0, 1]) and "rails" in (pu.get("pushed_out_by") or "")
+          and np.allclose(pa.get("pos_m", [9] * 3)[:2], [0, 0], atol=1e-6) and -0.054 < pa.get("pos_m", [0] * 3)[2] < -0.018
+          and np.allclose(np.abs(pa.get("axis", [0] * 3)), [1, 0, 0]),
+          f"upright {pu.get('pos_m')} by {pu.get('pushed_out_by')}, across {pa.get('pos_m')} by {pa.get('pushed_out_by')}")
+    bits_e = np.unpackbits(np.frombuffer(bytes.fromhex(te.get("occupancy_empty_bits_hex", "")), np.uint8))
+    bits_n = np.unpackbits(np.frombuffer(bytes.fromhex(tn.get("occupancy_bits_hex", "")), np.uint8))
+    bits_c = np.unpackbits(np.frombuffer(bytes.fromhex(te.get("occupancy_bits_hex", "")), np.uint8))
+    pf = pay.get("forbidden", {})
+    check("--payload none: the empty gripper's table, the same cells the can's table records as its empty sweep; "
+          "with the can the table forbids every one of them and more; the counts add up",
+          rcn == 0 and tn.get("payload") is None and bits_n.shape == bits_e.shape == bits_c.shape
+          and np.array_equal(bits_n, bits_e) and not (bits_n & ~bits_c & 1).any()
+          and te.get("forbidden", 0) > tn.get("forbidden", 0) == pf.get("empty")
+          and pf.get("union") == te.get("forbidden") and pay.get("added", {}).get("total") == pf["union"] - pf["empty"]
+          and min(pf.get("upright", 0), pf.get("across", 0)) > 0,
+          f"{tn.get('forbidden')} without the can, {te.get('forbidden')} with it; {pf}")
+    # the gripper over the bin's rim (grid values of the default table, inside the arm's calibrated travel)
+    BIN_RIM = {"shoulder_pan": -1.834818282, "shoulder_lift": -0.895935705, "elbow_flex": 1.118719755,
+               "wrist_flex": 0.140475568, "wrist_roll": -2.082015953}
+    rim_empty, rim_can = touching(BIN_RIM, EMPTY_E), touching(BIN_RIM, CAN_E)
+    pm_ = pce.payload_model
+    dd = mujoco.MjData(pm_)
+    dd.qpos[:] = pce.payload_qpos
+    for j, v in BIN_RIM.items():
+        dd.qpos[pm_.jnt_qposadr[mujoco.mj_name2id(pm_, mujoco.mjtObj.mjOBJ_JOINT, j)]] = v
+    mujoco.mj_kinematics(pm_, dd)
+    flags = int(pm_.opt.disableflags)
+    pm_.opt.disableflags = flags & ~int(mujoco.mjtDisableBit.mjDSBL_NATIVECCD)   # the native collider's depth
+    try:
+        depth = min(mujoco.mj_geomDistance(pm_, dd, pce.payload_ids["upright"], g, 0.01, None)
+                    for g in pce.part_ids if "bin" in part_name_e[g])
+    finally:
+        pm_.opt.disableflags = flags
+    check("the gripper over the bin's rim (pan -105.1, lift -51.3, elbow +64.1, flex +8.0, roll -119.3 deg): clear of "
+          "the rover by the margin with the gripper empty, the can held upright 20 mm or more into the bin",
+          not rim_empty and rim_can and all("bin" in r for _, r in rim_can) and depth < -0.02,
+          f"empty: {len(rim_empty)} contacts, can: {sorted({r for _, r in rim_can})}, {1000 * depth:.1f} mm")
+
+    def arm_part(a):
+        return pce.display.get(K.part_key(K.geom_name(pce.model, a)), "")
+
+    study = {}
+    for posture, held in STUDY.items():
+        study[posture] = None
+        for deg in range(110, -111, -1):
+            q = dict(held, shoulder_pan=math.radians(deg))
+            arm = touching(q, EMPTY_E)
+            can = [(a, r) for a, r in touching(q, CAN_E) if a == pce.payload_ids["upright"]]
+            if arm or can:
+                study[posture] = (deg, sorted({arm_part(a) for a, _ in arm}), sorted({r for _, r in arm}),
+                                  sorted({r for _, r in can}))
+                break
+    tr, pk, cl = study["travel"], study["pick"], study["clear"]
+    check("the independent study's postures, the pan turned from +110 deg down: travel first touches between -50 "
+          "and -35 deg (the study: -46 with the jaws at the can's gap; here the jaws swept fully open and the 2 mm "
+          "margin come sooner), the left jaw or its TPU pad against the bin; pick within 3 deg of -45, the can "
+          "upright against the left road-wheel shaft or collar while the arm is clear; clear touches nothing",
+          tr is not None and -50 <= tr[0] <= -35 and any("bin" in r for r in tr[2])
+          and any("jaw left" in a or "TPU retaining pad" in a for a in tr[1])
+          and pk is not None and abs(pk[0] + 45) <= 3 and not pk[1] and any("road wheel" in r for r in pk[3])
+          and cl is None,
+          f"travel {tr[0] if tr else None} ({', '.join(tr[1]) if tr else ''}), pick {pk[0] if pk else None} "
+          f"({', '.join(pk[3]) if pk else ''}), clear {cl}")
+    pce = pm_ = dd = EMPTY_E = CAN_E = None      # every reference to its models: F compiles its own
+    K._trim()
 
 print("F. the committed table")
 table_path = ROOT / "config" / "arm_keepout.json"
@@ -911,13 +1280,36 @@ else:
     layout = tc.get("layout", "sim")
     if layout == "cad":
         gt0 = ArmGuard.load(table_path, calibration=NOWHERE)
+        refused = {posture: {deg for deg in range(110, -111, -1)
+                             if not gt0.allowed(dict(held, shoulder_pan=math.radians(deg)))}
+                   for posture, held in STUDY.items()}
+        check("the independent study's postures in the table: clear allowed at every pan; travel and pick refused "
+              "wherever the study found a contact (travel -46 to -94 deg, pick -45 to -110)",
+              not refused["clear"] and all(set(range(lo, hi - 1, -1)) <= refused[p]
+                                           for p, (lo, hi) in STUDY_CONTACTS.items()),
+              ", ".join(f"{p} refused at {len(r)} of 221 pans" for p, r in refused.items()))
         check("the robot's two daily poses are allowed: drive and look (servo ticks, first alignment)",
               gt0.allowed_ticks(DRIVE) and gt0.allowed_ticks(LOOK), f"{gt0.why_ticks(DRIVE)[:40]} | {gt0.why_ticks(LOOK)[:40]}")
         check("the table names its parts by their CAD names, a list built from the hits, one byte per cell",
               tc.get("names") is not None and tc.get("cell_part_dtype") == "uint8"
-              and all(tc["part_counts"][n] > 0 for n in tc["part_names"]) and "basis" not in tc["joint_map"]
+              and all(tc["part_counts"].get(n, 0) > 0 or (tc.get("payload") or {}).get("part_counts", {}).get(n, 0) > 0
+                      for n in tc["part_names"]) and "basis" not in tc["joint_map"]
               and "drive" in tc.get("joint_map_basis", ""), f"{len(tc['part_names'])} parts, {tc.get('pairs')} pairs")
         text_c = table_path.read_text()
+        tp = tc.get("payload") or {}
+        occ_ce = np.unpackbits(np.frombuffer(bytes.fromhex(tc.get("occupancy_empty_bits_hex", "")), np.uint8))
+        occ_ce = occ_ce[:tc["cells"]].astype(bool).reshape(gc.occ.shape) if len(occ_ce) >= tc["cells"] else None
+        rim = {"shoulder_pan": -1.834818282, "shoulder_lift": -0.895935705, "elbow_flex": 1.118719755,
+               "wrist_flex": 0.140475568, "wrist_roll": -2.082015953}
+        rim_idx = tuple(int(np.argmin(np.abs(g - rim[j]))) for j, g in zip(gc.joints, gc.grids))
+        check("the payload: a can (66 x 120 mm) held upright and across, the empty gripper's cells all inside the "
+              "table's; the gripper over the bin's rim is free for the empty gripper and refused with the can, why() "
+              "naming the bin",
+              tp.get("kind") == "can" and tp.get("orientations") == ["upright", "across"]
+              and tp.get("diameter_m") == 0.066 and tp.get("height_m") == 0.12 and occ_ce is not None
+              and not (occ_ce & ~gc.occ).any() and tp.get("forbidden", {}).get("union") == tc["forbidden"]
+              and not occ_ce[rim_idx] and not gc.allowed(rim) and "bin" in gc.why(rim),
+              f"{tp.get('forbidden')}; at the rim: {gc.why(rim)[:70]}")
         check("margin 2 mm; the lidar itself (RPLIDAR C1) among the parts hit; the model named by its file name only; "
               "no CAD working code anywhere in the table",
               tc.get("margin_m") == CAD_MARGIN and any(n.startswith("RPLIDAR C1") for n in tc["part_names"])
@@ -944,7 +1336,9 @@ else:
                       root_margin=tc["root_link"]["margin_m"], cover_tol=si["cover_tol_m"],
                       visual=tc.get("visual", "count"),
                       names=K.load_names(names_doc) if names_doc and names_doc.is_file() else None)
-        pc = K.prepare(sibling, **common)
+        tpay = tc.get("payload")
+        pc = K.prepare(sibling, **common,
+                       payload={k: tpay[k] for k in ("kind", "diameter_m", "height_m")} if tpay else None)
         check("both hashes match the model it names, here (its file, and its compiled geometry: meshes included)",
               K.sha256_of(sibling) == tc["model"]["sha256"] and pc.geometry_sha256 == tc["model"]["geometry_sha256"])
         jids = [mujoco.mj_name2id(pc.model, mujoco.mjtObj.mjOBJ_JOINT, j) for j in tc["joints"]]
@@ -952,10 +1346,19 @@ else:
         occ_c = gc.occ.ravel().astype(np.uint8)
         bad = K.recheck(pc, jids, grids, tc["margin_m"], occ_c, 200, seed=7,
                         step_rad=math.radians(tc["root_link"]["step_deg"]))
-        check("200 of its cells (half forbidden, half free) re-done on that model with mj_forward agree",
-              not bad, f"{len(bad)} differ")
+        check("200 of its cells (half forbidden, half free) re-done on that model with mj_forward agree"
+              + (" (the can held either way included)" if tpay else ""), not bad, f"{len(bad)} differ")
+        if tpay:
+            occ_e = np.unpackbits(np.frombuffer(bytes.fromhex(tc["occupancy_empty_bits_hex"]), np.uint8))[:tc["cells"]]
+            bad_e = K.recheck(pc, jids, grids, tc["margin_m"], occ_e, 100, seed=8,
+                              step_rad=math.radians(tc["root_link"]["step_deg"]), with_payload=False)
+            check("100 of the empty gripper's own cells re-done with mj_forward agree", not bad_e, f"{len(bad_e)} differ")
+        pc.model = pc.root_model = pc.payload_model = None
+        K._trim()
         real = K.prepare(sibling, **common, fingers="real", stand_ins=pc.stand_ins)
         done, touched = K.finger_check(real, jids, grids, tc["margin_m"], occ_c, 100, seed=9)
+        real = None
+        K._trim()
         check("100 free cells stay free with the real fingers closed, half open, open and at a random opening",
               done == 400 and not touched, f"{done} poses, {len(touched)} touch")
         pm_t = si["per_mesh"]

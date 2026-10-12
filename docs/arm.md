@@ -70,7 +70,7 @@ python tools/moss_arm_keepout.py --model MOSS_R31.xml --names parts_manifest.jso
 
 This writes `config/arm_keepout.json`. The default grid takes about two
 minutes on 16 processes (the JSON records the run time and the cost per
-pose). The table records the model by its file name and its sha256 (and
+pose); the can in the gripper (below) adds about 70 s in one process. The table records the model by its file name and its sha256 (and
 the manifest's), never by its path. `--calibration` is the arm's own
 calibration file (above): the grid then covers every pose the arm can
 reach (below).
@@ -89,6 +89,7 @@ the two apart by their body names (`--layout auto`):
 | `--root-voxel` | `0`: the shoulder's geoms as they are | `0.001`: surface stand-ins |
 | lidar | none added: the scene has it | a cylinder added at the profile's pose |
 | `--margin` | `0.002` | `0.01` |
+| `--payload` | `can`: a soda can in the gripper | `none` |
 
 A flag given on the command line wins over the layout.
 
@@ -154,6 +155,41 @@ A flag given on the command line wins over the layout.
   rover (`--root-margin` 0): it turns in place at a clearance the build
   sets. In the CAD scene it clears every part at every pan by 8 mm or more.
 
+### The payload
+
+The robot's rule is that a pose the table allows must stay clear with a
+soda can in the gripper, so the CAD layout sweeps one (`--payload can`, the
+default there; `--payload none` leaves it out, `cyl:<diameter mm>x<height
+mm>` gives another cylinder): 66 mm across and 120 mm tall, added to the
+gripper's body as an arm geom that meets the rover parts only, like the
+arm. The tool reads the two finger pads from the jaws' collision geoms
+(the parts of each jaw past the gripper's own body) and closes the jaws
+until the pads' inner faces are the can's diameter apart: 12 mm of slide
+each, the two TPU pads 66 mm apart. The can is centred between the pads
+and across them; along the approach (where the fingers point) its centre
+starts at the pads' middle and moves out until it clears the gripper's
+own geoms, since a can cannot go into the palm. It is held two ways:
+upright, its axis along the approach (a can standing on the floor, picked
+from above: centred 67.5 mm out, past the rails), and across, its axis
+across both the slide and the approach (a can lying down, picked from the
+side: 44.9 mm out, against the wrist camera's lens). The table is the
+union of three sweeps: the empty gripper over every jaw position, as
+above, and the can held each way, swept alone (the arm at the holding gap
+lies inside the jaws' swept volumes). In the CAD scene the can adds 6296
+forbidden poses to the empty gripper's 147653 (4447 upright, 4407 across,
+some in both); `drive` and `look` stay allowed, the can more than 100 mm
+from every rover part in both. The JSON records it under `payload` (its
+size, the finger values that hold it, the pads, its pose in the gripper's
+frame each way, what pushed it out, the forbidden poses of each sweep);
+`occupancy_empty_bits_hex` keeps the empty gripper's own, so
+`--reuse-empty <table>` takes them from an earlier table of the same model
+(both hashes), grid and settings and sweeps only the can. The guard's rule
+asks every grid point around a pose, so the can also refuses poses it
+clears where a neighbouring grid point folds the wrist further (one step of
+the wrist flex is 19 degrees); a finer `--steps` on the wrist narrows that.
+The limits: one can and nothing bigger or of another shape, held centred
+(never off to one side or by its end), rigid (never squeezed out of shape).
+
 ### How the sweep works
 
 * **The grid** spans each joint's model range widened by 10 degrees on both
@@ -180,9 +216,10 @@ A flag given on the command line wins over the layout.
   contacts and more: the arena is raised for them. A pose where MuJoCo's
   collision code fails anyway is forbidden and counted (`collision_errors`).
 * **Before writing**, 64 grid points are done again with a full
-  `mj_forward` and must agree, and 64 free grid points are done again with
-  the real jaws closed, half open, open and at a random opening: none may
-  touch.
+  `mj_forward` and must agree (the empty gripper's own poses, then the
+  table with the can held each way), and 64 free grid points are done
+  again with the real jaws closed, half open, open and at a random
+  opening: none may touch.
 
 ### The margin
 
@@ -207,13 +244,14 @@ the most contacts there; one byte per pose while `part_names` holds 255
 parts or fewer, two beyond: `cell_part_dtype`), the parts hit (only those:
 `part_names` is built from the sweep), the poses per part, the 100 most
 frequent pairs of arm part and rover part by name (`pair_counts`) and all
-of them by number (`pair_cells`), the pieces held inside another, the
-count of every rover geom, the visual meshes kept, the fingers, the
-calibrated travel the grid covers (`travel`), the layout and its settings,
-the model's file name with two hashes
-(the file, and the compiled geometry with every mesh), the manifest's file
-name and hash, the margin, the run time and the `joint_map` with its basis
-(below). It is about 1 MB at the default grid.
+of them by number (`pair_cells`), the payload and the empty gripper's own
+occupancy (`payload`, `occupancy_empty_bits_hex`), the pieces held inside
+another, the count of every rover geom, the visual meshes kept, the
+fingers, the calibrated travel the grid covers (`travel`), the layout and
+its settings, the model's file name with two hashes (the file, and the
+compiled geometry with every mesh), the manifest's file name and hash, the
+margin, the run time and the `joint_map` with its basis (below). It is
+about 1.1 MB at the default grid.
 
 ### The knobs
 
@@ -238,6 +276,8 @@ name and hash, the margin, the run time and the `joint_map` with its basis
 | `--lidar-xyz` / `--no-lidar` | by layout | add a lidar cylinder at this centre, or none |
 | `--joints` | the five joints | for a model with other names |
 | `--fix` | the fingers swept | `name=value,...` holds a finger joint at one value |
+| `--payload` | by layout | what the gripper holds, swept upright and across: `none`, `can` or `cyl:<diameter mm>x<height mm>` |
+| `--reuse-empty` | none | an earlier table of the same model, grid and settings: its empty-gripper poses are taken as they are, only the payload is swept |
 | `--check` | `64` | grid points done again with `mj_forward`, and free ones with the real fingers |
 | `--jobs` | one per core, up to 16 | processes for the sweep |
 
@@ -293,8 +333,8 @@ robot.
   The hull of the rover's body is one convex envelope: the arm cannot
   reach into the battery bay or under the deck's edges in the model,
   whatever the real openings.
-* Loose cables, the gripper's load and anything fixed to the robot after
-  the CAD are not modelled. Nor is the arm hitting itself, or the ground.
+* Loose cables, a load other than the can (above) and anything fixed to
+  the robot after the CAD are not modelled. Nor is the arm hitting itself, or the ground.
 * Between two free grid points the table knows nothing, for every link but
   the shoulder: one grid step of the pan, the lift or the elbow moves the
   jaws 12 to 14 cm, and a wall thinner than that between two free samples
