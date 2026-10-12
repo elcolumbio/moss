@@ -44,12 +44,38 @@ Known input -> known output, in radians and metres:
      among the parts hit, the lidar added at the profile's height; the arm
      straight up is free and allowed; the robot model (moss_robot.xml next
      to it) at --margin 0.03 finishes
-  E. the committed table (config/arm_keepout.json) - it loads, 16x16x16x12x8,
-     under 2 MB; when the model it names is next to D's: both hashes match,
-     200 cells re-done with mj_forward agree, free cells stay free with the
-     real fingers, every rover mesh the named parts miss has stand-ins, the
-     camera poses a review found are refused, nearest_allowed survives the
-     tick rounding and segment_allowed agrees with a fine sampling
+  E. the CAD scene (MOSS_ARM_CAD, else ~/moss-*/cad/*/MOSS_R31.xml, with its
+     parts_manifest.json): a CAD piece answers to its part
+     (col_part_0996_017 -> col_part_0996), --names gives col_part_0996 its
+     CAD name, the layout is told by the body names; a coarse sweep
+     (8,8,8,6,4) finds forbidden cells with the lidar itself (RPLIDAR C1),
+     its carriage, the bin, the upper cover, the arm's own base and the arm
+     mounting plate among the parts hit, adds no lidar cylinder, leaves the
+     visual meshes out but the gripper drive's (no collision geom there),
+     keeps the base|shoulder exclusion, has margin 2 mm, sweeps the jaws
+     between closed and open (open: both slides at 0, the pinion at 0),
+     lists only the parts hit, carries the joint_map with its basis and both
+     sha256, accounts for every rover collision geom of the model (counted
+     apart from the tool), carries no CAD working code in its names, covers
+     the arm's calibrated travel (when a calibration is here); the 2 mm
+     margin forbids cells a 0 mm margin leaves free; every hull is whole
+     (the scene's 128-vertex cap lifted); the geoms held inside another
+     change no verdict (--keep-inside); drive and look at their exact angles
+     stay clear of the rover by the margin
+  F. the committed table (config/arm_keepout.json) - it loads, 16x16x16x12x8,
+     under 2 MB; from the CAD scene: drive and look are allowed, the parts
+     carry their CAD names, margin 2 mm, the lidar itself among the parts
+     hit, the model by its file name, no CAD working code; the arm's
+     calibrated travel inside the table (when a calibration is here:
+     config/arm_calibration.json, MOSS_ARM_CALIBRATION, or
+     ~/moss-*/docs/arm_calibration_*.json); when the model it names is here
+     (next to D's or E's): both hashes match, 200 cells re-done with
+     mj_forward agree, free cells stay free with the real fingers, every
+     rover geom counts (the CAD scene: every collision geom of the model
+     accounted for; the simulation model: every rover mesh the named parts
+     miss has stand-ins, the camera poses a review found are refused),
+     nearest_allowed survives the tick rounding and segment_allowed agrees
+     with a fine sampling
 
 Needs mujoco (the sweep). Without it: one line "skipped: mujoco not installed",
 exit 0.
@@ -62,6 +88,7 @@ import itertools
 import json
 import math
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -257,6 +284,18 @@ rc, _, t_dec = sweep_toy("toy_decor", ["--no-lidar", "--rover-parts", "wall"])
 bad_d, _, _, _ = differ(t_dec, [wall_clearance, decor_clearance])
 check("without --exclude, decor counts though --rover-parts does not name it (wall OR decor, analytic)",
       rc == 0 and not bad_d and set(t_dec.get("part_names", [])) == {"wall", "decor"}, f"{len(bad_d)} differ")
+u8_max = K.MAX_PARTS_U8
+K.MAX_PARTS_U8 = 1          # two parts hit: more than one byte would number here
+try:
+    rc, out_u16, t_u16 = sweep_toy("toy_u16", ["--no-lidar", "--rover-parts", "wall"])
+finally:
+    K.MAX_PARTS_U8 = u8_max
+g16 = ArmGuard.load(out_u16, calibration=NOWHERE) if t_u16 else None
+check("more parts hit than one byte numbers: cell_part in two bytes, the same verdicts, the guard reads the dtype "
+      "from the table and names the part; one byte up to 255 parts",
+      rc == 0 and t_u16.get("cell_part_dtype") == "uint16" and t_dec.get("cell_part_dtype") == "uint8"
+      and t_u16["occupancy_bits_hex"] == t_dec["occupancy_bits_hex"] and g16.cell_part.dtype == np.uint16
+      and "decor" in g16.why({"j1": -1.0, "j2": 0.0}), g16.why({"j1": -1.0, "j2": 0.0}) if g16 else "")
 
 box_obj(TMP / "cam.obj", CAM_H)
 box_obj(TMP / "inner.obj", (0.005, 0.005, 0.005))
@@ -511,6 +550,16 @@ try:
     check("a table whose bits and cell_part disagree is refused", False)
 except ValueError:
     check("a table whose bits and cell_part disagree is refused", True)
+bad_tables = 0
+for change in ({"cell_part": [300 if v else 0 for v in t1b["cell_part"]]},                       # past one byte
+               {"cell_part": [len(t1b["part_names"]) + 1 if v else 0 for v in t1b["cell_part"]]},   # past part_names
+               {"cell_part_dtype": "int32"}):
+    try:
+        ArmGuard(dict(t1b, **change))
+    except ValueError:
+        bad_tables += 1
+check("a table whose cell_part does not fit its dtype, names a part past part_names, or has another dtype is refused",
+      bad_tables == 3, f"{bad_tables} of 3 refused")
 
 print("C. ticks <-> radians")
 cal = {"shoulder_pan": {"id": 1, "homing_offset": 2042}, "shoulder_lift": {"id": 2, "homing_offset": -1369}}
@@ -639,7 +688,213 @@ else:
               rc == 0 and tm3.get("margin_m") == 0.03, f"rc {rc}, {tm3.get('collision_errors')} collision errors, "
               f"{100 * tm3.get('forbidden_fraction', 0):.1f} % forbidden")
 
-print("E. the committed table")
+print("E. the CAD scene")
+# the two poses the robot stands in every day, in servo ticks (homing offset applied)
+DRIVE = {"shoulder_pan": 2857, "shoulder_lift": 860, "elbow_flex": 3206, "wrist_flex": 868, "wrist_roll": 3221}
+LOOK = {"shoulder_pan": 2869, "shoulder_lift": 1057, "elbow_flex": 3208, "wrist_flex": 2018, "wrist_roll": 3220}
+CAD_MARGIN = 0.002          # the CAD layout's margin: the largest at which drive and look stay allowed
+# a CAD working code (two capitals and two digits, as a word): never in the public table
+WORK_CODE = re.compile(r"\b[A-Z]{2}\d{2}\b")
+# the arm's calibration: in the robot's checkout, else MOSS_ARM_CALIBRATION, else a private copy
+cal_path = ROOT / "config" / "arm_calibration.json"
+if not cal_path.is_file():
+    cal_path = Path(os.environ.get("MOSS_ARM_CALIBRATION", "").strip() or "/nonexistent")
+if not cal_path.is_file():
+    found = sorted(glob.glob(os.path.expanduser("~/moss-*/docs/arm_calibration_*.json")))
+    cal_path = Path(found[-1]) if found else None
+calibration = json.loads(cal_path.read_text()) if cal_path else None
+
+
+def travel_outside(table, cal):
+    """[(joint, degrees outside)] for each joint whose calibrated travel
+    (range_min..range_max through the table's joint_map) leaves the table's grid."""
+    jm_t = JointMap.from_docs(None, table)
+    out = []
+    for j in table["joints"]:
+        g = table["grid"][j]
+        lo, hi = sorted(jm_t.ticks_to_rad(j, cal[j][k]) for k in ("range_min", "range_max"))
+        past = max(g[0] - lo, hi - g[-1])
+        if past > 0:
+            out.append((j, round(math.degrees(past), 2)))
+    return out
+
+
+def rover_collision_geoms(path, rover=("rover_exterior", "base"), arm="shoulder", also=()):
+    """The rover's geoms straight from the model, apart from the tool: every
+    geom that collides (contype or conaffinity), plus the geoms named in
+    `also`, whose body chain meets a rover body before the arm's root."""
+    m = mujoco.MjModel.from_xml_path(str(path))
+    bname = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) for b in range(m.nbody)]
+    n = 0
+    for g in range(m.ngeom):
+        if not (m.geom_contype[g] or m.geom_conaffinity[g]
+                or mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, g) in also):
+            continue
+        b = int(m.geom_bodyid[g])
+        while b != 0 and bname[b] not in rover and bname[b] != arm:
+            b = int(m.body_parentid[b])
+        n += bname[b] in rover
+    return n
+
+
+def rover_accounted(t):
+    return (t.get("rover_geoms_counted", 0) + t.get("rover_stand_in_meshes", 0) + t["rover_inside"]["geoms"]
+            + len(t["rover_left_out"]))
+
+
+cad_path = os.environ.get("MOSS_ARM_CAD", "").strip()
+if not cad_path:
+    found = sorted(glob.glob(os.path.expanduser("~/moss-*/cad/*/MOSS_R31.xml")))
+    cad_path = found[-1] if found else ""
+manifest = Path(cad_path).parent / "parts_manifest.json" if cad_path else None
+if not cad_path or not Path(cad_path).is_file():
+    print("  -- skipped, no CAD scene here (MOSS_ARM_CAD, or ~/moss-*/cad/*/MOSS_R31.xml)")
+else:
+    print(f"  model {Path(cad_path).name}")
+    names = K.load_names(manifest) if manifest.is_file() else {}
+    raw_names = {p["id"]: p["name"] for p in json.loads(manifest.read_text())["parts"]} if manifest.is_file() else {}
+    cad_model = mujoco.MjModel.from_xml_path(cad_path)
+    geoms = {mujoco.mj_id2name(cad_model, mujoco.mjtObj.mjOBJ_GEOM, g) for g in range(cad_model.ngeom)}
+    piece = "col_part_0996_017" if "col_part_0996_017" in geoms else next(
+        (n for n in sorted(geoms) if n and K.PIECE.match(n)), "")
+    check("a CAD piece answers to its part: col_part_0996_017 -> col_part_0996, col_part_0277_envelope -> col_part_0277, "
+          "col_part_0005 stays",
+          piece in geoms and K.part_key(piece) == piece.rsplit("_", 1)[0]
+          and K.part_key("col_part_0277_envelope") == "col_part_0277" and K.part_key("col_part_0005") == "col_part_0005"
+          and K.part_key("tread_1_21") == "tread_1_21", f"{piece} -> {K.part_key(piece)}")
+    carriage = K.display_name(names, "col_part_0996")
+    check("--names: col_part_0996 shows as its CAD name; a name the exporter made up takes its component's; "
+          "a shared name gets the part id",
+          carriage == raw_names.get("part_0996") and "Lidar" in carriage
+          and not K.EXPORTER_NAME.match(K.display_name(names, "col_part_0896"))
+          and len(set(names.values())) == len(names) and names.get("part_0997", "").endswith("(part_0997)"),
+          f"{carriage!r}, col_part_0896 -> {K.display_name(names, 'col_part_0896')!r}")
+    check("the layout is told by the body names: cad here, sim for the simulation model",
+          K.layout_of(Path(cad_path)) == "cad" and (not model_path or K.layout_of(Path(model_path)) == "sim"))
+    oute = TMP / "cad.json"
+    cal_args = ["--calibration", str(cal_path)] if calibration else []
+    rc = K.main(["--model", cad_path, "--names", str(manifest), "--out", str(oute), "--steps", "8,8,8,6,4", "--quiet"]
+                + cal_args)
+    te = json.loads(oute.read_text()) if oute.exists() else {}
+    check("the coarse sweep 8,8,8,6,4 exits 0 (its mj_forward and real-finger checks agree), no collision error",
+          rc == 0 and te.get("collision_errors") == 0, f"rc {rc}, {te.get('collision_errors')} errors")
+    hit = te.get("part_names", [])
+    check("forbidden cells, and the lidar itself (RPLIDAR C1), its carriage, the bin and the upper cover among the "
+          "parts hit",
+          te.get("forbidden", 0) >= 1 and any(n.startswith("RPLIDAR C1") for n in hit)
+          and any("Lidar dovetail carriage" in n for n in hit)
+          and any("bin" in n for n in hit) and any("Upper cover" in n for n in hit),
+          f"{te.get('forbidden')} of {te.get('cells')} ({100 * te.get('forbidden_fraction', 0):.1f} %); "
+          + ", ".join(f"{n} {te['part_counts'][n]}" for n in hit[:5]))
+    check("the arm's own base and the arm mounting plate are rover parts, and the arm hits them",
+          any(n.startswith("SO101 base link") for n in hit) and any(n.startswith("Arm mounting plate") for n in hit))
+    check("the CAD defaults: rover_exterior and base, arm from shoulder, every collision geom, the visual meshes left "
+          "out, margin 2 mm, the base|shoulder exclusion kept",
+          te.get("layout") == "cad" and te.get("rover_body") == "rover_exterior,base" and te.get("arm_root") == "shoulder"
+          and te.get("rover_parts") == ["*"] and te.get("visual") == "skip" and te["visual_left_out"]["rover"] > 0
+          and te["visual_left_out"]["arm"] > 0 and te.get("margin_m") == CAD_MARGIN
+          and te.get("excludes_kept") == [["base", "shoulder"]], f"visual left out {te.get('visual_left_out')}")
+    kept = te.get("visual_kept", {}).get("geoms", [])
+    drive_geoms = [mujoco.mj_id2name(cad_model, mujoco.mjtObj.mjOBJ_GEOM, g) for g in range(cad_model.ngeom)
+                   if cad_model.geom_bodyid[g] == mujoco.mj_name2id(cad_model, mujoco.mjtObj.mjOBJ_BODY, "nc90_drive")]
+    check("the gripper's drive (gear, servo horn: visual meshes only, no collision geom) counts: its visual meshes "
+          "are arm geoms, swept over the pinion, named after their parts",
+          drive_geoms and sorted(kept) == sorted(drive_geoms)
+          and set(kept) <= set(te["unswept_joints"]["replaced_geoms"])
+          and any(n.startswith("Gripper Gear") and n.endswith("(visual mesh)") for n in te.get("arm_geoms", [])),
+          f"{kept}")
+    n_rover = rover_collision_geoms(cad_path, also=kept)
+    check("every rover collision geom of the model is accounted for (counted, held inside another, or left out by "
+          "name), counted from the model apart from the tool",
+          te.get("rover_geoms_counted", 0) > 0 and n_rover == rover_accounted(te),
+          f"{n_rover} in the model = {te.get('rover_geoms_counted')} counted + {te['rover_inside']['geoms']} inside "
+          f"+ {len(te['rover_left_out'])} left out + {te.get('rover_stand_in_meshes')} with stand-ins")
+    text_e = oute.read_text() if oute.exists() else ""
+    check("no CAD working code in the table (two capitals and two digits as a word): the gripper's parts read "
+          "\"gripper\"", not WORK_CODE.search(text_e) and any(n.startswith("gripper ") for n in te.get("arm_geoms", [])),
+          ", ".join(sorted(set(WORK_CODE.findall(text_e)))))
+    out0 = TMP / "cad_margin0.json"
+    rc0 = K.main(["--model", cad_path, "--out", str(out0), "--steps", "8,8,8,6,4", "--quiet", "--margin", "0",
+                  "--check", "0"] + cal_args)
+    t0 = json.loads(out0.read_text()) if out0.exists() else {}
+    occ_e = np.unpackbits(np.frombuffer(bytes.fromhex(te.get("occupancy_bits_hex", "")), np.uint8))
+    occ_0 = np.unpackbits(np.frombuffer(bytes.fromhex(t0.get("occupancy_bits_hex", "")), np.uint8))
+    gained = int((occ_e & ~occ_0 & 1).sum()) if occ_e.shape == occ_0.shape else -1
+    check("the 2 mm margin forbids more than a 0 mm margin: cells where the arm comes within 2 mm of the rover "
+          "without touching it are refused, every cell 0 mm forbids stays forbidden",
+          rc0 == 0 and gained > 0 and occ_e.shape == occ_0.shape and not (occ_0 & ~occ_e & 1).any(),
+          f"{gained} cells within 2 mm, not touching")
+    if calibration:
+        past = travel_outside(te, calibration)
+        check("--calibration: the grid covers every joint's calibrated travel (through the joint_map) and its pad",
+              te.get("travel") is not None and not past and all(
+                  te["grid"][j][0] <= te["travel"]["joints"][j]["grid_rad"][0] + 1e-9
+                  and te["grid"][j][-1] >= te["travel"]["joints"][j]["grid_rad"][1] - 1e-9 for j in te["joints"]),
+              f"outside: {past}" if past else "every joint inside")
+    else:
+        print("  -- skipped, no arm calibration here (config/arm_calibration.json, MOSS_ARM_CALIBRATION)")
+    lid = te.get("lidar", {})
+    check("no lidar cylinder added: the scene carries the lidar as parts, and the note names them",
+          lid.get("added") is False and "Lidar dovetail carriage R21" in lid.get("note", ""), lid.get("note", "")[:90])
+    fing = te.get("fingers", {})
+    check("fingers swept between closed and open; open = both slides at 0 (90 mm, the widest) and the pinion at 0, "
+          "the right jaw and the pinion following the left jaw",
+          fing.get("open") == {"nc90_jaw_left_slide": 0.0, "nc90_jaw_right_slide": 0.0, "nc90_pinion": 0.0}
+          and fing.get("coupled", {}).get("nc90_jaw_right_slide", {}).get("follows") == "nc90_jaw_left_slide"
+          and fing.get("coupled", {}).get("nc90_pinion", {}).get("follows") == "nc90_jaw_left_slide"
+          and te["unswept_joints"]["replaced_geoms"] and te["finger_check"]["touching"] == 0, str(fing.get("open")))
+    every = all(te["part_counts"].get(n, 0) > 0 for n in hit) and len(hit) <= te.get("rover_parts_total", 0)
+    check("the parts list is built from the hits (every listed part was hit), one byte per cell while it is "
+          "255 parts or fewer, pairs named by part",
+          every and te.get("cell_part_dtype") == ("uint8" if len(hit) <= 255 else "uint16")
+          and all("|" in k for k in te.get("pair_counts", {})) and len(te.get("pair_cells", [])) == te.get("pairs"),
+          f"{len(hit)} parts of {te.get('rover_parts_total')}, {te.get('pairs')} pairs")
+    check("the JSON carries the joint_map (2048, +1 on all five joints) with its basis, the model's file name and "
+          "sha256, and the manifest's",
+          te.get("joint_map") == {j: {"model_zero_ticks": 2048, "sign": 1} for j in K.JOINTS}
+          and "drive" in te.get("joint_map_basis", "") and te["model"]["path"] == Path(cad_path).name
+          and te["model"]["sha256"] == K.sha256_of(Path(cad_path))
+          and te.get("names", {}).get("sha256") == K.sha256_of(manifest))
+    pce = K.prepare(Path(cad_path), arm_root="shoulder", rover_body="rover_exterior,base", rover_parts=("*",),
+                    visual="skip", root_voxel=0.0, margin=te["margin_m"], root_margin=0.0)
+    cap = mujoco.MjModel.from_xml_path(cad_path)
+    gid = mujoco.mj_name2id(pce.model, mujoco.mjtObj.mjOBJ_GEOM, "col_part_0280")
+
+    def hull_verts(m, g):
+        adr = int(m.mesh_graphadr[m.geom_dataid[g]])
+        return int(m.mesh_graph[adr]) if adr >= 0 else 0
+
+    check("every collision mesh as its whole hull: the scene caps hulls at 128 vertices, the sweep lifts the cap",
+          hull_verts(pce.model, gid) > 128 >= hull_verts(cap, mujoco.mj_name2id(cap, mujoco.mjtObj.mjOBJ_GEOM, "col_part_0280"))
+          and te.get("hull_vertex_cap_lifted", 0) > 0,
+          f"col_part_0280: {hull_verts(cap, mujoco.mj_name2id(cap, mujoco.mjtObj.mjOBJ_GEOM, 'col_part_0280'))} "
+          f"-> {hull_verts(pce.model, gid)} vertices")
+    outk = TMP / "cad_keep.json"
+    rc = K.main(["--model", cad_path, "--out", str(outk), "--steps", "8,8,8,6,4", "--quiet", "--keep-inside", "--check", "0"]
+                + cal_args)
+    tk = json.loads(outk.read_text()) if outk.exists() else {}
+    check("the rover geoms held whole inside another add no forbidden pose: the same occupancy with --keep-inside",
+          rc == 0 and te["rover_inside"]["geoms"] > 0 and tk.get("occupancy_bits_hex") == te["occupancy_bits_hex"],
+          f"{te['rover_inside']['geoms']} geoms left out, {tk.get('forbidden')} vs {te.get('forbidden')} forbidden")
+    # the two poses in the model, at their exact angles (first alignment: 2048 and +1)
+    jm0 = JointMap.from_docs(None, {"joints": list(K.JOINTS)})
+    is_arm_e, is_part_e = K._masks(pce.model, pce.arm_ids, pce.part_ids)
+    is_root_e, _ = K._masks(pce.root_model, pce.root_ids, pce.part_ids)
+    free_at = {}
+    for name, ticks in (("drive", DRIVE), ("look", LOOK)):
+        q = jm0.pose_to_rad(ticks)
+        touch = []
+        for mdl, isa, mg in ((pce.model, is_arm_e, te["margin_m"]), (pce.root_model, is_root_e, 1e-12)):
+            dd = mujoco.MjData(mdl)
+            dd.qpos[:] = pce.base_qpos
+            for j, v in q.items():
+                dd.qpos[mdl.jnt_qposadr[mujoco.mj_name2id(mdl, mujoco.mjtObj.mjOBJ_JOINT, j)]] = v
+            touch += K._touch(mdl, dd, isa, is_part_e, mg) or []
+        free_at[name] = not touch
+    check("drive and look, at their exact angles, come no closer than the margin to the rover (the model)",
+          all(free_at.values()), str(free_at))
+
+print("F. the committed table")
 table_path = ROOT / "config" / "arm_keepout.json"
 if not table_path.is_file():
     check("config/arm_keepout.json exists", False)
@@ -651,18 +906,46 @@ else:
           gc.shape == (16, 16, 16, 12, 8) and size < 2_000_000,
           f"{size / 1e6:.2f} MB, {100 * tc['forbidden_fraction']:.1f} % forbidden, model {tc['model']['path']}")
     print(f"  {gc.summary()}")
-    sibling = Path(model_path).parent / tc["model"]["path"] if model_path else None
+    homes = ([Path(model_path).parent] if model_path else []) + ([Path(cad_path).parent] if cad_path else [])
+    sibling = next((h / tc["model"]["path"] for h in homes if (h / tc["model"]["path"]).is_file()), None)
+    layout = tc.get("layout", "sim")
+    if layout == "cad":
+        gt0 = ArmGuard.load(table_path, calibration=NOWHERE)
+        check("the robot's two daily poses are allowed: drive and look (servo ticks, first alignment)",
+              gt0.allowed_ticks(DRIVE) and gt0.allowed_ticks(LOOK), f"{gt0.why_ticks(DRIVE)[:40]} | {gt0.why_ticks(LOOK)[:40]}")
+        check("the table names its parts by their CAD names, a list built from the hits, one byte per cell",
+              tc.get("names") is not None and tc.get("cell_part_dtype") == "uint8"
+              and all(tc["part_counts"][n] > 0 for n in tc["part_names"]) and "basis" not in tc["joint_map"]
+              and "drive" in tc.get("joint_map_basis", ""), f"{len(tc['part_names'])} parts, {tc.get('pairs')} pairs")
+        text_c = table_path.read_text()
+        check("margin 2 mm; the lidar itself (RPLIDAR C1) among the parts hit; the model named by its file name only; "
+              "no CAD working code anywhere in the table",
+              tc.get("margin_m") == CAD_MARGIN and any(n.startswith("RPLIDAR C1") for n in tc["part_names"])
+              and "/" not in tc["model"]["path"] and not WORK_CODE.search(text_c),
+              f"margin {tc.get('margin_m')}, model {tc['model']['path']!r}"
+              + (", codes " + ", ".join(sorted(set(WORK_CODE.findall(text_c)))) if WORK_CODE.search(text_c) else ""))
+    if calibration:
+        past = travel_outside(tc, calibration)
+        check("every joint's calibrated travel (the arm's range_min..range_max, through the table's joint_map) lies "
+              "inside the table: the guard refuses no pose the arm can reach for being outside it",
+              not past, f"outside: {past}" if past else ", ".join(
+                  f"{j} {math.degrees(tc['grid'][j][0]):.1f}..{math.degrees(tc['grid'][j][-1]):.1f}" for j in tc["joints"]))
+    else:
+        print("  -- skipped, no arm calibration here (config/arm_calibration.json, MOSS_ARM_CALIBRATION)")
     if sibling is None or not sibling.is_file():
         print("  -- skipped, the model the table names is not here")
     else:
         si = tc["stand_ins"]
+        names_doc = sibling.parent / tc["names"]["file"] if tc.get("names") else None
         common = dict(arm_root=tc["arm_root"], rover_body=tc["rover_body"], rover_parts=tuple(tc["rover_parts"]),
                       exclude=tuple(tc["exclude"]), margin=tc["margin_m"],
                       lidar_xyz=tc["lidar"]["pos_m"] if tc["lidar"].get("added") else None, joints=tuple(tc["joints"]),
                       fixed=tc["unswept_joints"]["fixed"], voxel=si["voxel_m"], root_voxel=tc["root_link"]["voxel_m"],
-                      root_margin=tc["root_link"]["margin_m"], cover_tol=si["cover_tol_m"])
+                      root_margin=tc["root_link"]["margin_m"], cover_tol=si["cover_tol_m"],
+                      visual=tc.get("visual", "count"),
+                      names=K.load_names(names_doc) if names_doc and names_doc.is_file() else None)
         pc = K.prepare(sibling, **common)
-        check("both hashes match the model next to D's (its file, and its compiled geometry: meshes included)",
+        check("both hashes match the model it names, here (its file, and its compiled geometry: meshes included)",
               K.sha256_of(sibling) == tc["model"]["sha256"] and pc.geometry_sha256 == tc["model"]["geometry_sha256"])
         jids = [mujoco.mj_name2id(pc.model, mujoco.mjtObj.mjOBJ_JOINT, j) for j in tc["joints"]]
         grids = [np.array(tc["grid"][j]) for j in tc["joints"]]
@@ -677,17 +960,28 @@ else:
               done == 400 and not touched, f"{done} poses, {len(touched)} touch")
         pm_t = si["per_mesh"]
         silent = [n for n, r in pm_t.items() if r.get("outside_fraction", 0) > 0 and not r.get("boxes")]
-        check("every rover mesh the named parts miss has stand-ins (none dropped silently)",
-              not silent and len(pm_t) > 0, f"{len(pm_t)} meshes, {sum(r.get('boxes', 0) for r in pm_t.values())} boxes")
+        if layout == "sim":
+            check("every rover mesh the named parts miss has stand-ins (none dropped silently)",
+                  not silent and len(pm_t) > 0, f"{len(pm_t)} meshes, {sum(r.get('boxes', 0) for r in pm_t.values())} boxes")
+        else:
+            n_rover_c = rover_collision_geoms(sibling, also=tc.get("visual_kept", {}).get("geoms", []))
+            check("every rover collision geom counts as it is: none left out by name, no stand-ins needed, every one "
+                  "of the model's accounted for (counted apart from the tool), the names on the table match the "
+                  "model's parts",
+                  not tc["rover_left_out"] and not pm_t and n_rover_c == rover_accounted(tc)
+                  and set(tc["part_names"]) <= set(pc.display.values()) | {K.COLLISION_ERROR},
+                  f"{n_rover_c} rover geoms in the model = {tc.get('rover_geoms_counted')} counted + "
+                  f"{tc['rover_inside']['geoms']} held inside another; {tc['rover_parts_total']} parts")
 
         def snap(q):
             return {j: float(g[np.argmin(np.abs(g - q[j]))]) for j, g in zip(gc.joints, gc.grids)}
 
-        poses = [{"shoulder_pan": 0.419, "shoulder_lift": 0.128, "elbow_flex": 1.865, "wrist_flex": -1.166, "wrist_roll": 1.32},
-                 {"shoulder_pan": 0.419, "shoulder_lift": -0.384, "elbow_flex": 1.119, "wrist_flex": 0.833, "wrist_roll": -2.071}]
-        why = [gc.why(snap(q)) for q in poses]
-        check("the two grid poses a review found inside the nose camera (free in the earlier table) are refused",
-              all(not gc.allowed(snap(q)) for q in poses), " | ".join(w[:60] for w in why))
+        if layout == "sim":
+            poses = [{"shoulder_pan": 0.419, "shoulder_lift": 0.128, "elbow_flex": 1.865, "wrist_flex": -1.166, "wrist_roll": 1.32},
+                     {"shoulder_pan": 0.419, "shoulder_lift": -0.384, "elbow_flex": 1.119, "wrist_flex": 0.833, "wrist_roll": -2.071}]
+            why = [gc.why(snap(q)) for q in poses]
+            check("the two grid poses a review found inside the nose camera (free in the earlier table) are refused",
+                  all(not gc.allowed(snap(q)) for q in poses), " | ".join(w[:60] for w in why))
         lo = np.array([g[0] for g in gc.grids])
         hi = np.array([g[-1] for g in gc.grids])
         n_ref, n_bad = 0, 0

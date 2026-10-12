@@ -3,15 +3,15 @@
 The answer comes from the table that tools/moss_arm_keepout.py sweeps on the
 robot's MuJoCo model (config/arm_keepout.json): a verdict per grid point of
 the five arm joints, free or forbidden, and for a forbidden point the rover
-part it touches, by its geom name in the model (the hull, a bin wall, a
-track, the lidar, or a mesh such as the deck or the nose camera). Pure
+part it touches, by its name in the CAD (the bin, the upper cover, the lidar
+carriage, the arm mounting plate...) or its geom name in the model. Pure
 Python + numpy: no mujoco on the robot.
 
     from moss_dimos.arm_guard import ArmGuard
     guard = ArmGuard.load()                        # the table + config/arm_calibration.json
     guard.allowed({"shoulder_pan": 0.1, "shoulder_lift": 0.0, ...})   # model radians
     guard.allowed_ticks({"shoulder_pan": 2100, ...})   # servo readings (homing offset applied)
-    guard.why(q)              # "forbidden: the arm touches bin_x1 ..." / "free: ..."
+    guard.why(q)              # "forbidden: the arm touches R8H reference - bin ..." / "free: ..."
     guard.nearest_allowed(q)  # the closest pose that stays allowed once rounded to ticks
     guard.nearest_allowed_ticks(pose_ticks)          # the same, in servo ticks
 
@@ -85,7 +85,8 @@ class JointMap:
         calibration = calibration if isinstance(calibration, dict) else {}
         table = table if isinstance(table, dict) else {}
         jmap = table.get("joint_map") or {}
-        names = list(joints or table.get("joints") or jmap or [n for n in SERVO_IDS if n != "gripper"])
+        names = list(joints or table.get("joints") or [n for n, v in jmap.items() if isinstance(v, dict)]
+                     or [n for n in SERVO_IDS if n != "gripper"])
         out = {}
         for name in names:
             cal = calibration.get(name) if isinstance(calibration.get(name), dict) else {}
@@ -221,12 +222,21 @@ class ArmGuard:
             self.cell_part = self.occ.astype(np.uint8)
             self.part_names = ["the rover"]
         else:
-            arr = np.asarray(part, dtype=np.uint8)
+            # one byte per cell while the table names 255 parts or fewer, two beyond
+            dtype = np.dtype(table.get("cell_part_dtype", "uint8"))
+            if dtype not in (np.dtype(np.uint8), np.dtype(np.uint16)):
+                raise ValueError(f"cell_part_dtype {dtype.name}: uint8 or uint16")
+            arr = np.asarray(part, dtype=np.int64)
+            if arr.size and (arr.min() < 0 or arr.max() > np.iinfo(dtype).max):
+                raise ValueError(f"cell_part holds numbers outside {dtype.name}")
+            arr = arr.astype(dtype)
             if arr.size != cells or not np.array_equal(arr.reshape(self.shape) > 0, self.occ):
                 raise ValueError("cell_part and the occupancy bits disagree")
-            self.cell_part = arr.reshape(self.shape)
             self.part_names = list(table.get("part_names", []))
-        self.meta = {k: v for k, v in table.items() if k not in ("occupancy_bits_hex", "cell_part")}
+            if arr.size and int(arr.max()) > len(self.part_names):
+                raise ValueError(f"cell_part names part {int(arr.max())}, part_names holds {len(self.part_names)}")
+            self.cell_part = arr.reshape(self.shape)
+        self.meta = {k: v for k, v in table.items() if k not in ("occupancy_bits_hex", "cell_part", "pair_cells")}
         self.joint_map = joint_map or JointMap.from_docs(None, table)
         self._targets = None
 

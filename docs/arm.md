@@ -44,109 +44,200 @@ hand (torque off), and replayed by commanding the same ticks.
 
 ## Keep-out zones
 
-The arm can hit its own robot: every element of the rover that the model
-holds, the hull, the bin, the tracks and treads, the deck, the nose camera
-and its mount, the parts beside the arm's base, and the lidar. The keep-out
-table says, for every pose of the five joints on a grid, whether the arm
-comes closer than the margin to one of them, and which.
-`moss_dimos/arm_guard.py` reads it and refuses the poses it forbids.
+The arm can hit its own robot: the lidar and its quick-release mount, the
+bin behind the arm, the upper cover, the hull, the arm mounting plate, the
+front camera's window, the E-stop, the tracks and their frames, and
+the arm's own base. The keep-out table says, for every pose of the five
+joints on a grid, whether the arm comes closer than the margin to one of
+them, and to which. `moss_dimos/arm_guard.py` reads it and refuses the
+poses it forbids.
 
-### How the table is made
+### The model to sweep
 
-`tools/moss_arm_keepout.py` sweeps it on the robot's MuJoCo model:
+The table comes from the CAD scene of the whole robot, `MOSS_R31.xml` with
+its `meshes/` folder and its `parts_manifest.json`: the exterior and the
+articulated arm of the current assembly, every part with its own collision
+geometry. The CAD gives each part one convex hull, or, for a concave part
+(the bin, the cover, the arm mounting plate, the lidar carriage, the arm's
+links), the convex pieces of a decomposition, named `<part>_000`,
+`<part>_001` and so on. Its visual meshes do not collide.
 
 ```sh
-pip install mujoco
-python tools/moss_arm_keepout.py --model <robot.xml>       # writes config/arm_keepout.json
+pip install mujoco numpy scipy
+python tools/moss_arm_keepout.py --model MOSS_R31.xml --names parts_manifest.json \
+    --calibration config/arm_calibration.json
 ```
 
-* **The rover** is every geom of the `rover` body and of the bodies under
-  it, except the arm, the bodies that carry the arm (`base_link`) and the
-  geoms `--exclude` names. The geoms named `hull`, `bin_*`, `track_*`,
-  `tread_*` and `lidar`, and every other box, sphere, capsule, cylinder or
-  ellipsoid, count as they are. Every other mesh counts through stand-ins:
-  MuJoCo collides a mesh as its convex hull, which would fill the inside of
-  the bin or the deck around the arm's base. The tool samples the mesh's
-  surface, keeps the samples that lie more than `--cover-tol` (2 mm) outside
-  the parts above, and covers them with boxes on a `--stand-in-voxel` grid
-  (4 mm). Every point of the surface then lies inside a stand-in or within
-  `--cover-tol` plus half a voxel of a named part, and a stand-in reaches
-  past the surface by less than one and a half voxels along each axis. The
-  JSON keeps, for every mesh, the share
-  of its surface the named parts miss, where that share lies in the rover
-  frame, and its number of boxes.
-* **The arm** is every geom from `shoulder_link` down: the links, the servo
-  shells, the palm and the pads, the visual meshes included. A mesh collides
-  as its convex hull, a little larger than the part, never smaller.
-* **The root link** (`shoulder_link`, which only the pan moves) is done
-  apart. Its meshes become surface stand-ins (`--root-voxel`, 1 mm), since
-  the hull of its bracket would sweep through the deck and the parts beside
-  the base. It is placed every degree of pan (`--root-step-deg`), and a
-  contact there forbids every pan value of the grid within half a step,
-  whatever the other joints do. It turns in place at a clearance the build
-  sets, so it counts the places where it meets the rover (`--root-margin`,
-  0 m), not the margin. A part it touches at every pan value is where the arm
-  sits: those contacts are not counted (`mount_parts` in the JSON).
-* **The lidar** is not in the model. When no geom is named `lidar`, the tool
-  adds a cylinder (radius 0.038 m, height 0.04 m) on the rover body at the
-  profile's pose: on the rotation centre (x = y = 0, since `base_link` is the
-  lidar's floor projection) and `lidar_height_m` up (0.20 m,
-  `MOSS_LIDAR_HEIGHT_M`). `--lidar-xyz` sets its centre. The tool prints the
-  rover parts the cylinder goes into and stores them with their depth in
-  `lidar.overlaps_m`.
-* **The fingers** take every position: each geom on a finger is replaced by
-  its swept volume, the convex hull of the geom at both ends of the slide, on
-  the gripper body. A closed, open or half-open gripper is inside it.
-  `--fix finger_left=0.02,...` pins a finger instead.
+This writes `config/arm_keepout.json`. The default grid takes about two
+minutes on 16 processes (the JSON records the run time and the cost per
+pose). The table records the model by its file name and its sha256 (and
+the manifest's), never by its path. `--calibration` is the arm's own
+calibration file (above): the grid then covers every pose the arm can
+reach (below).
+
+The simulation model of the earlier rover (a body `rover`, primitives for
+the hull, the bin and the tracks) still sweeps the same way; the tool tells
+the two apart by their body names (`--layout auto`):
+
+| | CAD scene (`cad`) | simulation model (`sim`) |
+|---|---|---|
+| found by | a body `rover_exterior` | anything else |
+| `--rover-body` | `rover_exterior,base` | `rover` |
+| `--arm-root` | `shoulder` | `shoulder_link` |
+| `--rover-parts` (count as they are) | `*`: every collision geom | `hull,bin_*,track_*,tread_*,lidar`, other meshes through stand-ins |
+| `--visual` | `skip`: the visual meshes are left out, except on a body with no collision geom | `count`: a visual mesh is a part too |
+| `--root-voxel` | `0`: the shoulder's geoms as they are | `0.001`: surface stand-ins |
+| lidar | none added: the scene has it | a cylinder added at the profile's pose |
+| `--margin` | `0.002` | `0.01` |
+
+A flag given on the command line wins over the layout.
+
+### What counts
+
+* **The rover** is every collision geom of the bodies `--rover-body` lists
+  and of the bodies under them, except the arm. In the CAD scene the arm's
+  own base (`base`) hangs from the world, not from the rover, so it is
+  listed: the forearm and the gripper can hit the SO-101 base and the
+  plate under it. In the simulation model the bodies between the rover and
+  the arm (`base_link`) are the arm's mount and are left out.
+* **Parts.** The pieces of one CAD part count as one part: `col_part_0996_017`
+  is a piece of `col_part_0996`. `--names parts_manifest.json` gives every
+  part its CAD name (`col_part_0996` shows as "Lidar dovetail carriage
+  R21"); a name the CAD exporter made up takes the name of the component
+  that holds it (the lidar's body shows as "RPLIDAR C1 - R21 position -
+  manufacturer model"), and a name several parts share gets the part id in
+  brackets. The CAD names the gripper's parts after its working code (their
+  first word, two capitals and two digits): the table says "gripper"
+  instead ("gripper base - original profile rails extended 22mm each
+  end"). The counts, the summary and `why()` use those names. Without
+  `--names` the part is named by its geom name.
+* **Every rover geom is accounted for.** Each collision geom of the rover
+  bodies counts as it is, goes through stand-ins (the simulation model),
+  is held inside another (below) or is left out by name (`--exclude`); the
+  JSON gives the four numbers (`rover_geoms_counted`,
+  `rover_stand_in_meshes`, `rover_inside`, `rover_left_out`), and the bench
+  counts the model's collision geoms on its own and checks the sum. In the
+  CAD scene: 613 = 440 counted + 173 held inside another.
+* **Hulls.** MuJoCo collides a mesh as its convex hull. The scene caps
+  every hull at 128 vertices, which cuts corners off the part (up to 5 mm
+  on the SO-101 base); the tool lifts the cap, so every hull holds its
+  whole piece.
+* **Pieces held inside another.** A rover piece held whole inside another
+  one that counts as it is (the wheels inside a track's envelope, the
+  hardware inside the hull's envelope) adds no forbidden pose: an arm geom
+  near it is nearer the other. The tool leaves those out and lists them
+  (`rover_inside`); `--keep-inside` keeps them, with the same verdicts.
+* **The arm** is every collision geom from `--arm-root` down. The fingers
+  take every position: each jaw piece is replaced by its swept volume, the
+  convex hull of the piece at both ends of its slide, so a closed, open or
+  half-open gripper is inside it. The base pose of the sweep holds the
+  gripper open, both jaw slides at 0 (90 mm, the widest) and the pinion at
+  0: the tool picks the end of each finger joint that spreads the gripper
+  the most, and sets the right jaw and the pinion from the left jaw through
+  the scene's joint equalities (MuJoCo applies those only when it steps).
+  The JSON says so under `fingers`. `--fix name=value` holds a finger joint
+  at one value instead.
+* **The gripper's drive** (its gear, the servo horn and their four screws)
+  has no collision geom in the scene: it turns with the pinion, inside the
+  gripper. Its two visual meshes stick out of the gripper's collision
+  hulls, so they count as arm geoms, swept over the pinion's whole range
+  like the jaws (`visual_kept`). The rule is general: with `--visual skip`,
+  a body with no collision geom keeps its visual meshes, since nothing else
+  stands for them.
+* **The model's exclusions.** The scene excludes the base and the shoulder
+  (one turns on the other): that exclusion is kept. Its other exclusions,
+  between links of the arm, mean nothing here: the arm is never collided
+  with itself.
+* **The shoulder** (the root link, which only the pan moves) is placed every
+  degree of pan; a contact there forbids every pan value of the grid within
+  half a step, whatever the other joints do. It counts where it meets the
+  rover (`--root-margin` 0): it turns in place at a clearance the build
+  sets. In the CAD scene it clears every part at every pan by 8 mm or more.
+
+### How the sweep works
+
 * **The grid** spans each joint's model range widened by 10 degrees on both
-  sides: the arm's calibrated travel ends a few degrees past the model's
-  limits, and the `drive` pose sits on its end stops. The default grid is
+  sides (`--pad-deg`): the arm's calibrated travel ends a few degrees past
+  the model's limits (the `drive` pose sits on the lift and elbow end
+  stops, 4 to 5 degrees past the model's, and its wrist 9 degrees past).
+  With `--calibration` the grid also reaches 3 degrees past each end of
+  every joint's calibrated travel, read through the `joint_map` (the JSON
+  keeps it under `travel`). The guard refuses a pose outside the table, so
+  a pose the arm can reach must lie inside it: on this arm the wrist
+  flex's travel ends at -105.3 degrees, past the pad's -105.0, and its
+  grid starts at -108.3; the pan's grid runs to 121.3 degrees either way,
+  the roll's from -168.0. The default grid is
   16 x 16 x 16 x 12 x 8 points (pan, lift, elbow, flex, roll): one step is
   14 to 19 degrees on the first four joints, 49 on the roll.
-* **Each grid point** is placed on the model (`mj_kinematics`, the position
-  stage of `mj_forward`), then `mj_collision` lists every contact closer than
-  the margin (0.01 m) between an arm geom and a rover part. One contact
-  makes the point forbidden. Nothing is simulated: no dynamics, no gravity.
-  The margin is MuJoCo's geom margin set on the rover parts only (MuJoCo adds
-  the margins of the two geoms of a pair). The collider is libccd's: MuJoCo's
-  own one reports no contact for a geom held whole inside a mesh's hull. A
-  pose where MuJoCo's collision code fails is forbidden and counted
-  (`collision_errors`).
-* **Before writing**, 64 grid points are done again with a full `mj_forward`
-  and must agree, and 64 free grid points are done again with the real
-  fingers closed, half open, open and at a random opening: none may touch.
-  The sweep runs on one process per core (`--jobs`).
+* **Each grid point** is placed on the model (`mj_kinematics`), then
+  `mj_collision` lists every contact closer than the margin between an arm
+  geom and a rover part. One contact makes the point forbidden. Nothing is
+  simulated. The margin is MuJoCo's geom margin, set on the rover parts
+  only. The collider is libccd's: MuJoCo's own one misses a geom held whole
+  inside a mesh's hull. libccd says reliably whether two geoms come within
+  the margin; the distance it reports with a contact is approximate, and
+  the table uses only the first. A pose deep in the rover makes 10000
+  contacts and more: the arena is raised for them. A pose where MuJoCo's
+  collision code fails anyway is forbidden and counted (`collision_errors`).
+* **Before writing**, 64 grid points are done again with a full
+  `mj_forward` and must agree, and 64 free grid points are done again with
+  the real jaws closed, half open, open and at a random opening: none may
+  touch.
 
-The JSON holds the joint order, each joint's grid (radians), the model's
-ranges, the occupancy (one bit per pose, 1 = forbidden, row-major with the
-last joint fastest, packed 8 to a byte and written in hex), `cell_part` (one
+### The margin
+
+In the CAD scene the margin is 2 mm. The collision hulls are the parts
+themselves, and the arm folded in `drive` rests close to the bin's front
+wall: in the model, at the first alignment (below), the upper arm is 4 to
+5 mm from the wall in `drive`, and its cable boss 3 to 4 mm in `look`.
+With a 10 mm margin the table forbids both poses, at every one of the 32
+grid points around each. With 2 mm every one of those grid points is free
+(the closest clears 2 mm), and the guard allows both poses. The near
+contact stays in the table: the bin is the part the arm hits most. The
+bench holds the margin at 2 mm, and checks that it forbids cells a 0 mm
+margin leaves free (the arm within 2 mm of the rover without touching it).
+
+### The JSON
+
+It holds the joint order, each joint's grid (radians), the model's ranges,
+the occupancy (one bit per pose, 1 = forbidden, row-major with the last
+joint fastest, packed 8 to a byte and written in hex), `cell_part` (one
 number per pose: 0 = free, k = the k-th name of `part_names`, the part with
-the most contacts there), the poses per rover part and per pair of arm geom
-and rover part, the stand-ins per mesh, the root link's settings, the mount
-parts, the lidar and its overlaps, the model's file name with two hashes
-(the file, and the compiled geometry with every mesh), the margin, the run
-time, and the `joint_map` (below). The numbers of the sweep (forbidden
-share, parts hit) live there. It stays near 1 MB at the default grid.
+the most contacts there; one byte per pose while `part_names` holds 255
+parts or fewer, two beyond: `cell_part_dtype`), the parts hit (only those:
+`part_names` is built from the sweep), the poses per part, the 100 most
+frequent pairs of arm part and rover part by name (`pair_counts`) and all
+of them by number (`pair_cells`), the pieces held inside another, the
+count of every rover geom, the visual meshes kept, the fingers, the
+calibrated travel the grid covers (`travel`), the layout and its settings,
+the model's file name with two hashes
+(the file, and the compiled geometry with every mesh), the manifest's file
+name and hash, the margin, the run time and the `joint_map` with its basis
+(below). It is about 1 MB at the default grid.
 
 ### The knobs
 
 | Option | Default | What it changes |
 |---|---|---|
 | `--model` | (required) | the MJCF to sweep |
+| `--names` | none | a parts manifest: the parts' CAD names |
 | `--out` | `config/arm_keepout.json` | where the table goes |
+| `--layout` | `auto` | `cad` or `sim`: the defaults in the table above |
 | `--steps` | `16,16,16,12,8` | grid points per joint: more is finer and slower (the time grows with the product) |
-| `--margin` | `0.01` | metres: an arm link closer than this to a rover part counts as a contact |
+| `--margin` | by layout | metres: an arm geom closer than this to a rover part counts as a contact |
 | `--pad-deg` | `10` | degrees added past each end of every joint's model range |
-| `--rover-parts` | `hull,bin_*,track_*,tread_*,lidar` | geom names (patterns) that count as they are, meshes included |
+| `--calibration` | none | the arm's calibration file: the grid covers each joint's calibrated travel plus 3 degrees |
+| `--rover-body`, `--arm-root`, `--rover-parts`, `--visual` | by layout | the rover's bodies, the arm's first moving body, the geoms that count as they are, the visual meshes |
 | `--exclude` | none | geom names (patterns) that are not rover parts |
-| `--stand-in-voxel` | `0.004` | metres: the box grid of the rover meshes' stand-ins (0 leaves those meshes out) |
+| `--keep-inside` | off | keep the rover pieces held whole inside another |
+| `--stand-in-voxel` | `0.004` | metres: the box grid of the stand-ins of a rover mesh that `--rover-parts` does not name (0 leaves those meshes out) |
 | `--cover-tol` | `0.002` | metres: mesh surface this close to a named part needs no stand-in |
-| `--root-voxel` | `0.001` | metres: the box grid of the root link's stand-ins |
-| `--root-margin` | `0` | metres: the root link's contacts count closer than this (at most `--margin`) |
-| `--root-step-deg` | `1` | degrees between the root link's samples along the pan |
-| `--lidar-xyz` / `--no-lidar` | the profile's pose | where the lidar cylinder goes, or none |
-| `--arm-root`, `--rover-body`, `--joints` | `shoulder_link`, `rover`, the five joints | for a model with other names |
-| `--fix` | the fingers swept | `name=value,...` pins the finger joints |
+| `--root-voxel` | by layout | metres: the box grid of the shoulder's stand-ins (0: its geoms as they are) |
+| `--root-margin` | `0` | metres: the shoulder's contacts count closer than this (at most `--margin`) |
+| `--root-step-deg` | `1` | degrees between the shoulder's samples along the pan |
+| `--lidar-xyz` / `--no-lidar` | by layout | add a lidar cylinder at this centre, or none |
+| `--joints` | the five joints | for a model with other names |
+| `--fix` | the fingers swept | `name=value,...` holds a finger joint at one value |
 | `--check` | `64` | grid points done again with `mj_forward`, and free ones with the real fingers |
 | `--jobs` | one per core, up to 16 | processes for the sweep |
 
@@ -157,7 +248,7 @@ from moss_dimos.arm_guard import ArmGuard
 guard = ArmGuard.load()                       # the table + config/arm_calibration.json
 guard.allowed_ticks(pose["ticks"])            # servo positions; the gripper is ignored
 guard.allowed(q)                              # q = {joint: model radians}
-guard.why(q)                                  # "forbidden: the arm touches bin_x1 ..."
+guard.why(q)                                  # "forbidden: the arm touches R8H reference - bin ..."
 guard.nearest_allowed(q)                      # the nearest pose that stays allowed in ticks
 guard.nearest_allowed_ticks(pose["ticks"])    # the same, read and returned in ticks
 guard.segment_allowed(q_from, q_to)           # a straight move, through every cell it crosses
@@ -172,25 +263,46 @@ guard.segment_allowed(q_from, q_to)           # a straight move, through every c
 * A pose outside the table on any joint.
 * A pose missing a joint is an error, not a verdict.
 
-`why` names the rover part (a mesh's stand-ins answer to the mesh's name).
-`nearest_allowed` gives the nearest pose, in grid steps, among those that
-stay allowed when rounded to servo ticks: the centre of a cell whose corners
-are all free, or a grid point whose neighbours are all free. A bare free
-grid point is not enough, since a tick of rounding moves it off the grid
-and the rule then asks its neighbours too. The way there is not checked;
-`segment_allowed` checks a move: it cuts the move where it crosses a grid
-value on any joint and applies the rule in every piece, so a move that only
-clips the corner of a forbidden cell is refused. The guard needs numpy only:
-no MuJoCo on the robot.
+`why` names the rover part by its CAD name. `nearest_allowed` gives the
+nearest pose, in grid steps, among those that stay allowed when rounded to
+servo ticks: the centre of a cell whose corners are all free, or a grid
+point whose neighbours are all free. A bare free grid point is not enough,
+since a tick of rounding moves it off the grid and the rule then asks its
+neighbours too. The way there is not checked; `segment_allowed` checks a
+move: it cuts the move where it crosses a grid value on any joint and
+applies the rule in every piece, so a move that only clips the corner of a
+forbidden cell is refused. The guard needs numpy only: no MuJoCo on the
+robot.
 
-What the table does not see: the arm hitting itself or its own base, the
-ground, anything the model lacks (cables, a cover, a load in the gripper),
-and, for every link but the root, an obstacle thinner than the arm's travel
-over one grid step that sits between two free grid points: at the default
-grid, one step of the shoulder moves the gripper up to 12 cm, and the bin's
-walls are 6 mm thick. A finer `--steps` narrows that gap; the margin covers
-part of it. What it sees larger than it is: a link's convex hull and a
-stand-in's reach past its mesh.
+### What the table does not see
+
+* The collision geometry is convex: one hull per part, or the pieces of a
+  decomposition made with a 1 mm concavity target that was not always
+  reached. A single hull is larger than its part: small holes, recesses
+  and clearances are filled. A decomposition can also fall short of its
+  part: measured against the part's own mesh, its pieces leave the
+  surface uncovered by up to 1.6 mm on the upper arm's cable boss, 0.7 mm
+  on the bin, 0.6 mm on the upper cover and on the wrist, 0.5 mm on the
+  forearm's cable boss, and 0.25 mm or less on every other decomposed
+  part. That uses up part of the 2 mm margin where those parts meet: the
+  upper arm's cable boss and the bin together reach 2.3 mm, more than the
+  margin, so a real contact between those two can pass as free in the
+  table. At `drive` and `look` the parts' own meshes stay about 5 mm apart
+  (the closest: that cable boss and the bin, in `look`), so the two daily
+  poses do not depend on it.
+  The hull of the rover's body is one convex envelope: the arm cannot
+  reach into the battery bay or under the deck's edges in the model,
+  whatever the real openings.
+* Loose cables, the gripper's load and anything fixed to the robot after
+  the CAD are not modelled. Nor is the arm hitting itself, or the ground.
+* Between two free grid points the table knows nothing, for every link but
+  the shoulder: one grid step of the pan, the lift or the elbow moves the
+  jaws 12 to 14 cm, and a wall thinner than that between two free samples
+  is not seen. A finer `--steps` narrows that gap; the margin and the
+  guard's rule cover part of it.
+* The grid's outer band (past the model's limits) uses the model's
+  kinematics past its own range: the geometry there is right, the real end
+  stops are the arm's.
 
 ### Ticks and the model's angles
 
@@ -198,59 +310,85 @@ The table is in the model's radians; the servos speak ticks. Per joint:
 
     rad = sign * (ticks - model_zero_ticks) * 2 pi / 4096
 
-`model_zero_ticks` and `sign` live in the table's `"joint_map"`. The default,
-2048 and +1, takes the middle of each calibrated travel as the model's zero
-and both turning the same way; the two-pose alignment below replaces it with
-the arm's own numbers. The guard's verdicts on servo readings hold for the
-map the table carries.
+`model_zero_ticks` and `sign` live in the table's `"joint_map"`, and
+`"joint_map_basis"` says where they come from. A new sweep keeps both.
 
-Align it with two poses whose model angles are known. Open the model in
-MuJoCo's viewer (`python -m mujoco.viewer --mjcf=<robot.xml>`), pause it,
-set the joints in its Joint panel, and place the real arm (torque off) the
-same way:
+**The first alignment** is 2048 and +1 on all five joints: the middle of
+each calibrated travel on the model's zero, every joint turning the model's
+way. Rendered in the CAD scene with that map, the two poses recorded on the
+arm look right:
 
-| Pose | pan | lift | elbow | flex | roll | What it looks like |
-|---|---|---|---|---|---|---|
-| A | 0 | 0 | 0 | 0 | 0 | upper arm up, forearm level, the gripper in line with it, the arm facing 75 degrees left of the nose |
-| B | +1.571 | +1.571 | -1.571 | +1.571 | +1.571 | the arm stretched out level over the nose (15 degrees right of it), the gripper pointing down, turned a quarter turn |
+| Pose | Ticks (pan, lift, elbow, flex, roll) | Model angles (degrees) | In the model |
+|---|---|---|---|
+| `drive` | 2857, 860, 3206, 868, 3221 | +71.1, -104.4, +101.8, -103.7, +103.1 | folded: the upper arm back, the forearm back over it, the gripper straight up |
+| `look` | 2869, 1057, 3208, 2018, 3220 | +72.2, -87.1, +102.0, -2.6, +103.0 | the forearm level, pointing ahead, the gripper forward and down |
 
-Positive angles, in the model: pan turns the arm clockwise seen from above,
-lift tips the upper arm toward the way the arm faces, elbow and flex fold
-the next link down, and roll turns the gripper counter-clockwise seen from
-behind the wrist. With the gripper level, roll +0.785 opens the jaws one
-above the other and -0.785 side by side.
+`drive` sits past the model's limits on the lift (4 degrees), the elbow
+(5) and the wrist flex (9), `look` on the elbow (5): the real end stops
+lie past the model's, the reason for the pad. The pan's zero is the least
+certain of the five, about 15 degrees either way.
 
-Read the five positions in both poses (`tools/moss_arm_calibrate.py
---show`), then:
+**The operator's check.** Place the arm in `drive`, then in `look` (replay
+the named poses), and show the model at the same ticks, through the map
+the table carries. The viewer's joint sliders stop at the model's limits,
+so set the angles from a script:
+
+```python
+import time, mujoco, mujoco.viewer
+from moss_dimos.arm_guard import JointMap
+m = mujoco.MjModel.from_xml_path("MOSS_R31.xml")
+d = mujoco.MjData(m)
+ticks = {"shoulder_pan": 2857, "shoulder_lift": 860, "elbow_flex": 3206,
+         "wrist_flex": 868, "wrist_roll": 3221}                 # drive
+for joint, rad in JointMap.load().pose_to_rad(ticks).items():
+    d.joint(joint).qpos = rad
+mujoco.mj_kinematics(m, d)
+with mujoco.viewer.launch_passive(m, d) as viewer:              # nothing steps
+    while viewer.is_running():
+        viewer.sync()
+        time.sleep(0.1)
+```
+
+For each pose the robot and the model should match: the direction of the
+upper arm and of the forearm, the gripper's direction and its turn. The pan
+is the joint to watch: the arm's heading over the rover. When they match,
+the first alignment holds. When a joint differs, align it with two measured
+poses (below), write the result into `"joint_map"` with a new
+`"joint_map_basis"`, and check `drive` and `look` again with
+`guard.why_ticks(...)`.
+
+**Two-pose alignment.** Place the arm (torque off) in two poses whose model
+angles are known, read the five positions in both
+(`tools/moss_arm_calibrate.py --show`), then:
 
 ```python
 from moss_dimos.arm_guard import align_joint_map
 joint_map = align_joint_map(ticks_a, ticks_b)   # {joint: ticks} read in pose A and in pose B
 ```
 
-`align_joint_map` takes each joint's angle from `POSE_A` and `POSE_B` (the
-table above, the elbow negative in B), so no sign is typed by hand.
-`align_from_two_poses(ticks_a, rad_a, ticks_b, rad_b)` does one joint. Both
-refuse two poses less than 0.2 rad apart, and a slope more than 15 % off 652
-ticks per radian (a wrong pose or a wrong joint). Write the result into
-`"joint_map"` of `config/arm_keepout.json`; a new sweep keeps it. Then check
-`guard.why_ticks(...)` on `drive` and `look`: the arm in each pose should
-look like the model in the viewer.
+`align_joint_map` takes each joint's angle from `POSE_A` (all joints 0)
+and `POSE_B` (+1.571, +1.571, -1.571, +1.571, +1.571 for pan, lift, elbow,
+flex, roll; the elbow negative), so no sign is typed by hand; it takes
+other poses too (`pose_a`, `pose_b`). `align_from_two_poses(ticks_a,
+rad_a, ticks_b, rad_b)` does one joint. Both refuse two poses less than
+0.2 rad apart, and a slope more than 15 % off 652 ticks per radian (a wrong
+pose or a wrong joint).
 
-### When a new model arrives
+### When a new CAD scene arrives
 
-1. Export the robot from the CAD: one mesh per part (STL, metres), the arm's
-   links with their joint frames.
-2. Build the MJCF: a `rover` body with the collision geoms named `hull`,
-   `bin_*`, `track_*`, `tread_*` (boxes are fine and keep the bin's opening
-   open), a geom named `lidar` where the lidar sits, the arm from
-   `shoulder_link` down with the five joints and their ranges, and the
-   meshes as geoms. Every other mesh on the rover counts through its
-   stand-ins. Load it once in the viewer and look.
-3. Sweep: `python tools/moss_arm_keepout.py --model <robot.xml>`. Read what it
-   prints: the parts the lidar goes into, the mount parts, the parts hit.
-4. Bench: `python benches/bench_arm_guard_cold.py` (with
-   `MOSS_ARM_MODEL=<robot.xml>` for its real-model part).
-5. Commit `config/arm_keepout.json`. Its `model.sha256` and
-   `model.geometry_sha256` say which model it came from (the second one
+1. Sweep it: `python tools/moss_arm_keepout.py --model <scene.xml> --names
+   <its parts_manifest.json> --calibration config/arm_calibration.json`.
+   Read what it prints: the layout, the visual meshes kept, the exclusions
+   kept, the parts held inside others, the fingers' open pose, the
+   calibrated travel covered, the parts hit and the worst pairs.
+2. Check the daily poses: `guard.why_ticks(...)` on `drive` and `look` must
+   say free. When one is refused, the message names the part; measure how
+   close it is in the model before changing the margin, and say why in the
+   documentation.
+3. Bench: `python benches/bench_arm_guard_cold.py` (`MOSS_ARM_CAD=<scene.xml>`
+   points it at the scene, `MOSS_ARM_MODEL=<robot.xml>` at the simulation
+   model, `MOSS_ARM_CALIBRATION=<file>` at the arm's calibration when it is
+   not in `config/`).
+4. Commit `config/arm_keepout.json`. Its `model.sha256` and
+   `model.geometry_sha256` say which scene it came from (the second one
    changes with any mesh); its `joint_map` is the one it replaced.
