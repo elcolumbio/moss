@@ -211,8 +211,9 @@ a value that does not parse is refused with a warning and the default stays.
    | rolling on the workshop floor | 0.4 to 1.0 m/s^2 |
    | the contact with the box, 2.0 s after the start | **-12.5 m/s^2** (four samples past -4, 20 ms) |
    | the back-off in reverse that followed, a push at 75 % included | 1.1 to 2.0 m/s^2 |
+   | the same drive into the box turned 45 degrees (the oblique contact the encoders miss) | **-28 m/s^2** forward, with 19 m/s^2 sideways |
 
-   The detector fired on the first sample past the threshold (-4.1 m/s^2), the
+   Both times the detector fired on the first sample past the threshold, and the
    bump sound, the wall on the map and the back-off followed within 60 ms; the
    encoder bumper, which needs a second of frozen tracks, never had to fire.
    The 4.0 m/s^2 default sits six times under this contact and twice above the
