@@ -37,15 +37,11 @@ parses them: 0, false, no or off = off, any other value = on, unset = the defaul
     MOSS_GYRO=1       gyro prior for the lidar odometry from the RealSense's IMU (default OFF: alone, it uses
                       dimOS's second IMU pipeline, which fails to open on the rover and takes the camera down
                       with it; an experiment. With MOSS_IMU=1 the gyro comes from the in-process motion module)
-    MOSS_IMU=1        contacts from the RealSense's IMU (default OFF: opt-in until a stationary launch on the
-                      robot shows colour, depth and IMU alive together). The camera becomes MossRealSense
-                      (moss_dimos/realsense_imu.py: the motion module opened in the camera's process on the
-                      device its pipeline holds, accel + gyro at 200 Hz on `imu`) and BumpImu
-                      (moss_dimos/bump_imu.py) publishes `bump` - the stream of the stall guard: the planner's
-                      escape, the costmap's contact memory, the sounds - on a hard deceleration against the
-                      track command. MOSS_BUMP_ACCEL (m/s^2, default 4.0), MOSS_BUMP_AXIS (default +z),
+    MOSS_IMU=0        no IMU contacts (default ON: the RealSense's IMU is read inside the camera's own
+                      process, colour, depth and IMU proven alive together on the robot; a deceleration against
+                      the commanded direction publishes bump). Knobs: MOSS_BUMP_ACCEL (default 4.0 m/s^2),
                       MOSS_BUMP_DEBOUNCE_S (default 0.7), MOSS_IMU_LOG=<csv> (every sample); docs/imu.md.
-                      Needs the camera: with MOSS_CAMERA=0 it is refused with a warning
+                      Needs the camera: with MOSS_CAMERA=0 there are no IMU contacts (said in the log)
     MOSS_DESKEW=1     kiss-icp straightens each lidar revolution by the motion prior (default OFF: on the
                       rover its first thread fails and the odometry stops; an experiment)
     MOSS_SOUNDS=0     no sound module (default on when pw-play or paplay is on the PATH: the sound pack
@@ -461,7 +457,7 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
     ]
     # MOSS_IMU=1: the IMU is opened inside the camera's own process (MossRealSense) and BumpImu turns
     # its decelerations into contacts on `bump`; the IMU lives on the RealSense, so no camera, no IMU
-    imu = robot_profile.env_on("MOSS_IMU", False)
+    imu = robot_profile.env_on("MOSS_IMU", True)
     if imu and not robot_profile.env_on("MOSS_CAMERA", True):
         _logger.warning("MOSS blueprint: MOSS_IMU needs the RealSense and MOSS_CAMERA is off: no IMU contacts")
         imu = False

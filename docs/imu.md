@@ -129,7 +129,7 @@ are what the signature must look at, with the gyro columns of the CSV next to
 
 | Variable | Default | What |
 |---|---|---|
-| `MOSS_IMU` | off | `1`: MossRealSense with the IMU at 200 Hz and the BumpImu module. Needs the camera (`MOSS_CAMERA=0` refuses it with a warning). |
+| `MOSS_IMU` | on | MossRealSense with the IMU at 200 Hz and the BumpImu module; `0` goes back to dimOS's camera without IMU. Needs the camera (`MOSS_CAMERA=0` refuses it with a warning). |
 | `MOSS_BUMP_ACCEL` | 4.0 | threshold in m/s^2 on the high-passed forward accel, above 0 and up to 100 |
 | `MOSS_BUMP_AXIS` | `+z` | the forward axis of the camera's frame, x, y or z with a sign |
 | `MOSS_BUMP_DEBOUNCE_S` | 0.7 | seconds of silence after a contact, 0 to 10 |
@@ -168,11 +168,12 @@ a value that does not parse is refused with a warning and the default stays.
    `--serial` (default `MOSS_RS_SERIAL`) change the run. Tilt the nose down
    by hand during a run to check the sign of z (above).
 
-2. **A stationary launch.** `MOSS_IMU=1 tools/moss-fly.sh map`, the rover
-   still. `tools/moss-fly.sh log` must show `MOSS IMU: motion module open on
-   the camera's own device` and `MOSS IMU: first sample`, and the cockpit must
-   show colour and the depth obstacles as before. Until that launch has been
-   seen, `MOSS_IMU` stays off by default.
+2. **A stationary launch.** `tools/moss-fly.sh map`, the rover still.
+   `tools/moss-fly.sh log` must show `MOSS IMU: motion module open on the
+   camera's own device` and `MOSS IMU: first sample`, and the cockpit must show
+   colour and the depth obstacles as before. This launch was seen on the robot
+   (colour and depth at their usual rate, the IMU at 199 Hz, gravity on -y),
+   which is why the IMU is on by default; `MOSS_IMU=0` turns it off.
 
 3. **A signature before tightening the threshold.** Record what real contacts,
    real stops and the real floor look like:

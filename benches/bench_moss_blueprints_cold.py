@@ -444,7 +444,7 @@ check("MOSS_MPS_AT_LIMIT=0.30 read when the blueprint is built -> 0.30 m/s, rim 
 nav = mb.build_moss_nav()
 n = names(nav)
 want = {"MossControlCoordinator", "GamepadTeleop", "RPLidarC1", "LidarOdometry",
-        "MossCostMap", "RealSenseCamera", "MossRecorder"}
+        "MossCostMap", "MossRealSense", "BumpImu", "MossRecorder"}   # the camera carries the IMU by default
 check("moss-nav modules", want <= n, f"{sorted(n)}")
 check("moss-nav has no planner, no explorer, no MovementManager, no viewer",
       not ({"RecoveringPlanner", "Explorer2", "MovementManager", "WebsocketVisModule"} & n))
@@ -464,10 +464,10 @@ check("base: adapter 'moss' on the QT Py by-id", hw.adapter_type == "moss" and h
 check("pad: the same MOSS envelope as moss-gamepad", atom(nav, "GamepadTeleop").kwargs.get("envelope") == teleop_envelope(g))
 check("odometry without the gyro prior (MOSS_GYRO unset = off)", atom(nav, "LidarOdometry").kwargs.get("use_gyro_prior") is False)
 check("odometry without deskew (MOSS_DESKEW unset = off: on the rover the deskew thread fails)", atom(nav, "LidarOdometry").kwargs.get("deskew") is False)
-cam = atom(nav, "RealSenseCamera").kwargs
-check("RealSense 640x480 @ 5 fps, colour + depth (aligned), no point cloud, no IMU (MOSS_GYRO off by default)",
+cam = atom(nav, "MossRealSense").kwargs
+check("RealSense 640x480 @ 5 fps, colour + depth (aligned), no point cloud, the IMU in the camera's own process (MOSS_IMU on by default)",
       (cam.get("width"), cam.get("height"), cam.get("fps"), cam.get("enable_depth"),
-       cam.get("enable_pointcloud"), cam.get("enable_imu")) == (640, 480, 5, True, False, False))
+       cam.get("enable_pointcloud"), cam.get("enable_imu")) == (640, 480, 5, True, False, True))
 t = cam["base_transform"]
 check("camera mount from the profile: (0.156, 0, 0.075) m",
       close(t.translation.x, 0.156) and close(t.translation.z, 0.075))
@@ -489,8 +489,8 @@ check("wrist outputs remapped: color_image -> wrist_image, camera_info -> wrist_
 wspec = nav.transport_map.get(("wrist_image", Image))
 check("wrist_image crosses the bus as JPEG on /wrist_image",
       isinstance(wspec, TransportSpec) and wspec.cls is JpegLcmTransport and wspec.args[0] == "/wrist_image")
-check("the RealSense keeps its own names (no remap on RealSenseCamera)",
-      not any(k[0] == "RealSenseCamera" for k in nav.remapping_map))
+check("the RealSense keeps its own names (no remap on the camera module)",
+      not any(k[0] in ("RealSenseCamera", "MossRealSense") for k in nav.remapping_map))
 
 exp = mb.build_moss_explore()
 e = names(exp)
@@ -533,33 +533,33 @@ def blueprint_text(bp):
     return [(b.module.__name__, repr(sorted(b.kwargs.items()))) for b in bp.blueprints]
 
 
-cam_default = atom(nav, "RealSenseCamera")
-check("MOSS_IMU unset: the camera atom is dimOS's own RealSenseCamera, enable_imu False, no imu_hz kwarg",
-      cam_default.module is RealSenseCamera and cam_default.kwargs.get("enable_imu") is False
-      and "imu_hz" not in cam_default.kwargs)
-check("MOSS_IMU unset: no BumpImu, no MossRealSense in moss-nav or moss-explore",
-      not ({"BumpImu", "MossRealSense"} & (names(nav) | names(exp))), f"{sorted(names(exp))}")
-for spelled_off in ("0", "off"):
-    os.environ["MOSS_IMU"] = spelled_off
-    same_nav, same_exp = mb.build_moss_nav(), mb.build_moss_explore()
-    check(f"MOSS_IMU={spelled_off}: moss-nav and moss-explore are the blueprints of the unset switch, kwarg for kwarg",
-          blueprint_text(same_nav) == blueprint_text(nav) and blueprint_text(same_exp) == blueprint_text(exp))
-os.environ["MOSS_IMU"] = "1"
-imu_nav, imu_exp = mb.build_moss_nav(), mb.build_moss_explore()
 from moss_dimos.bump_imu import BumpImu  # noqa: E402
 from moss_dimos.realsense_imu import MossRealSense  # noqa: E402
-check("MOSS_IMU=1: moss-nav has MossRealSense and BumpImu, and no stock RealSenseCamera",
-      {"MossRealSense", "BumpImu"} <= names(imu_nav) and "RealSenseCamera" not in names(imu_nav), f"{sorted(names(imu_nav))}")
-check("MOSS_IMU=1: moss-explore too, with the planner and the explorer still there",
-      {"MossRealSense", "BumpImu", "RecoveringPlanner", "Explorer2"} <= names(imu_exp) and "RealSenseCamera" not in names(imu_exp))
+# the default (MOSS_IMU unset) is the IMU ON: colour, depth and IMU were seen alive together on the robot
+check("MOSS_IMU unset (the default): moss-nav has MossRealSense and BumpImu, and no stock RealSenseCamera",
+      {"MossRealSense", "BumpImu"} <= names(nav) and "RealSenseCamera" not in names(nav), f"{sorted(names(nav))}")
+check("MOSS_IMU unset: moss-explore too, with the planner and the explorer still there",
+      {"MossRealSense", "BumpImu", "RecoveringPlanner", "Explorer2"} <= names(exp) and "RealSenseCamera" not in names(exp))
+for spelled_off in ("0", "off"):
+    os.environ["MOSS_IMU"] = spelled_off
+    off_nav, off_exp = mb.build_moss_nav(), mb.build_moss_explore()
+    cam_off = atom(off_nav, "RealSenseCamera")
+    check(f"MOSS_IMU={spelled_off}: the camera atom is dimOS's own RealSenseCamera, enable_imu False, no imu_hz kwarg, no BumpImu, no MossRealSense",
+          cam_off is not None and cam_off.module is RealSenseCamera and cam_off.kwargs.get("enable_imu") is False
+          and "imu_hz" not in cam_off.kwargs and not ({"BumpImu", "MossRealSense"} & (names(off_nav) | names(off_exp))),
+          f"{sorted(names(off_exp))}")
+os.environ["MOSS_IMU"] = "1"
+imu_nav, imu_exp = mb.build_moss_nav(), mb.build_moss_explore()
+check("MOSS_IMU=1: the same blueprints as the unset switch, kwarg for kwarg",
+      blueprint_text(imu_nav) == blueprint_text(nav) and blueprint_text(imu_exp) == blueprint_text(exp))
 cam_imu = atom(imu_nav, "MossRealSense")
 check("the camera atom is moss_dimos.realsense_imu.MossRealSense, a RealSenseCamera subclass",
       cam_imu.module is MossRealSense and issubclass(MossRealSense, RealSenseCamera))
 check("... enable_imu True, imu_hz 200", cam_imu.kwargs.get("enable_imu") is True and cam_imu.kwargs.get("imu_hz") == 200,
       f"{cam_imu.kwargs.get('enable_imu')} {cam_imu.kwargs.get('imu_hz')}")
 strip = lambda kw: repr(sorted((k, v) for k, v in kw.items() if k not in ("enable_imu", "imu_hz")))  # noqa: E731
-check("... every other camera kwarg as without the switch (640x480 @ 5 fps, depth, no cloud, the mount)",
-      strip(cam_imu.kwargs) == strip(cam_default.kwargs), f"{strip(cam_imu.kwargs)}")
+check("... every other camera kwarg as with the IMU off (640x480 @ 5 fps, depth, no cloud, the mount)",
+      strip(cam_imu.kwargs) == strip(cam_off.kwargs), f"{strip(cam_imu.kwargs)}")
 bk = atom(imu_nav, "BumpImu").kwargs
 check("BumpImu atom: forward axis +z, 4.0 m/s^2, debounce 0.7 s, no CSV (the defaults, read at build time)",
       bk == {"axis": "+z", "threshold": 4.0, "debounce_s": 0.7, "log_path": None}, f"{bk}")
@@ -636,7 +636,7 @@ os.environ["MOSS_CAMERA"] = "0"
 os.environ["MOSS_RECORD"] = "0"
 bare = mb.build_moss_nav()
 check("MOSS_CAMERA=0 MOSS_RECORD=0 -> no RealSense, no recorder, no JPEG transport",
-      not ({"RealSenseCamera", "MossRecorder"} & names(bare)) and ("color_image", Image) not in bare.transport_map)
+      not ({"RealSenseCamera", "MossRealSense", "BumpImu", "MossRecorder"} & names(bare)) and ("color_image", Image) not in bare.transport_map)
 os.environ["MOSS_WRIST"] = "0"
 bare2 = mb.build_moss_nav()
 check("MOSS_WRIST=0 -> no WristCamera, no wrist remap, no wrist transport",
@@ -647,7 +647,7 @@ os.environ.update(MOSS_CAMERA="OFF", MOSS_RECORD=" no ", MOSS_WRIST="False")
 spelled = mb.build_moss_nav()
 check("MOSS_CAMERA=OFF, MOSS_RECORD=' no ', MOSS_WRIST=False -> the same bare build "
       "(robot_profile.env_on, the one switch parser)",
-      not ({"RealSenseCamera", "MossRecorder", "WristCamera"} & names(spelled))
+      not ({"RealSenseCamera", "MossRealSense", "BumpImu", "MossRecorder", "WristCamera"} & names(spelled))
       and ("color_image", Image) not in spelled.transport_map and ("wrist_image", Image) not in spelled.transport_map)
 check("the blueprint has no switch parser of its own", not hasattr(mb, "_env_on"))
 os.environ.update(MOSS_CAMERA="0", MOSS_RECORD="0")
