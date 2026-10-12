@@ -2,13 +2,17 @@
 
 MOSS knows it touched something in two ways. The base adapter watches the
 encoders: tracks commanded but not turning for a second is a stall, and the
-coordinator publishes it on `bump`. That misses the contacts that matter
-most: a track that slips keeps turning against the wall, an oblique contact
-leaves one track free, and the verdict comes a second or more after the
-impact. The chassis says it at once: hitting something while driving is a
-short, hard deceleration along the direction of travel. The RealSense on the
-nose carries an IMU, and `MOSS_IMU=1` turns its decelerations into contacts on
-the same `bump` stream.
+coordinator publishes it on `stall`. A stall is inferred, not felt (a pivot
+that fails to turn reads the same as a wall), so the planner answers it by
+stopping and abandoning the goal, with no motion. The encoders also miss the
+contacts that matter most: a track that slips keeps turning against the
+wall, an oblique contact leaves one track free, and the verdict comes a
+second or more after the impact. The chassis says it at once: hitting
+something while driving is a short, hard deceleration along the direction of
+travel. The RealSense on the nose carries an IMU, and `MOSS_IMU=1` turns its
+decelerations into contacts: on `bump` for a contact in front, on
+`bump_rear` for a contact behind. A felt contact is the one thing that earns
+the planner's scripted move, 0.20 m away from it.
 
 It is on by default since a stationary launch on the robot showed colour,
 depth and the IMU alive together (below); `MOSS_IMU=0` turns it off.
@@ -38,7 +42,11 @@ samples to dimOS's own handler, which publishes `imu`. No second pipeline, no
 second process. If the camera has no motion module, or the gyro does not offer
 the rate, or opening fails, the camera logs a warning and goes on with colour
 and depth only. `stop()` stops and closes the motion module before the
-pipeline.
+pipeline. The camera module runs in a worker process of its own
+(`dedicated_worker`, the blueprint's `DedicatedMossRealSense`): a camera
+sharing its worker with the odometry, the costmap or the recorder is starved
+under load, and its depth and IMU samples arrive late or not at all while
+the sensor drops no frame.
 
 ## The axes
 
@@ -76,12 +84,15 @@ kiss-icp's constant-velocity model), and the integral starts again from
 zero. A full-power pivot (254 deg/s measured on the floor) turns the rover 25
 degrees between two scans, more than the constant-velocity prior follows; the
 gyro says where the rover turned. A revolution with no gyro sample since the
-last one falls back to the constant-velocity model. Three switches: with
-`MOSS_IMU` on (the default) the prior is on, and the odometry's start line
-says `prior: gyro=True`; `MOSS_GYRO=0` turns it off at any time; with
-`MOSS_IMU=0`, `MOSS_GYRO=1` is refused with a warning, because the gyro would
-then come from dimOS's second IMU pipeline (above), and `MOSS_GYRO_FORCE=1`
-builds it anyway, the experiment path.
+last one falls back to the constant-velocity model. The prior is off by
+default until its sign is measured on this robot, because a wrong-sign prior
+is worse than none (the build log says `prior: gyro=False (run
+tools/gyro_sign_bench.py once, then MOSS_GYRO=1)`): run that bench once, then
+`MOSS_GYRO=1` turns it on with `MOSS_IMU` (the odometry's start line then
+says `prior: gyro=True`), while with `MOSS_IMU=0`, `MOSS_GYRO=1` is refused
+with a warning, because the gyro would then come from dimOS's second IMU
+pipeline (above), and `MOSS_GYRO_FORCE=1` builds it anyway, the experiment
+path.
 
 ## The rule
 
@@ -100,34 +111,85 @@ traces), inside the `BumpImu` module:
    plus the firmware's own age of that line). A rover kicked or lifted while
    idle is not a contact.
 5. **Against the command.** Driving forward (no track backward): only a
-   deceleration, high-pass <= -threshold. Reversing (no track forward): only a
-   forward kick, high-pass >= +threshold. Pivoting (tracks of opposite signs):
-   either sign. Taking off is never a contact.
-6. **Once.** After a contact, nothing for `MOSS_BUMP_DEBOUNCE_S` (default
-   0.7 s). The debounce also covers the planner's escape taking off in
-   reverse while the last telemetry line still says forward.
+   deceleration, high-pass <= -threshold, a contact in front. Reversing (no
+   track forward): only a forward kick, high-pass >= +threshold, a contact
+   behind. Pivoting (tracks of opposite signs): either sign, and the sign
+   gives the side: a deceleration is in front, a forward kick behind. Taking
+   off is never a contact.
+6. **Once.** After a contact, nothing more on the same side for
+   `MOSS_BUMP_DEBOUNCE_S` (default 0.7 s). The debounce also covers the
+   planner's escape taking off in reverse while the last telemetry line still
+   says forward. One debounce per side: a front contact and a rear one are
+   opposite reflexes, not repeats of each other, so the other side counts at
+   once (a rover wedging into a corner during one pivot is two contacts, and
+   so is the escape that backs off a front contact and hits something
+   behind). The one exception is the impact's own rebound: a kick of the
+   other sign within 0.1 s of a contact, whatever the command says by then
+   (the telemetry can already carry the escape's reverse). The contact
+   measured below lasted 20 ms, so 0.1 s covers it five times over; the
+   figure comes from that impact length, and a pivot contact recorded with
+   `MOSS_IMU_LOG` is the recording that sets it.
 
-On a contact `BumpImu` publishes `Bool(True)` on `bump` and logs one line:
+On a contact `BumpImu` publishes `Bool(True)` on `bump` (in front) or
+`bump_rear` (behind) and logs one line first:
 
 ```
-IMU contact: forward -4.8 m/s^2 (threshold 4.0) while commanded L=+70% R=+60%
+IMU contact: forward -4.8 m/s^2 (threshold 4.0) while commanded L=+70% R=+60%, front contact -> bump
+IMU contact: forward +5.2 m/s^2 (threshold 4.0) while commanded L=-70% R=-60%, rear contact -> bump_rear
 ```
 
-`bump` is the stream the coordinator's stall guard and the explorer's back-off
-already publish on, so the same listeners react: the planner's escape
-(stop, 0.20 m in reverse, the goal abandoned; a second contact during an
-escape stops dead), the costmap's contact memory (the band ahead becomes a
-wall), the sounds (`bump_surprise`, at the impact rather than a second
-later) and the lidar odometry, which drops the shaken revolution that
-follows ([below](#a-contact-and-the-map)). The stall guard stays on: a contact with the tracks frozen can be
-reported twice, by the IMU at the impact and by the encoders a second later.
+A rebound is published nowhere, and logged once, so that no felt kick is
+silent:
+
+```
+MOSS IMU: forward +6.8 m/s^2 while commanded L=+70% R=-70%, 0.06 s after the front contact: taken as its rebound, not published on bump_rear
+```
+
+`bump` is the stream the explorer's back-off also publishes on. Its
+listeners: the planner's escape (stop, 0.20 m in reverse, the goal
+abandoned; a second contact during an escape stops dead), the costmap (which
+logs the contact and, with `MOSS_CONTACT_WALL=1` and the rover driving
+straight forward, marks the band ahead as a wall), the sounds
+(`bump_surprise`, at the impact rather than a second later) and the lidar
+odometry, which drops the shaken revolution that follows
+([below](#a-contact-and-the-map)). `bump_rear` has one listener, the
+planner: stop, 0.20 m FORWARD, the goal abandoned. A rear contact is not a
+front wall. The stall guard stays on, on its own stream: a stall that comes
+while an escape runs stops the escape dead.
 
 The cockpit shows each contact in its decision feed
 ([cockpit.md](cockpit.md#what-it-decides)). The module's other lines start
 with `MOSS IMU:` and so appear in `tools/moss-fly.sh log`: the knobs at
-start, the first sample (where gravity sits), then once a minute the sample
-rate, the mean accel and the contacts so far. The contact lines themselves
-are in `.venv/bin/dimos log` and in the cockpit.
+start, the first sample (where gravity sits), the watchdog's lines (below),
+and every 10 s a status line with the state, the sample rate, the mean
+accel, the contacts and the quiet spells so far. The contact lines
+themselves are in `.venv/bin/dimos log` and in the cockpit.
+
+## When the IMU goes quiet
+
+The IMU is this robot's main bumper, and the rotation prior when
+`MOSS_GYRO=1`. A stream that stops must be said, not discovered in the map.
+A watchdog thread in `BumpImu` (`ImuWatchdog`) looks every 0.1 s at the time
+since the last sample arrived:
+
+```
+MOSS IMU: no sample for 1 s - IMU contacts and gyro prior OFF
+MOSS IMU: samples back (199 Hz) after 3.2 s quiet
+MOSS IMU: status alive, 1990 samples in 10 s (199 Hz), mean accel (+0.03, -9.80, +0.10) m/s^2, 0 contact(s) so far, 1 quiet spell(s)
+MOSS IMU: status QUIET, no sample for 12 s - IMU contacts and gyro prior OFF, 0 contact(s) so far, 1 quiet spell(s)
+MOSS IMU: status waiting, no sample 10 s after start - IMU contacts and gyro prior OFF
+```
+
+The first line comes once, 1 s after the last sample (the samples had been
+flowing); the second once the resumed stream has run for 1 s and still
+flows, with its rate over that second (a burst that stops again within that
+second says nothing, and the quiet spell goes on). A stream that keeps
+dropping out says "no sample" at most once every 5 s, and the next such
+line counts the spells it did not say.
+The status line comes every 10 s, quiet or not; before the first sample it
+says `waiting` (the camera takes a few seconds to start, so nothing louder
+comes earlier). All of it goes through the dimOS logger, at warning level for
+quiet, into the run's log.
 
 Why the threshold should hold against the rover's own stops: the launcher sets
 the firmware ramp to 5 ms per % (`MOSS_RAMP_MS="5 5"`), so a commanded stop
@@ -153,7 +215,8 @@ its neighbours carried about 300. The revolutions after it registered at the
 wrong heading and kept it: one shaken sweep, one jump of the whole map.
 
 So `LidarOdometry` listens to `bump` too (the same stream, whoever publishes
-on it) and stamps the time of each contact. Then:
+on it: the IMU's front contacts and the explorer's back-off) and stamps the
+time of each contact. Then:
 
 1. **The shaken sweep is dropped.** A revolution that arrives within
    `MOSS_CONTACT_WINDOW_S` (0.4 s) after a contact and carries fewer than
@@ -224,8 +287,9 @@ reads the count only); a shaken sweep whose revolution is handled before
 `handle_bump` stamps the contact (the window only looks forward from the
 stamp, so that sweep is registered at the wrong heading, the measured +6.4
 degree case, and the relocation the late stamp arms starts from that
-heading); and a contact nothing publishes on `bump`. The robot replay will
-show how often a sweep beats its bump.
+heading); a contact behind, which goes out on `bump_rear`, a stream the
+odometry does not listen to; and a contact nothing publishes on `bump`. The
+robot replay will show how often a sweep beats its bump.
 
 ## Knobs
 
@@ -236,11 +300,11 @@ show how often a sweep beats its bump.
 | `MOSS_BUMP_AXIS` | `+z` | the forward axis of the camera's frame, x, y or z with a sign |
 | `MOSS_BUMP_DEBOUNCE_S` | 0.7 | seconds of silence after a contact, 0 to 10 |
 | `MOSS_IMU_LOG` | unset | a CSV path: every sample is appended (below) |
-| `MOSS_GYRO` | on with `MOSS_IMU` | the gyro prior of the lidar odometry from the in-process IMU (above); `0` turns it off; with `MOSS_IMU=0`, `1` is refused with a warning |
+| `MOSS_GYRO` | off | `1` turns on the gyro prior of the lidar odometry from the in-process IMU once `tools/gyro_sign_bench.py` has measured its sign on this robot (above); with `MOSS_IMU=0`, `1` is refused with a warning |
 | `MOSS_GYRO_FORCE` | off | `1` with `MOSS_IMU=0 MOSS_GYRO=1`: the prior on dimOS's second IMU pipeline, an experiment |
 
 They are read when the blueprint is built (the build log says
-`MOSS blueprint: IMU contacts on bump, forward axis +z, threshold 4 m/s^2, ...`);
+`MOSS blueprint: IMU contacts on bump (front) and bump_rear (rear), forward axis +z, threshold 4 m/s^2, ...`);
 a value that does not parse is refused with a warning and the default stays.
 
 ## Bringing it up
@@ -273,7 +337,8 @@ a value that does not parse is refused with a warning and the default stays.
 
 2. **A stationary launch.** `tools/moss-fly.sh map`, the rover still.
    `tools/moss-fly.sh log` must show `MOSS IMU: motion module open on the
-   camera's own device` and `MOSS IMU: first sample`, and the cockpit must show
+   camera's own device`, `MOSS IMU: first sample`, then `MOSS IMU: status
+   alive` every 10 s, and the cockpit must show
    colour and the depth obstacles as before. This launch was seen on the robot
    (colour and depth at their usual rate, the IMU at 199 Hz, gravity on -y),
    which is why the IMU is on by default; `MOSS_IMU=0` turns it off.
@@ -326,10 +391,23 @@ a value that does not parse is refused with a warning and the default stays.
 
 `benches/bench_bump_imu_cold.py`: the rule on synthetic 200 Hz traces with
 gravity on y (a 6 m/s^2 pulse of 60 ms while commanded is exactly one contact
-of about -6.0 m/s^2; no command, a wobble, the wrong sign, a tilt, a pitched
-camera are none; the debounce; the knobs), the module (telemetry then samples
--> one `bump` and the log line), the CSV, and `MossRealSense` on a fake
+of about -6.0 m/s^2, in front; no command, a wobble, the wrong sign, a tilt, a
+pitched camera are none; the debounce; the knobs), the sides (a kick while
+reversing is behind; a front contact then a contact behind 0.18 s or 0.4 s
+later, during one pivot or once the command reversed, is two contacts; a
+kick of the other sign 0.06 s after a contact, the ringing included when the
+telemetry already says reverse, is its rebound: one contact, the rebound
+counted once), the module (telemetry then samples -> one `bump`, or one
+`bump_rear` while reversing, and the log line; a contact and its rebound ->
+one `bump` and one rebound line), the CSV, `MossRealSense` on a fake
 pyrealsense2 (the motion sensor found by name on the pipeline's own device,
-the profiles it opens, stop, every failure leaving the camera running).
-`benches/bench_moss_blueprints_cold.py` section J: the blueprint with and
-without `MOSS_IMU`, and where `bump`, `imu` and `base_telemetry` are wired.
+the profiles it opens, stop, every failure leaving the camera running) and
+the watchdog on a fake clock and on its own thread (quiet at 1 s, back with
+its rate, a burst that stops again says nothing, the rate limit, the status
+line, and `start()` starting the thread).
+`benches/bench_moss_blueprints_cold.py` sections J, K and L: the blueprint with
+and without `MOSS_IMU`, where `bump`, `bump_rear`, `stall`, `imu` and
+`base_telemetry` are wired, the gyro prior off by default, and every camera
+in a worker of its own. `benches/bench_recovering_planner_cold.py`: `bump`
+backs off in reverse, `bump_rear` moves forward, `stall` abandons the goal
+with no motion and stops a running escape dead.

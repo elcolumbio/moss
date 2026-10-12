@@ -71,15 +71,24 @@ firmware 300 ms after the last drive.
   the encoders give metres only once `MOSS_TICKS_PER_M` is set, and the
   RealSense's gyro gives the odometry its rotation prior (below);
 - the 2D scored costmap (`moss_dimos/costmap2d.py`), where the lidar writes obstacles
-  and the depth camera adds the ones below the scan plane. An obstacle becomes a
-  wall once seen from two places 10 cm apart, never from one spot. The lidar's
-  rays clear the lidar layer within 4 m of the rover all around, and the camera
-  layer only inside the camera's own view (87 degrees ahead, up to 3 m): somebody
-  who walked past fades once gone (about 0.2 s of rays through a fresh wall, 1.8 s
-  through one seen from many places), what the camera keeps seeing stays, and a
-  table top the rover has turned away from keeps its wall until the camera looks
-  at that spot again and sees nothing. The knobs are `MOSS_HIT_CAP`,
-  `MOSS_FREE_FLOOR` and `MOSS_RAY_MAX_M` (below);
+  and the depth camera adds the ones below the scan plane, each sensor on its own
+  layer. An obstacle becomes a wall once seen from two places 10 cm apart, never
+  from one spot. The lidar's rays clear the lidar layer within 4 m of the rover;
+  they pass over a shoe and never clear what the camera saw. Only the camera clears
+  its layer: by seeing the floor on a cell, or by seeing through it low (its rays
+  from the nose, between 1.3 and 6 cm above the floor). A cell the camera hit in the
+  last 3 s keeps its score whatever the floor beside it says, so a leg thinner than
+  a cell stays a wall, and a camera hit counts only when the previous depth frame
+  also saw something within one cell, so a walker or a vacuum, which moves more
+  than a cell between frames, is rarely written: a foot planted for two frames can
+  mark a cell, and the camera clears it once it is gone. A table top the rover has
+  turned away from keeps its wall until the camera looks at that spot again and
+  sees floor there. A contact writes nothing into the map: the planner backs off,
+  and the map stays the lidar's and the camera's (`MOSS_CONTACT_WALL=1` marks a
+  short band ahead of the body for a contact felt while driving straight
+  forward). The knobs are `MOSS_OCCUPIED_AT`,
+  `MOSS_NEW_VIEWPOINT_M`, `MOSS_HIT_CAP`, `MOSS_FREE_FLOOR`, `MOSS_RAY_MAX_M`,
+  `MOSS_PUBLISH_EVERY` and `MOSS_CONTACT_WALL` (below);
 - the lidar odometry's rotation prior from the RealSense's gyro, on with `MOSS_IMU` (the
   default): the IMU read in the camera's own process gives the yaw rate at 200 Hz, and each
   registration starts from the yaw integrated since the previous revolution. A full-power
@@ -226,14 +235,19 @@ Other variables:
 | `MOSS_RS_SERIAL` | the RealSense to use, by serial number |
 | `MOSS_REQUIRE_PAD=1` | a missing pad fails the flight check instead of warning |
 | `MOSS_COCKPIT_PORT` | the cockpit's port, 8904 by default (also `--port`; `tools/moss-cockpit.service` sets it) |
+| `MOSS_IDLE_STOP_S` | how long a `moss-nav` or `moss-explore` stack may see no activity before the cockpit stops it, 300 s by default, 0 = never, at least 30 (a shorter value is refused: 300 s); read when the cockpit starts, from its own environment (the service's), see "The stack stops itself" |
 | `PROOF_S` | how long `tools/moss-fly.sh` waits for the stack to prove itself in its log, 120 s by default |
 | `MOSS_MOCK_BUS=1` | the fake firmware, no motors (`MOCK=1` on the launchers sets it) |
 | `MOSS_STATE_DIR` | the state directory, `~/.local/state/moss` by default: recordings, the saved flight check |
 | `MOSS_BRAKE_S` | how long the pad sends zeros after the deadman is released, 0.5 s by default, 0 to 1.0 s |
 | `MOSS_TURN_GAIN` | turn authority against forward speed on the pad, 2 by default, 0.5 to 4 ([base.md](base.md)) |
-| `MOSS_HIT_CAP` | how certain a costmap cell can get, 10 by default, 2 to 127. A cell at the cap needs 2 x (cap - 1) lidar revolutions with rays through it to be forgotten (1.8 s at 10, 0.6 s at 4): lower it to forget passers-by faster, at the price of walls that fade sooner once nothing sees them |
+| `MOSS_OCCUPIED_AT` | how many hits a costmap cell needs to be a wall, 2 by default, 1 to 10: two places at least `MOSS_NEW_VIEWPOINT_M` apart, never one spot, so somebody standing next to a parked rover never walls it in. 1 makes the first sighting a wall: a faster block, and every passer-by a wall |
+| `MOSS_NEW_VIEWPOINT_M` | how far the rover must move before the same cell takes another hit, 0.10 m by default, 0 to 1 |
+| `MOSS_HIT_CAP` | how certain a costmap cell can get, 10 by default, 2 to 127. A lidar cell at the cap needs 2 x (cap - 1) revolutions with rays through it to be forgotten (1.8 s at 10, 0.6 s at 4), a camera cell at most cap - 1 looks of the camera through it once its 3 s are over (one look can take more than one point off): lower it to forget passers-by faster, at the price of walls that fade sooner once nothing sees them |
 | `MOSS_FREE_FLOOR` | how free a costmap cell can get, -3 by default, -128 to 0. Nearer 0, something that appears on floor seen free for long becomes a wall after fewer viewpoints (for the lidar: 3 at -1, 5 at -3) |
-| `MOSS_RAY_MAX_M` | how far from the rover the lidar's rays clear the costmap, 4 m by default (0 = never). Anything farther than that from every place the rover stood is never forgotten: 6 forgets somebody who stood 4.5 m away, and longer rays cost more CPU per revolution |
+| `MOSS_RAY_MAX_M` | how far from the rover the lidar's rays clear the costmap's lidar layer (and the camera's rays its own), 4 m by default (0 = never). Anything farther than that from every place the rover stood is never forgotten: 6 forgets somebody who stood 4.5 m away, and longer rays cost more CPU per revolution |
+| `MOSS_PUBLISH_EVERY` | one costmap grid every N lidar revolutions, 2 by default (5 grids a second), 1 to 20. Every subscriber decodes every grid and the recorder writes each one: raise it if the load climbs |
+| `MOSS_CONTACT_WALL` | `1` turns a contact into a wall on the costmap: the band 2 to 20 cm beyond the body's front, across its width, when the rover was driving straight forward (3 cm or more along its heading and less than 10 degrees of turn over the last 0.5 s). Off by default: a contact is a reflex, only the lidar and the camera write the map |
 
 ## Recording
 
@@ -260,6 +274,31 @@ $ .venv/bin/dimos dataprep build --source <db> --format lerobot --output <dir> -
 `--config` is required: a JSON `DataPrepConfig` naming the observation and action
 streams (for MOSS: `color_image`, `odom`, `cmd_vel`) and the episode extractor.
 
+### Reading a run
+
+After every exploration run, draw the run before talking about it: counters
+("12 stuck, 9 contacts") hide what the robot did, one picture shows it.
+`.venv/bin/python tools/run_film.py` reads the newest exploration run's
+`main.jsonl` and the newest recording in `<MOSS_STATE_DIR>/recordings/`
+(`--log` and `--db` pick others) and writes the film of the run next to the
+recording, `<run>.film.png`: the trajectory coloured by time (light to dark)
+over the obstacles of the map the run built, with every goal, reached goal,
+abandon, contact escape, contact, IMU contact, encoder stall and cornered
+back-off where it happened. It prints the verdict: minutes and metres driven,
+goals chosen, reached and abandoned, the back-offs (after a contact, or
+cornered: the planner's bump and reverse escape that answer a cornered line
+belong to that back-off and count as neither a contact nor an abandon), the
+contacts the IMU felt and the ones the stall guard inferred, the abandon
+triggers, and the stuck or contact events per minute; above one per minute,
+look at the map before any conclusion. Then `tools/decision_replay.py` (same
+defaults; `--decision N` for goal N, `--decision final` for the last call)
+rebuilds each explorer decision from the recording and runs it through the real
+`explorer2.next_target`, printing every frontier cluster with its gain, its path
+cost, its multipliers and why the others lost, next to what the run logged. The
+film needs dimOS and matplotlib: when the venv lacks matplotlib, the script
+says so and draws nothing (`.venv/bin/pip install matplotlib`). The replay
+decodes the map itself.
+
 ## The cockpit
 
 `tools/moss_cockpit.py` is a stdlib HTTP server on port 8904 (`MOSS_COCKPIT_PORT`
@@ -281,6 +320,51 @@ the log tail.
 STOP on the page is a soft stop: it publishes `stop_explore_cmd`,
 `stop_movement` and a zero twist. The hard stops are the firmware deadman
 (300 ms) and `tools/moss-fly.sh stop`.
+
+**The stack stops itself.** A stack left up with nothing to do drains the battery:
+on the board's input rail, the explore stack idle on a parked rover drew about 2 W
+more than no stack at all (one measurement at the time of this change). The cockpit
+stops a `moss-nav` or `moss-explore` stack (the two that run the lidar odometry and
+the costmap) that saw no activity for `MOSS_IDLE_STOP_S` seconds (300 by default)
+with the message `stopping the stack to preserve battery (idle 5 min)`, in its
+journal, above the stop's lines in `/launch.json` and on the page's status line
+with its time (`..., stopped at 14:05`), where it stays until the next action. The
+cockpit keeps that note in memory only: a restarted cockpit no longer shows it. The
+stop is the same `tools/moss-fly.sh stop` as the Stop stack button (exploration off
+first, then the stack down). `moss-gamepad` and any other MOSS blueprint stay up:
+`tools/moss-teleop.sh` keeps its stack up with the pad on the table. Activity is
+any of: base telemetry whose `output_pct` is not `[0, 0]` (a track commanded, by
+the pad, the planner or the explorer) and whose firmware line is at most 1 s old
+(with the board lost, the coordinator repeats its last line), a `cmd_vel` with a
+non-zero `linear.x` or `angular.z`, an `explore_cmd`, a `goal_request`, an
+`episode_marker`, an open episode, the odometry pose more than 2 cm or 2 degrees
+from where it was 10 s before (the rover pushed by hand; drift at rest never adds
+up to that), and any command sent from the page. An exploration with nothing left
+to drive is idle. The count runs from the stack's start (from the cockpit's own
+start when the cockpit came up later) on the monotonic clock, so a clock step
+changes nothing, and each run is stopped once at most.
+
+While a `moss-nav` or `moss-explore` stack runs, the line under the chip reads
+`idle 3:20, stops at 5:00 to preserve battery · keep the stack up`: dim until half
+the limit, in the warning colour for the last minute. The line is a button: a press
+(`POST /cmd/keepalive`) starts the count again, and the line shows it at once. The
+cockpit never stops a stack it cannot see: one on another bus than LCM or with
+another `LCM_DEFAULT_URL` than the cockpit's, any stack while it does not listen to
+the bus, or while nothing arrived on any channel it listens to for 10 s (every MOSS
+stack publishes `base_telemetry` twice a second: silence means the cockpit is deaf,
+not that the rover is idle). It never stops a registry entry whose pid is no longer
+a `dimos run` (a stale entry after a power cut). It waits for a launch or a flight
+check in progress, up to 120 s, and a stop that fails to start is tried again each
+second. The journal says once per run why a due stop was held. `/state.json`
+carries `idle: {enabled, idle_s, stop_in_s, limit_s, last_source, blind}` next to
+`stack`: `last_source` names what restarted the count last (`start`, `telemetry`,
+`cmd_vel`, `odom`, `explore_cmd`, `goal_request`, `episode`, `post`, `keepalive`,
+`demo`) and `blind` why the cockpit cannot see the run, so a run that never stops
+says why. To turn it off, set `MOSS_IDLE_STOP_S=0` in the service (`sudo systemctl
+edit moss-cockpit`, a line `Environment=MOSS_IDLE_STOP_S=0` under `[Service]`) and
+restart the cockpit; a value under 30 s is refused (the cockpit says so and keeps
+300 s). In the demo, the synthetic rover's driving counts as activity, and a halted
+demo stack stops itself the same way, on the first request past the limit.
 
 A goal tapped on the map goes out at once when nothing is exploring. While
 exploring, the page stops the explorer first and sends the goal three seconds
@@ -338,7 +422,7 @@ keeps one word on top for the state now.
 | `reached` | local planner | `Reached goal position, starting final rotation` | Goal reached |
 | `contact` | base adapter | `STALL #1: tracks commanded L=+76% R=+64% but the encoders moved L=+1 R=+0 ticks in 1.0 s` | Contact #1: both tracks blocked (commanded ..., encoders moved ...) |
 | `contact` | recovering planner | `BUMP received`, `Contact during an escape: stopping dead`, `Contact escape` | Bump: backing off / Contact during an escape: stop dead / Escape done: 0.20 m in 2.1 s, Escape timed out: only 0.05 m in 5.0 s, Escape aborted after 0.05 m |
-| `contact` | costmap | `costmap: contact at (-0.88, +0.73) heading +147 deg: 32 cells ahead marked as a wall` | Wall remembered ahead (32 cells) |
+| `contact` | costmap (`MOSS_CONTACT_WALL=1`) | `costmap: contact at (-0.88, +0.73) heading +147 deg: 32 cells ahead marked as a wall` | Wall remembered ahead (32 cells) |
 | `push` | base adapter | `tracks frozen at L=+56% R=+50% - pushing at 75 % for 1 s ...` | Tracks frozen at L=+56% R=+50%: pushing at 75 % |
 | `pivot_fallback` | base adapter | `pivot L=+100% R=-100%: the right track did not turn ...` | Right track did not turn in reverse (...): pivoting on the left track from now on |
 | `imu` | IMU contact detector | `IMU contact: forward -4.8 m/s^2 (threshold 4.0) while commanded L=+70% R=+60%` | the line itself |

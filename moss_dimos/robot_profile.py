@@ -4,7 +4,8 @@ The lidar driver, the lidar odometry, the costmap and the planner do not bake
 in the rover's dimensions: they read a RobotProfile at call time through
 ``current()``. The values below are MOSS's, and every one of them can be
 overridden by a MOSS_* environment variable (read at call time too, so a
-flight can be re-scaled without a code change).
+flight can be re-scaled without a code change). The speed watchdog
+(tools/speed_guard.py) reads its ceiling, max_speed_mps, from here too.
 
 Frames: base_link IS the lidar's floor projection. The odometry publishes
 world->base_link at the lidar's x, y; the costmap body footprint and the
@@ -84,6 +85,7 @@ class RobotProfile:
     track_m: float                              # track centre distance
     camera_xyz_base_m: tuple[float, float, float]   # depth camera in base_link (lidar_odometry's projection)
     camera_pitch_deg: float                     # pitched DOWN by this much
+    max_speed_mps: float                        # speed watchdog ceiling (tools/speed_guard.py)
 
 
 # EVERY value below is a PLACEHOLDER until measured on the rover (CAD nominal
@@ -101,6 +103,13 @@ class RobotProfile:
 #   MOSS_TRACK_M              0.266         CAD centre distance (moss_adapter reads the same variable)
 #   MOSS_CAMERA_XYZ_M         "0.156 0 0.075"  D455F face on the nose, CAD nominal
 #   MOSS_CAMERA_PITCH_DEG     0.0
+#   MOSS_MAX_SPEED_MPS        0.45          body speed beyond which tools/speed_guard.py stops the run:
+#                                           the planner's cruise plus a margin. Cruise = dimOS's
+#                                           LocalPlanner speed 0.55 m/s x tools/moss-fly.sh's
+#                                           NERF_SPEED 0.7 = 0.385 m/s; 0.45 leaves 0.065 m/s (17 %).
+#                                           The watchdog refuses a ceiling at or under the cruise (it
+#                                           would stop every normal run). Once MOSS_MPS_AT_LIMIT is
+#                                           measured, check the cruise really driven stays under it.
 MOSS = RobotProfile(
     name="moss",
     lidar_height_m=0.20,
@@ -116,6 +125,7 @@ MOSS = RobotProfile(
     track_m=0.266,
     camera_xyz_base_m=(0.156, 0.0, 0.075),
     camera_pitch_deg=0.0,
+    max_speed_mps=0.45,
 )
 
 # field -> (env var, number of floats; 0 = list of (start, end) pairs)
@@ -133,6 +143,7 @@ _MOSS_ENV = {
     "track_m": ("MOSS_TRACK_M", 1),
     "camera_xyz_base_m": ("MOSS_CAMERA_XYZ_M", 3),
     "camera_pitch_deg": ("MOSS_CAMERA_PITCH_DEG", 1),
+    "max_speed_mps": ("MOSS_MAX_SPEED_MPS", 1),
 }
 
 _warned: set[tuple[str, str]] = set()

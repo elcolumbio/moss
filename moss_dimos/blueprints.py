@@ -34,16 +34,19 @@ Switches (env, read when moss-nav / moss-explore is built; robot_profile.env_on
 parses them: 0, false, no or off = off, any other value = on, unset = the default):
     MOSS_CAMERA=0     no RealSense (default on: colour 640x480 @ 5 fps, JPEG on the bus, plus depth aligned
                       to colour at the same rate, turned into map obstacles by lidar_odometry)
-    MOSS_GYRO=0       no gyro prior for the lidar odometry (default ON with MOSS_IMU: each registration starts
-                      from the yaw the RealSense's gyro integrated since the last revolution, read in the
-                      camera's own process). With MOSS_IMU=0 the gyro would come from dimOS's second IMU
-                      pipeline, which fails to open on the rover and takes the camera down with it: MOSS_GYRO=1
-                      is then refused with a warning, and MOSS_GYRO_FORCE=1 builds it anyway (an experiment)
+    MOSS_GYRO=1       the gyro prior for the lidar odometry: each registration starts from the yaw the
+                      RealSense's gyro integrated since the last revolution, read in the camera's own process.
+                      Default OFF until its sign is measured on this robot (run tools/gyro_sign_bench.py once,
+                      then MOSS_GYRO=1): a wrong-sign prior is worse than none. Needs MOSS_IMU: with
+                      MOSS_IMU=0 the gyro would come from dimOS's second IMU pipeline, which fails to open on
+                      the rover and takes the camera down with it, so MOSS_GYRO=1 is then refused with a
+                      warning, and MOSS_GYRO_FORCE=1 builds it anyway (an experiment)
     MOSS_IMU=0        no IMU contacts (default ON: the RealSense's IMU is read inside the camera's own
                       process, colour, depth and IMU proven alive together on the robot; a deceleration against
-                      the commanded direction publishes bump). Knobs: MOSS_BUMP_ACCEL (default 4.0 m/s^2),
-                      MOSS_BUMP_DEBOUNCE_S (default 0.7), MOSS_IMU_LOG=<csv> (every sample); docs/imu.md.
-                      Needs the camera: with MOSS_CAMERA=0 there are no IMU contacts (said in the log)
+                      the commanded direction publishes bump, in front, or bump_rear, behind). Knobs:
+                      MOSS_BUMP_ACCEL (default 4.0 m/s^2), MOSS_BUMP_DEBOUNCE_S (default 0.7),
+                      MOSS_IMU_LOG=<csv> (every sample); docs/imu.md. Needs the camera: with MOSS_CAMERA=0
+                      there are no IMU contacts (said in the log)
     MOSS_DESKEW=1     kiss-icp straightens each lidar revolution by the motion prior (default OFF: on the
                       rover its first thread fails and the odometry stops; an experiment)
     MOSS_SOUNDS=0     no sound module (default on when pw-play or paplay is on the PATH: the sound pack
@@ -90,8 +93,15 @@ needs two things, and the second one is not obvious:
    still find the coordinator by the name they expect, and ControlCoordinator
    .start() warns if a subclass omits it.
 
-The wrist camera module (WristCamera) is a class built on first use and
-served by the same module __getattr__, so dimOS pickles it by reference too.
+The camera modules are classes built on first use and served by the same
+module __getattr__, so dimOS pickles them by reference too: the wrist camera
+(WristCamera) and the RealSense (DedicatedMossRealSense, or
+DedicatedRealSenseCamera with MOSS_IMU=0). Each runs in a worker process of
+its own (dedicated_worker), like the coordinator, the lidar and the pad: a
+camera that shares its worker with busy modules (the odometry, the costmap,
+the explorer, the recorder) gets starved under load, and its depth
+obstacles and IMU samples arrive late or not at all while the sensor itself
+drops no frame.
 """
 from __future__ import annotations
 
@@ -112,7 +122,7 @@ from dimos.msgs.std_msgs.String import String
 from dimos.utils.logging_config import setup_logger
 
 from moss_dimos import robot_profile
-from dimos_lcm.std_msgs import Bool   # the SAME Bool class as Explorer2 / RecoveringPlanner: one 'bump' stream type on the bus
+from dimos_lcm.std_msgs import Bool   # the SAME Bool class as RecoveringPlanner's Ins: one stream type per name
 from moss_dimos.moss_adapter import telemetry_payload
 from moss_dimos.robot_profile import (MOSS_LIDAR_MISSING, MOSS_QTPY_MISSING,
                                       RobotProfile)
@@ -166,10 +176,15 @@ class MossControlCoordinator(ControlCoordinator):
     battery, mode, track outputs - see moss_adapter.telemetry_payload). The
     cockpit reads the battery there, so nothing but this process ever opens
     the motor board's port. An adapter without telemetry publishes nothing.
+
+    A new stall in that telemetry (the adapter's stall guard: tracks
+    commanded, encoders frozen) is published on `stall`. A stall is inferred,
+    not felt: the planner stops and abandons the goal with no motion. Only a
+    felt contact (BumpImu's `bump` / `bump_rear`) earns the 0.20 m escape.
     """
 
     base_telemetry: Out[String]
-    bump: Out[Bool]                 # a stall of the base (moss_adapter stall guard) = a contact: the planner's escape backs off
+    stall: Out[Bool]                # a stall of the base: the planner stops and abandons the goal, no motion
 
     TELEMETRY_PERIOD_S = 0.5
 
@@ -208,9 +223,10 @@ class MossControlCoordinator(ControlCoordinator):
                         stalls = int(payload.get("stall_count") or 0)
                         if stalls > getattr(self, "_stalls_seen", 0):
                             self._stalls_seen = stalls
-                            _logger.warning(f"base stall #{stalls}: publishing bump (contact) for the planner's escape")
-                            if getattr(self.bump, "transport", None) is not None:
-                                self.bump.publish(Bool(data=True))
+                            _logger.warning(f"base stall #{stalls}: publishing stall (the planner stops and "
+                                            "abandons the goal, no motion)")
+                            if getattr(self.stall, "transport", None) is not None:
+                                self.stall.publish(Bool(data=True))
                 last_error = None
             except Exception as exc:  # noqa: BLE001
                 cause = f"{type(exc).__name__}: {exc}"
@@ -378,10 +394,42 @@ def _wrist_module_class():
         from dimos.hardware.sensors.camera.module import CameraModule
 
         cls = type("WristCamera", (CameraModule,),
-                   {"__doc__": "The arm's UVC camera (dimOS Webcam hardware, cv2 capture).",
-                    "__module__": __name__, "__qualname__": "WristCamera"})
+                   {"__doc__": "The arm's UVC camera (dimOS Webcam hardware, cv2 capture), in a worker of its own.",
+                    "__module__": __name__, "__qualname__": "WristCamera",
+                    # cv2 capture and the JPEG encode at 5 fps: its own worker, like the RealSense
+                    "dedicated_worker": True})
         _WRIST_CLASS = cls
     return _WRIST_CLASS
+
+
+# The RealSense module, in a worker of its own: name -> (module, class) it subclasses.
+_REALSENSE_BASES = {
+    "DedicatedMossRealSense": ("moss_dimos.realsense_imu", "MossRealSense"),    # the IMU in the camera's process
+    "DedicatedRealSenseCamera": ("dimos.hardware.sensors.camera.realsense.camera", "RealSenseCamera"),  # MOSS_IMU=0
+}
+_REALSENSE_CLASSES: dict = {}
+
+
+def _realsense_module_class(name: str):
+    """The RealSense module class `name` (a key of _REALSENSE_BASES): its base
+    class plus `dedicated_worker = True`, nothing else (the same streams, the
+    same RPCs, the same kwargs). The camera was the one sensor left sharing a
+    worker; under load its depth obstacles and IMU samples starved while the
+    sensor dropped no frame. Built on first use (the camera stack is imported
+    only then, so a coordinator worker never loads it) and exposed as
+    `moss_dimos.blueprints.<name>` through the module __getattr__, so dimOS
+    pickles it by reference into its worker processes."""
+    cls = _REALSENSE_CLASSES.get(name)
+    if cls is None:
+        import importlib
+
+        module_name, base_name = _REALSENSE_BASES[name]
+        base = getattr(importlib.import_module(module_name), base_name)
+        cls = type(name, (base,),
+                   {"__doc__": f"{base_name} in a worker process of its own (dedicated_worker).",
+                    "__module__": __name__, "__qualname__": name, "dedicated_worker": True})
+        _REALSENSE_CLASSES[name] = cls
+    return cls
 
 
 def _wrist_part(index: int):
@@ -440,12 +488,17 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
     from moss_dimos.rplidar_c1 import RPLidarC1
 
     # the rotation prior of the lidar odometry: the RealSense's gyro, read in the camera's own process
-    # with the IMU (MOSS_IMU, on by default), so MOSS_GYRO follows MOSS_IMU unless set. Without MOSS_IMU
-    # the gyro would come from dimOS's second IMU pipeline, which fails with 'No device connected' on the
-    # rover (colour and depth then never start either): refused unless MOSS_GYRO_FORCE=1, an experiment
+    # with the IMU (MOSS_IMU, on by default). OFF unless MOSS_GYRO=1, until its sign is measured on this
+    # robot (tools/gyro_sign_bench.py: slow pivots both ways, the gyro integral against the lidar's yaw).
+    # The axis comes from librealsense's convention, never from a turn: a prior with the wrong sign
+    # seeds every registration with the opposite rotation and paints the room as rotated copies, which
+    # is worse than none. Constant velocity lags a full-power pivot (the map drifts) but never does that.
+    # Without MOSS_IMU the gyro would come from dimOS's second IMU pipeline, which fails with 'No device
+    # connected' on the rover (colour and depth then never start either): refused unless
+    # MOSS_GYRO_FORCE=1, an experiment
     has_camera = robot_profile.env_on("MOSS_CAMERA", True)
     in_process_imu = has_camera and robot_profile.env_on("MOSS_IMU", True)
-    gyro = robot_profile.env_on("MOSS_GYRO", in_process_imu)
+    gyro = robot_profile.env_on("MOSS_GYRO", False)
     if gyro and not has_camera:
         _logger.warning("MOSS blueprint: MOSS_GYRO needs the RealSense and MOSS_CAMERA is off: no gyro prior")
         gyro = False
@@ -458,6 +511,10 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
                             "fails on the rover and takes the camera down): no gyro prior. MOSS_IMU=1 gives it "
                             "from the camera's own process; MOSS_GYRO_FORCE=1 is the experiment")
             gyro = False
+    if in_process_imu:
+        _logger.info("MOSS blueprint: lidar odometry prior: gyro=True (MOSS_GYRO=1)" if gyro else
+                     "MOSS blueprint: lidar odometry prior: gyro=False "
+                     "(run tools/gyro_sign_bench.py once, then MOSS_GYRO=1)")
     # MOSS_DESKEW=1 is an experiment too: kiss-icp's deskew (each point moved by its share of the motion
     # prior) dies on the rover at its first thread, and the odometry loop with it
     deskew = robot_profile.env_on("MOSS_DESKEW", False)
@@ -465,20 +522,20 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         _coordinator_blueprint(_moss_base(address=ports["base"])),
         _gamepad_part(),
         RPLidarC1.blueprint(port=ports["lidar"], baudrate=LIDAR_BAUDRATE, frame_id="lidar_link"),
-        # the rotation prior: the RealSense's gyro when MOSS_GYRO is on (default): a full-power pivot
-        # (254 deg/s measured on the floor) turns 25 deg between two scans, more than the constant-velocity
-        # prior follows (the map drifted); constant velocity otherwise
+        # the rotation prior: the RealSense's gyro with MOSS_GYRO=1 (a full-power pivot, 254 deg/s measured
+        # on the floor, turns 25 deg between two scans, more than the constant-velocity prior follows);
+        # constant velocity otherwise, the default until the gyro's sign is measured (above)
         LidarOdometry.blueprint(use_gyro_prior=gyro, deskew=deskew),
         MossCostMap.blueprint(),
     ]
     # MOSS_IMU=1: the IMU is opened inside the camera's own process (MossRealSense) and BumpImu turns
-    # its decelerations into contacts on `bump`; the IMU lives on the RealSense, so no camera, no IMU
+    # its decelerations into contacts on `bump` (in front) and `bump_rear` (behind); the IMU lives on
+    # the RealSense, so no camera, no IMU
     imu = robot_profile.env_on("MOSS_IMU", True)
     if imu and not robot_profile.env_on("MOSS_CAMERA", True):
         _logger.warning("MOSS blueprint: MOSS_IMU needs the RealSense and MOSS_CAMERA is off: no IMU contacts")
         imu = False
     if robot_profile.env_on("MOSS_CAMERA", True):
-        from dimos.hardware.sensors.camera.realsense.camera import RealSenseCamera
         from dimos.msgs.geometry_msgs.Quaternion import Quaternion
         from dimos.msgs.geometry_msgs.Transform import Transform
         from dimos.msgs.geometry_msgs.Vector3 import Vector3
@@ -493,16 +550,17 @@ def _common_parts(ports: dict, profile: RobotProfile) -> list:
         serial = os.environ.get("MOSS_RS_SERIAL", "").strip()
         if serial:
             cam_kwargs["serial_number"] = serial
+        # the camera in a worker of its own (_realsense_module_class), with or without the IMU
         if imu:
-            from moss_dimos.realsense_imu import MossRealSense
             cam_kwargs.update(enable_imu=True, imu_hz=IMU_HZ)
-            parts.append(MossRealSense.blueprint(**cam_kwargs))
+            parts.append(_realsense_module_class("DedicatedMossRealSense").blueprint(**cam_kwargs))
         else:
-            parts.append(RealSenseCamera.blueprint(**cam_kwargs))
+            parts.append(_realsense_module_class("DedicatedRealSenseCamera").blueprint(**cam_kwargs))
     if imu:
         from moss_dimos.bump_imu import BumpImu, bump_settings
         knobs = bump_settings()
-        _logger.info(f"MOSS blueprint: IMU contacts on bump, forward axis {knobs['axis']}, "
+        _logger.info("MOSS blueprint: IMU contacts on bump (front) and bump_rear (rear), "
+                     f"forward axis {knobs['axis']}, "
                      f"threshold {knobs['threshold']:g} m/s^2, debounce {knobs['debounce_s']:g} s, "
                      f"csv {knobs['log_path'] or 'off'}")
         parts.append(BumpImu.blueprint(**knobs))
@@ -641,10 +699,13 @@ _BUILDERS = {"moss_base_blueprint": build_moss_base,
 
 def __getattr__(name: str):
     """Entry points load `moss_<x>_blueprint` as attributes: build on first
-    access, then cache. `WristCamera` is the dynamic camera class (built
+    access, then cache. `WristCamera`, `DedicatedMossRealSense` and
+    `DedicatedRealSenseCamera` are the dynamic camera classes (each built
     once, so pickling by reference finds the same object)."""
     if name == "WristCamera":
         return _wrist_module_class()
+    if name in _REALSENSE_BASES:
+        return _realsense_module_class(name)
     builder = _BUILDERS.get(name)
     if builder is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

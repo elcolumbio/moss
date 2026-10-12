@@ -71,6 +71,10 @@ Calibration (env, all optional):
     MOSS_PULSE_MIN_PCT  duty floor of a non-zero track while pulsing (default 40)
     MOSS_PIVOT_PCT      every pivot (tracks in opposite directions) is sent at this percent, both tracks (default 100, 0 = as asked)
     (no variable)       stall guard: a commanded track whose encoder moved < STALL_MIN_TICKS over STALL_S -> 'stop', logged, counted
+    (no variable)       feedback loss: telemetry older than TELEMETRY_FRESH_S while a non-zero command is held blinds the
+                        stall guard and the IMU contacts (both read the telemetry): warned once, then once per
+                        READ_WARN_PERIOD_S with a count, and a recovery line when telemetry comes back; a failing serial
+                        read is logged the same way, never once per read
     MOSS_MOCK_BUS       any value but 0/false/no/off: drive the fake firmware (no motors)
 """
 from __future__ import annotations
@@ -103,7 +107,9 @@ KEEPALIVE_S = 0.100            # re-send period, 3x inside the firmware deadman
 STALE_S = 0.500                # no fresh write for this long -> "stop", once
 REPLY_TIMEOUT_S = 0.150        # the firmware answers within a loop tick (ms)
 CONNECT_PROBE_S = 1.000        # the first "status" of a process: reader thread start + first parse on a Jetson take longer than a reply tick
-TELEMETRY_FRESH_S = 1.0        # mode read from telemetry older than this = unknown
+TELEMETRY_FRESH_S = 1.0        # mode read from telemetry older than this = unknown; older while driving = feedback lost
+READ_WARN_PERIOD_S = 5.0       # a lost feedback (telemetry silent while driving, a failing serial read) is warned on
+                               # its first occurrence, then once per this period with a count, and its recovery is logged
 MOCK_BUS_ENV = "MOSS_MOCK_BUS"
 STALL_S = 1.0                  # every commanded track frozen for this long = STALLED: the rover is pushing against
                                # something (no bumper on MOSS: the encoders are the bumper)
@@ -417,6 +423,11 @@ class MossBaseAdapter:
         # the mapping geometry: when pulsing, the static-friction floor becomes the duty floor of the pulses
         self._map_geometry = replace(self._geometry, min_pct=pulse_min_pct()) if self._pulse_n else self._geometry
         self._last_logged = None
+        # feedback loss, logged once then rate-limited (see _note_read_failure, _note_blind)
+        self._read_failures = 0                              # consecutive serial reads that raised
+        self._last_read_warn_t = 0.0
+        self._blind_ticks = 0                                # consecutive keepalive ticks driving on stale telemetry
+        self._last_blind_warn_t = 0.0
         self._reader = None
         self._keepalive = None
         self._stop_threads = threading.Event()
@@ -458,6 +469,17 @@ class MossBaseAdapter:
             return dict(self._telemetry) if self._telemetry else None
 
     @property
+    def read_failure_count(self) -> int:
+        """Consecutive serial reads that raised (0 = healthy)."""
+        return self._read_failures
+
+    @property
+    def blind_count(self) -> int:
+        """Consecutive keepalive ticks that held a non-zero command on telemetry
+        older than TELEMETRY_FRESH_S (0 = the guards can see)."""
+        return self._blind_ticks
+
+    @property
     def telemetry_age_s(self) -> float | None:
         """Seconds since the last telemetry line arrived (same monotonic stamp
         firmware_mode uses), None before the first one."""
@@ -490,6 +512,7 @@ class MossBaseAdapter:
                 self._ser = None
                 return False
             self._stop_threads.clear()
+            self._read_failures = self._blind_ticks = 0
             self._reader = threading.Thread(target=self._read_loop, name="moss-rx", daemon=True)
             self._reader.start()
             # probe: the firmware answers "status" with one telemetry line
@@ -558,9 +581,10 @@ class MossBaseAdapter:
                 # the port closed under us (stack stopping): not an error
                 if self._stop_threads.is_set() or not getattr(ser, "is_open", True):
                     return
-                _log().error(f"MOSS base: serial read failed: {exc!r}")
+                self._note_read_failure(exc)
                 time.sleep(0.05)
                 continue
+            self._note_read_success()
             if not raw:
                 continue
             line = raw.decode(errors="replace").strip()
@@ -570,7 +594,9 @@ class MossBaseAdapter:
                 if line.startswith("{"):
                     try:
                         self._telemetry = json.loads(line)
-                        self._telemetry_t = time.monotonic()
+                        now = time.monotonic()
+                        self._note_telemetry_back(now)
+                        self._telemetry_t = now
                         self._ingest_ticks(self._telemetry)
                     except (ValueError, TypeError):
                         pass
@@ -582,6 +608,47 @@ class MossBaseAdapter:
                     _log().info(f"MOSS firmware: {line}")
                     continue
                 self._reply_cv.notify_all()
+
+    def _note_read_failure(self, exc: Exception) -> None:
+        """A serial read raised (the port is open, the stack is not stopping):
+        counted, logged on the first failure and then once per
+        READ_WARN_PERIOD_S - a dead port would otherwise write 20 lines a second."""
+        self._read_failures += 1
+        now = time.monotonic()
+        if self._read_failures == 1 or now - self._last_read_warn_t >= READ_WARN_PERIOD_S:
+            self._last_read_warn_t = now
+            _log().error(f"MOSS base: serial read failed on {self._port} "
+                         f"({self._read_failures} consecutive): {exc!r}")
+
+    def _note_read_success(self) -> None:
+        if self._read_failures:
+            _log().info(f"MOSS base: serial reads recovered after {self._read_failures} failures")
+            self._read_failures = 0
+
+    def _note_blind(self, now: float) -> None:
+        """Called under the lock every keepalive tick while a non-zero command is
+        held. Telemetry older than TELEMETRY_FRESH_S means the stall guard has no
+        encoder ticks to compare and the IMU contacts no command to qualify a
+        deceleration with: both are blind while the tracks are driven. Counted,
+        warned on the first tick and then once per READ_WARN_PERIOD_S."""
+        age = None if self._telemetry_t is None else now - self._telemetry_t
+        if age is not None and age <= TELEMETRY_FRESH_S:
+            return
+        self._blind_ticks += 1
+        if self._blind_ticks == 1 or now - self._last_blind_warn_t >= READ_WARN_PERIOD_S:
+            self._last_blind_warn_t = now
+            since = "since the connect" if age is None else f"for {age:.1f} s"
+            _log().warning(f"MOSS base: no telemetry from the motor board {since} on {self._port} while "
+                           f"driving L={self._want[0]:+d}% R={self._want[1]:+d}% ({self._blind_ticks} consecutive "
+                           "ticks) - stall guard and IMU bump blind")
+
+    def _note_telemetry_back(self, now: float) -> None:
+        """Called under the lock when a telemetry line arrives, before its stamp."""
+        if self._blind_ticks:
+            gap = now - self._telemetry_t if self._telemetry_t is not None else 0.0
+            _log().info(f"MOSS base: telemetry recovered after {self._blind_ticks} failures "
+                        f"({gap:.1f} s without a line)")
+            self._blind_ticks = 0
 
     def _send(self, line: str, expect_status: bool = False, timeout: float | None = None) -> bool:
         """Write one command line and wait for its reply. Called with the lock
@@ -760,6 +827,7 @@ class MossBaseAdapter:
                         self._velocity = (0.0, 0.0, 0.0)
                     continue
                 if self._want != (0, 0):
+                    self._note_blind(time.monotonic())
                     if self._stall_check():
                         continue
                     # pulsing: the slice of this tick, 'drive 0 0' included (an OFF slice

@@ -1,10 +1,13 @@
-"""Cold bench for RecoveringGlobalPlanner.
+"""Cold bench for RecoveringGlobalPlanner and RecoveringPlanner's inputs.
 
 Under test: stuck = goal abandoned, NO recovery motion of any kind (a blind
 back-off on every stuck verdict walks the robot into whatever is behind it).
-The only scripted move left is the contact escape (the `bump` stream; on MOSS
-its producer is the explorer's back-off), and a second contact aborts it dead
-instead of being dropped.
+A stall of the base (the `stall` stream) is inferred, not felt: the same,
+goal abandoned and no motion, and a stall during an escape stops it dead.
+The only scripted move left is the contact escape: `bump` (in front: the
+IMU, the explorer's back-off) backs off 0.20 m in reverse, `bump_rear`
+(behind: the IMU while reversing) moves 0.20 m FORWARD, and a second contact
+aborts a running escape dead instead of being dropped.
 
 No robot. A fake local planner integrates the escape twists it receives into
 the odometry the planner reads. Needs dimOS and reactivex.
@@ -12,9 +15,11 @@ the odometry the planner reads. Needs dimOS and reactivex.
 Run from the repository root:  python benches/bench_recovering_planner_cold.py
 """
 
+import asyncio
 import sys
 import threading
 import time
+import types
 from pathlib import Path as _FsPath
 
 sys.path.insert(0, str(_FsPath(__file__).resolve().parent.parent))
@@ -26,7 +31,9 @@ from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped  # noqa: E402
 from dimos.msgs.geometry_msgs.Twist import Twist  # noqa: E402
 from dimos.msgs.geometry_msgs.Vector3 import Vector3  # noqa: E402
 from dimos.msgs.nav_msgs.Path import Path  # noqa: E402
-from moss_dimos.recovering_planner import RecoveringGlobalPlanner  # noqa: E402
+from dimos_lcm.std_msgs import Bool  # noqa: E402
+import moss_dimos.recovering_planner as rp_mod  # noqa: E402
+from moss_dimos.recovering_planner import RecoveringGlobalPlanner, RecoveringPlanner  # noqa: E402
 
 FOLLOWER_SPEED_MPS = 0.30   # what the fake follower puts on cmd_vel once started
 
@@ -174,9 +181,9 @@ def test_escape_moves_away_then_abandons() -> None:
 def test_escape_times_out_when_not_moving() -> None:
     planner, fake = make_planner(moves=False)
     planner.escape_timeout_s = 1.0
-    assert planner.escape(direction=+1.0, trigger="bench") is True
+    assert planner.escape(direction=+1.0, trigger="bump_rear") is True
     wait_escape_done(planner)
-    assert all(tw.linear.x >= 0.0 for tw in fake.sent), "a forward escape only drives forward"
+    assert all(tw.linear.x >= 0.0 for tw in fake.sent), "a rear bump escapes FORWARD"
     assert fake.sent[-1].linear.x == 0.0
     print("  blocked escape times out and ends with a zero twist")
 
@@ -187,7 +194,7 @@ def test_second_contact_aborts_the_escape() -> None:
     t0 = time.perf_counter()
     assert planner.escape(direction=-1.0, trigger="bump") is True
     time.sleep(0.15)
-    assert planner.escape(direction=+1.0, trigger="bump") is False, \
+    assert planner.escape(direction=+1.0, trigger="bump_rear") is False, \
         "a second contact must ABORT, not start a new scripted move"
     wait_escape_done(planner)
     dt = time.perf_counter() - t0
@@ -276,6 +283,176 @@ def test_a_plan_racing_the_escape_start_never_leaves_the_follower_running() -> N
     print("  plan racing an escape -> follower never left running, goal held")
 
 
+class LogSpy:
+    """Stands in for the planner module's logger: (level, event, fields)."""
+
+    def __init__(self):
+        self.lines = []
+
+    def _at(level):
+        def record(self, event, *args, **kwargs):
+            self.lines.append((level, str(event), kwargs))
+        return record
+
+    info, warning, error, debug, exception = _at("info"), _at("warning"), _at("error"), _at("debug"), _at("exception")
+    del _at
+
+    def events(self, prefix):
+        return [(event, fields) for _, event, fields in self.lines if event.startswith(prefix)]
+
+
+def with_log(fn):
+    spy, real = LogSpy(), rp_mod.logger
+    rp_mod.logger = spy
+    try:
+        return fn(spy)
+    finally:
+        rp_mod.logger = real
+
+
+def module_on(planner):
+    """The RecoveringPlanner handlers on this planner, without the dimOS module
+    machinery: the handlers only use self._planner."""
+    return types.SimpleNamespace(_planner=planner)
+
+
+def test_the_module_has_the_three_inputs() -> None:
+    ann = RecoveringPlanner.__annotations__
+    assert {"bump", "bump_rear", "stall"} <= set(ann), sorted(ann)
+    for name in ("bump", "bump_rear", "stall"):
+        assert getattr(ann[name], "__args__", (None,))[0] is Bool, (name, ann[name])
+    assert all(callable(getattr(RecoveringPlanner, f"handle_{n}", None)) for n in ("bump", "bump_rear", "stall"))
+    print("  RecoveringPlanner: In bump, In bump_rear, In stall (dimos_lcm Bool), one handler each")
+
+
+def test_front_contact_backs_off_in_reverse() -> None:
+    planner, fake = make_planner(moves=True)
+    planner._current_goal = PoseStamped(position=Vector3(4.0, 1.0, 0.0))
+
+    def go(spy):
+        asyncio.run(RecoveringPlanner.handle_bump(module_on(planner), Bool(data=True)))
+        wait_escape_done(planner)
+        return spy.events("BUMP received")
+    got = with_log(go)
+    assert got == [("BUMP received: front contact", {"reflex": "escape reverse 0.20 m", "acted": True})], got
+    assert fake.sent and all(tw.linear.x <= 0.0 for tw in fake.sent), "a front contact escapes in REVERSE"
+    moved = 2.0 - planner._current_odom.position.x
+    assert 0.19 <= moved <= 0.30, moved
+    assert planner._current_goal is None
+    print(f"  bump -> 'BUMP received: front contact', {moved:.2f} m in reverse, goal abandoned")
+
+
+def test_rear_contact_escapes_forward() -> None:
+    planner, fake = make_planner(moves=True)
+    failed = []
+    planner.goal_reached.subscribe(lambda b: failed.append(bool(b.data)))
+    planner._current_goal = PoseStamped(position=Vector3(4.0, 1.0, 0.0))
+
+    def go(spy):
+        asyncio.run(RecoveringPlanner.handle_bump_rear(module_on(planner), Bool(data=True)))
+        wait_escape_done(planner)
+        return spy.events("BUMP received"), spy.events("Contact escape")
+    bumps, escapes = with_log(go)
+    assert bumps == [("BUMP received: rear contact", {"reflex": "escape forward 0.20 m", "acted": True})], bumps
+    assert fake.sent and all(tw.linear.x >= 0.0 for tw in fake.sent), "a rear contact escapes FORWARD, never in reverse"
+    moved = planner._current_odom.position.x - 2.0
+    assert 0.19 <= moved <= 0.30, moved
+    assert len(escapes) == 1 and escapes[0][1]["trigger"] == "bump_rear" and escapes[0][1]["direction"] == "forward", escapes
+    assert planner._current_goal is None and failed == [False], "a rear contact abandons the goal too"
+    print(f"  bump_rear -> 'BUMP received: rear contact', {moved:.2f} m FORWARD, goal abandoned")
+
+
+def test_a_false_message_does_nothing() -> None:
+    planner, fake = make_planner(moves=True)
+    planner._current_goal = PoseStamped(position=Vector3(4.0, 1.0, 0.0))
+    for handler in (RecoveringPlanner.handle_bump, RecoveringPlanner.handle_bump_rear, RecoveringPlanner.handle_stall):
+        asyncio.run(handler(module_on(planner), Bool(data=False)))
+    assert fake.sent == [] and not planner._escaping and planner._current_goal is not None
+    print("  Bool(False) on bump / bump_rear / stall -> nothing")
+
+
+def test_stall_abandons_the_goal_without_any_motion() -> None:
+    planner, fake = make_planner(moves=True)
+    failed = []
+    planner.goal_reached.subscribe(lambda b: failed.append(bool(b.data)))
+    planner._current_goal = PoseStamped(position=Vector3(4.0, 1.0, 0.0))
+    planner._path_started_at = time.perf_counter() - 30.0
+
+    def go(spy):
+        asyncio.run(RecoveringPlanner.handle_stall(module_on(planner), Bool(data=True)))
+        time.sleep(0.3)                          # an escape would have written twists by now
+        return spy.events("Goal abandoned"), spy.events("STALL received")
+    abandoned, stalls = with_log(go)
+    assert fake.sent == [] and not planner._escaping, "a stall must not command ANY motion"
+    assert planner._current_goal is None and failed == [False], "the goal is abandoned (the explorer excludes the spot)"
+    assert abandoned == [("Goal abandoned, no recovery motion", {"trigger": "stall"})], abandoned
+    assert stalls == [("STALL received", {"reflex": "stop, goal abandoned, no motion", "acted": True})], stalls
+    assert planner._path_started_at == float("inf")
+    print("  stall -> zero twists, 'Goal abandoned, no recovery motion' (trigger stall), goal_reached=False")
+
+
+def test_stall_without_a_goal_gives_nothing_up() -> None:
+    planner, fake = make_planner(moves=True)
+    failed = []
+    planner.goal_reached.subscribe(lambda b: failed.append(bool(b.data)))
+
+    def go(spy):
+        acted = planner.stall(trigger="stall")
+        return acted, spy.events("Goal abandoned")
+    acted, abandoned = with_log(go)
+    assert acted is False and abandoned == [] and failed == [] and fake.sent == []
+    print("  stall with no goal (the pad was driving) -> nothing cancelled, no line")
+
+
+def test_stall_during_an_escape_stops_it_dead_and_drops_the_held_goal() -> None:
+    planner, fake = make_planner(moves=False)       # wedged: the escape would run its full timeout
+    plannable(planner)
+    failed = []
+    planner.goal_reached.subscribe(lambda b: failed.append(bool(b.data)))
+    planner._current_goal = PoseStamped(position=Vector3(4.0, 1.0, 0.0))
+    planner.escape_timeout_s = 5.0
+    assert planner.escape(direction=-1.0, trigger="bump") is True
+    time.sleep(0.2)
+    planner.handle_goal_request(PoseStamped(position=Vector3(6.0, 1.0, 0.0)))   # held by the escape
+    assert planner._held_goal is not None
+    t0 = time.perf_counter()
+
+    def go(spy):      # through the module's handler, the path the coordinator's `stall` takes
+        asyncio.run(RecoveringPlanner.handle_stall(module_on(planner), Bool(data=True)))
+        wait_escape_done(planner)
+        return spy.events("STALL received"), spy.events("Stall during an escape"), spy.events("Contact escape")
+    stalls, dead, escapes = with_log(go)
+    dt = time.perf_counter() - t0
+    assert stalls == [("STALL received", {"reflex": "stop, goal abandoned, no motion", "acted": True})], stalls
+    assert dead == [("Stall during an escape: stopping dead", {"trigger": "stall"})], dead
+    assert dt < 1.0, f"the stall must stop the escape at once, took {dt:.1f} s"
+    assert fake.sent[-1].linear.x == 0.0, "the wheels end at zero"
+    assert len(escapes) == 1 and escapes[0][1]["aborted"] is True, escapes
+    time.sleep(0.2)
+    assert fake.starts == 0 and planner._held_goal is None, "the held goal is dropped, never planned"
+    assert planner._current_goal is None and False in failed
+    print(f"  stall (handle_stall) during an escape -> stopped dead after {dt:.2f} s, held goal dropped, nothing planned")
+
+
+def test_a_rear_contact_during_a_front_escape_stops_it_dead() -> None:
+    planner, fake = make_planner(moves=False)
+    planner.escape_timeout_s = 5.0
+    asyncio.run(RecoveringPlanner.handle_bump(module_on(planner), Bool(data=True)))
+    time.sleep(0.15)
+    t0 = time.perf_counter()
+
+    def go(spy):
+        asyncio.run(RecoveringPlanner.handle_bump_rear(module_on(planner), Bool(data=True)))
+        wait_escape_done(planner)
+        return spy.events("BUMP received"), spy.events("Contact during an escape")
+    bumps, dead = with_log(go)
+    assert bumps == [("BUMP received: rear contact", {"reflex": "escape forward 0.20 m", "acted": False})], bumps
+    assert dead == [("Contact during an escape: stopping dead", {"trigger": "bump_rear"})], dead
+    assert time.perf_counter() - t0 < 1.0 and fake.sent[-1].linear.x == 0.0
+    assert all(tw.linear.x <= 0.0 for tw in fake.sent), "nothing moves forward: the rear contact only stops the reverse"
+    print("  bump then bump_rear during the reverse -> stopped dead, logged acted=False, never a forward move")
+
+
 if __name__ == "__main__":
     for t in (test_stuck_abandons_goal_without_any_motion,
               test_stuck_needs_a_driven_path_and_ignores_rotation,
@@ -285,6 +462,14 @@ if __name__ == "__main__":
               test_stuck_is_silent_during_an_escape,
               test_goal_during_an_escape_is_held_then_planned,
               test_goal_outside_an_escape_is_planned_at_once,
-              test_a_plan_racing_the_escape_start_never_leaves_the_follower_running):
+              test_a_plan_racing_the_escape_start_never_leaves_the_follower_running,
+              test_the_module_has_the_three_inputs,
+              test_front_contact_backs_off_in_reverse,
+              test_rear_contact_escapes_forward,
+              test_a_false_message_does_nothing,
+              test_stall_abandons_the_goal_without_any_motion,
+              test_stall_without_a_goal_gives_nothing_up,
+              test_stall_during_an_escape_stops_it_dead_and_drops_the_held_goal,
+              test_a_rear_contact_during_a_front_escape_stops_it_dead):
         print(t.__name__); t()
     print("TEST PASSED")

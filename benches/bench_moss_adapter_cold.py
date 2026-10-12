@@ -622,6 +622,142 @@ for env_on, label in (("1", "MOSS_ONE_TRACK_PIVOT on"), ("0", "MOSS_ONE_TRACK_PI
 os.environ.pop("MOSS_ONE_TRACK_PIVOT", None)
 os.environ.pop("MOSS_BUS_REF_MV", None)
 
+# ── 16. feedback loss: logged once, rate-limited, with a count and a recovery line ──
+print("16. feedback loss: telemetry silent while driving -> one warning, a counted repeat per READ_WARN_PERIOD_S, "
+      "a recovery line; a failing serial read the same way")
+import moss_dimos.moss_adapter as _MA  # noqa: E402
+from moss_dimos.moss_adapter import READ_WARN_PERIOD_S, TELEMETRY_FRESH_S  # noqa: E402
+
+
+class _CapLog:
+    """Stands in for the adapter's logger: every line, by level."""
+
+    def __init__(self):
+        self.lines = []
+
+    def _add(self, level, msg):
+        self.lines.append((level, str(msg)))
+
+    def info(self, msg, *a, **k):
+        self._add("info", msg)
+
+    def warning(self, msg, *a, **k):
+        self._add("warning", msg)
+
+    def error(self, msg, *a, **k):
+        self._add("error", msg)
+
+    def of(self, level, text):
+        return [m for lv, m in self.lines if lv == level and text in m]
+
+
+class _MutedTelemetry(FakeMossFirmware):
+    """The firmware answers every command, but its telemetry can be cut (the CDC
+    FIFO guard dropping the lines): the deadman and the arm expiry still run."""
+    mute = False
+
+    def _auto_tick(self):
+        if not self.mute:
+            return super()._auto_tick()
+        self.now()
+        self._poll()
+
+
+class _FlakyReads(FakeMossFirmware):
+    """readline() raises `fail` times (an I/O error on an open port), then reads again."""
+    fail = 0
+
+    def readline(self):
+        if self.fail > 0:
+            self.fail -= 1
+            raise OSError(5, "Input/output error")
+        return super().readline()
+
+
+_saved_logger = _MA._LOGGER
+_cap = _CapLog()
+_MA._LOGGER = _cap
+_saved_period = _MA.READ_WARN_PERIOD_S
+try:
+    check(READ_WARN_PERIOD_S == 5.0 and TELEMETRY_FRESH_S == 1.0,
+          f"the rate limit is 5 s, the telemetry is stale past 1 s ({READ_WARN_PERIOD_S}, {TELEMETRY_FRESH_S})")
+    os.environ["MOSS_PULSE_MS"] = "0"
+    os.environ["MOSS_BUS_REF_MV"] = "0"
+    fwm = _MutedTelemetry(auto_time=True)   # the stock encoders never turn: with telemetry, a long drive would be a stall
+    fm = lambda: fwm  # noqa: E731
+    fm.is_mock = True
+    ma = MossBaseAdapter(dof=3, port_factory=fm, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100, min_pct=0))
+    check(ma.connect() and ma.write_enable(True), "connected and armed on a fake whose telemetry can be cut")
+
+    def _drive_for(seconds, twist=(0.06, 0.0, 0.0)):
+        t_end = time.monotonic() + seconds
+        while time.monotonic() < t_end:
+            ma.write_velocities(list(twist)); settle(0.1)
+
+    _drive_for(0.4)
+    check(_cap.of("warning", "blind") == [] and ma.blind_count == 0,
+          f"telemetry fresh while driving 40 %: no warning, blind count 0 ({ma.blind_count})")
+    fwm.mute = True
+    _drive_for(TELEMETRY_FRESH_S + 0.8)
+    blind = _cap.of("warning", "stall guard and IMU bump blind")
+    check(len(blind) == 1, f"telemetry silent for {TELEMETRY_FRESH_S + 0.8:.1f} s while driving: exactly ONE warning, "
+                           f"not one per tick ({len(blind)}): {blind[:1]}")
+    check(blind and "no telemetry from the motor board for" in blind[0] and "L=+40% R=+40%" in blind[0]
+          and "(1 consecutive ticks)" in blind[0], f"it says what is blind, the command held and the count: {blind[:1]}")
+    n_blind = ma.blind_count
+    check(n_blind >= 4, f"every blind keepalive tick is counted: {n_blind} ticks past the 1 s mark (10 per second)")
+    check(ma.stall_count == 0 and not ma.stalled and fwm.mode == DRIVE,
+          f"meanwhile the stall guard cannot see the frozen encoders: no stall, the fake still DRIVEs "
+          f"(count {ma.stall_count}, mode {fwm.mode}) - why the line matters")
+    _MA.READ_WARN_PERIOD_S = 0.3
+    _drive_for(0.75)
+    blind = _cap.of("warning", "stall guard and IMU bump blind")
+    counts = [int(re.search(r"\((\d+) consecutive", m).group(1)) for m in blind]
+    check(2 <= len(blind) - 1 <= 4 and counts == sorted(counts) and len(set(counts)) == len(counts),
+          f"period shortened to 0.3 s: the warning repeats about every 0.3 s ({len(blind) - 1} more lines over "
+          f"0.75 s more of driving), each with a growing count {counts}")
+    _MA.READ_WARN_PERIOD_S = _saved_period
+    before_back = ma.blind_count
+    fwm.mute = False
+    _drive_for(0.5)
+    back = _cap.of("info", "telemetry recovered after")
+    check(len(back) == 1 and f"after {before_back} failures" in back[0] and "s without a line" in back[0],
+          f"telemetry back: exactly one recovery line with the count ({before_back}): {back}")
+    check(ma.blind_count == 0, f"the count resets on recovery ({ma.blind_count})")
+    ma.write_stop()
+    n_w = len(_cap.of("warning", "blind"))
+    fwm.mute = True
+    settle(TELEMETRY_FRESH_S + 0.5)
+    check(len(_cap.of("warning", "blind")) == n_w and ma.blind_count == 0,
+          "telemetry silent while the tracks are at rest: nothing is blind, nothing is said")
+    fwm.mute = False
+    ma.disconnect()
+
+    fwf = _FlakyReads(auto_time=True)
+    ff = lambda: fwf  # noqa: E731
+    ff.is_mock = True
+    mf = MossBaseAdapter(dof=3, port_factory=ff, geometry=MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=100, min_pct=0))
+    check(mf.connect(), "connected on a fake whose reads can fail")
+    n_err = len(_cap.lines)
+    fwf.fail = 30
+    t_end = time.monotonic() + 4.0
+    peak = 0
+    while time.monotonic() < t_end and (fwf.fail > 0 or mf.read_failure_count):
+        peak = max(peak, mf.read_failure_count); settle(0.02)
+    errs = [m for lv, m in _cap.lines[n_err:] if lv == "error" and "serial read failed" in m]
+    check(len(errs) == 1 and "(1 consecutive)" in errs[0] and "Input/output error" in errs[0],
+          f"30 failed reads in ~1.5 s (inside the 5 s period): ONE error line, not 30 ({len(errs)}): {errs[:1]}")
+    check(peak >= 25, f"the failures are counted ({peak} at the peak, 30 thrown)")
+    rec = [m for lv, m in _cap.lines[n_err:] if lv == "info" and "serial reads recovered" in m]
+    check(rec == ["MOSS base: serial reads recovered after 30 failures"] and mf.read_failure_count == 0,
+          f"reads work again: one recovery line with the count, the count reset: {rec}")
+    mf.disconnect()
+finally:
+    _MA._LOGGER = _saved_logger
+    _MA.READ_WARN_PERIOD_S = _saved_period
+    os.environ.pop("MOSS_PULSE_MS", None)
+    os.environ.pop("MOSS_BUS_REF_MV", None)
+
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")
 sys.exit(1 if KO else 0)

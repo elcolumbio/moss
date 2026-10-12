@@ -12,6 +12,15 @@ Known input -> known output in physical units. Groups:
   C. devices     - by-id resolution of the QT Py and the CP2102N lidar bridge,
                    the sentinels, the env overrides, the absolute state dir;
                    env_on, the one parser of the MOSS_* on/off switches
+  S. the speed   - tools/speed_guard.py: the speed comes from the LOG's own
+     guard         timestamps, one interval over the profile's 0.45 m/s ceiling
+                   is a kill (exploration stop, then the stack down), the
+                   planner's 0.385 m/s cruise is not, a ceiling at or under that
+                   cruise is refused, a run that is over makes the watchdog stand
+                   down, the pid file is ours
+  T. arming      - tools/arm_speed_guard.sh REPLACES the previous run's
+                   watchdog (killed by its pid, the new one proven born after the
+                   launch), and refuses without that proof or below the cruise
   L. the log     - outside dimOS the warnings go to the stdlib logger (stderr)
                    and dimOS is never imported; inside a dimOS process they
                    land in the run's main.jsonl (subprocess; needs dimOS)
@@ -24,7 +33,8 @@ Known input -> known output in physical units. Groups:
                    lidar lift and depth projection follow the profile
 
 A-C need nothing. L needs dimOS for its main.jsonl half (SKIPPED with a line
-without it). D and E import the modules: with dimOS when it is there, else
+without it). S and T need dimos_lcm (tools/explore_ctl.py imports it; SKIPPED
+with a line without it) and Linux's /proc. D and E import the modules: with dimOS when it is there, else
 behind a stand-in for every dimOS name - the functions under test are pure
 numpy and never touch dimOS objects. A reader module that does not import,
 or lacks a function under test, is a KO.
@@ -41,6 +51,7 @@ import importlib.machinery
 import logging
 import math
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -112,6 +123,7 @@ check("width 0.34, pivot 0.50, margin 0.05, track 0.266 m",
       (M.robot_width_m, M.pivot_diameter_m, M.control_margin_m, M.track_m) == (0.34, 0.50, 0.05, 0.266))
 check("camera (0.156, 0, 0.075) m, pitch 0",
       M.camera_xyz_base_m == (0.156, 0.0, 0.075) and M.camera_pitch_deg == 0.0)
+check("speed ceiling 0.45 m/s (tools/speed_guard.py's limit)", M.max_speed_mps == 0.45)
 dm = rp.derived(M)
 check("lethal clearance 0.22 m, pivot clearance 0.25 m",
       close(dm.lethal_clearance_m, 0.22) and close(dm.pivot_clearance_m, 0.25),
@@ -122,8 +134,8 @@ fields = {f.name for f in dataclasses.fields(rp.RobotProfile)}
 want = {"name", "lidar_height_m", "lidar_yaw_offset_deg", "scan_min_range_m",
         "scan_mask_sectors_deg", "scan_mask_range_m", "body_box_m", "body_clear_m",
         "robot_width_m", "pivot_diameter_m", "control_margin_m", "track_m",
-        "camera_xyz_base_m", "camera_pitch_deg"}
-check("RobotProfile holds exactly the 14 fields MOSS reads", fields == want,
+        "camera_xyz_base_m", "camera_pitch_deg", "max_speed_mps"}
+check("RobotProfile holds exactly the 15 fields MOSS reads", fields == want,
       f"extra {sorted(fields - want)}, missing {sorted(want - fields)}")
 check("every numeric field has its MOSS_* override",
       set(rp._MOSS_ENV) == want - {"name"}, f"{sorted(set(rp._MOSS_ENV) ^ (want - {'name'}))}")
@@ -179,6 +191,11 @@ os.environ["MOSS_LIDAR_HEIGHT_M"] = "nan"
 check("MOSS_LIDAR_HEIGHT_M=nan -> placeholder kept (finite numbers only)", rp.current().lidar_height_m == 0.20)
 os.environ["MOSS_LIDAR_HEIGHT_M"] = "0.215"
 check("MOSS_LIDAR_HEIGHT_M=0.215 -> 0.215 m", rp.current().lidar_height_m == 0.215)
+os.environ["MOSS_MAX_SPEED_MPS"] = "0.5"
+check("MOSS_MAX_SPEED_MPS=0.5 -> a 0.50 m/s ceiling, read now", rp.current().max_speed_mps == 0.5)
+os.environ["MOSS_MAX_SPEED_MPS"] = "fast"
+check("MOSS_MAX_SPEED_MPS=fast -> placeholder 0.45 kept", rp.current().max_speed_mps == 0.45)
+os.environ.pop("MOSS_MAX_SPEED_MPS", None)
 check("an explicit env dict wins over os.environ",
       rp.current({"MOSS_LIDAR_HEIGHT_M": "0.30"}).lidar_height_m == 0.30)
 clear_env()
@@ -295,6 +312,627 @@ with tempfile.TemporaryDirectory() as _run:
               _ok, "" if _ok else f"events {_events} stderr {_r.stderr.strip()[-300:]!r}")
         _ok = "HEIGHT 0.2" in _r.stdout
         check("... with the placeholder kept (0.2 m)", _ok, "" if _ok else f"stdout {_r.stdout.strip()[-200:]!r}")
+
+
+# ── S. the speed guard: tools/speed_guard.py ─────────────────────────────
+print("S. the speed guard: speed from the log's own timestamps, one interval over the profile's ceiling is a kill")
+import importlib.util  # noqa: E402
+import io  # noqa: E402
+import json  # noqa: E402
+from contextlib import redirect_stdout  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+
+clear_env()
+SG = EC = None
+SKIP_GUARD = None
+sys.path.insert(0, str(ROOT / "tools"))
+try:
+    import explore_ctl as EC  # noqa: E402
+    import speed_guard as SG  # noqa: E402
+except ImportError as exc:
+    if importlib.util.find_spec("dimos_lcm") is None:
+        SKIP_GUARD = f"no dimos_lcm here ({exc}): run this where dimOS is installed"
+    else:
+        check("tools/speed_guard.py imports", False, f"{type(exc).__name__}: {exc}")
+if SKIP_GUARD:
+    print(f"  -- SKIP S and T: {SKIP_GUARD}")
+
+T0 = 1_800_000_000.25           # a known epoch, in seconds
+STEP_S = 2.0                    # LidarOdometry's log_every_s: the cadence of the odom lines
+ODOM_LOGGER = "/home/x/moss/moss_dimos/lidar_odometry.py"
+
+
+def iso(t):
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+
+
+def odom_line(n, t, x, y):
+    """One line shaped like the robot's own: structlog jsonl, %+.3f positions."""
+    return json.dumps({
+        "event": f"lidar odom #{n}: x={x:+.3f} y={y:+.3f} yaw=+0.0deg (380 pts, 31.0 ms, prior gyro, "
+                 "depth cloud 274 pts) | gyro integral x=+0.0 y=-1.1 z=-0.2deg | wheels none",
+        "level": "info", "logger": ODOM_LOGGER, "timestamp": iso(t),
+        "func_name": "handle_pointcloud", "lineno": 535,
+    })
+
+
+def straight_run(speed, steps=5, step_s=STEP_S):
+    """Lines for a body going straight at `speed` m/s, one line every `step_s`."""
+    return [odom_line(20 * i + 1, T0 + i * step_s, i * speed * step_s, 0.0) for i in range(steps + 1)]
+
+
+def one_line(out) -> str:
+    """Captured output on one line, for a check's detail."""
+    text = out.getvalue() if hasattr(out, "getvalue") else str(out)
+    return " / ".join(t for t in text.strip().splitlines() if t)
+
+
+def lines_with(out: str, text: str) -> str:
+    return " / ".join(t for t in out.splitlines() if text in t) or "(none)"
+
+
+if SG is not None:
+    check("the limit is the profile's max_speed_mps: 0.45 m/s", SG.LIMIT_MS == 0.45 == rp.MOSS.max_speed_mps,
+          f"{SG.LIMIT_MS}")
+    check("limit_ms() reads MOSS_MAX_SPEED_MPS (0.5 -> 0.50 m/s)", SG.limit_ms({"MOSS_MAX_SPEED_MPS": "0.5"}) == 0.5)
+
+    # the ceiling against the speed the stack itself commands
+    check("cruise = 0.55 m/s x the launcher's 0.7 = 0.385 m/s (MOSS_NERF_SPEED unset)",
+          abs(SG.cruise_mps({}) - 0.385) < 1e-12, f"{SG.cruise_mps({}):.4f}")
+    check("MOSS_NERF_SPEED=0.5 -> 0.275 m/s; 1.0 (and above, and junk -> the default) as dimOS applies it",
+          abs(SG.cruise_mps({"MOSS_NERF_SPEED": "0.5"}) - 0.275) < 1e-12
+          and SG.cruise_mps({"MOSS_NERF_SPEED": "1.0"}) == 0.55 and SG.cruise_mps({"MOSS_NERF_SPEED": "2"}) == 0.55
+          and abs(SG.cruise_mps({"MOSS_NERF_SPEED": "fast"}) - 0.385) < 1e-12)
+    check("the profile's 0.45 m/s sits above that cruise: armed", SG.ceiling_refusal(0.45, SG.cruise_mps({})) is None)
+    why = SG.ceiling_refusal(0.30, SG.cruise_mps({}))
+    check("a 0.30 m/s ceiling under the 0.385 m/s cruise is refused, and says what to raise",
+          why is not None and "0.385" in why and "MOSS_MAX_SPEED_MPS" in why, str(why))
+    check("a ceiling equal to the cruise is refused too",
+          SG.ceiling_refusal(0.55, SG.cruise_mps({"MOSS_NERF_SPEED": "1"})) is not None)
+    _fly = (ROOT / "tools" / "moss-fly.sh").read_text()
+    _m = re.search(r'NERF_SPEED="\$\{MOSS_NERF_SPEED:-([0-9.]+)\}"', _fly)
+    check("the cruise's default scale is tools/moss-fly.sh's own (NERF_SPEED default)",
+          _m is not None and float(_m.group(1)) == SG.NERF_SPEED_DEFAULT,
+          f"launcher {_m.group(1) if _m else None}, guard {SG.NERF_SPEED_DEFAULT}")
+    _spec = importlib.util.find_spec("dimos")
+    _lp = Path(_spec.origin).parent / "navigation" / "replanning_a_star" / "local_planner.py" if _spec and _spec.origin else None
+    if _lp is None or not _lp.is_file():
+        print("  -- SKIP the planner-speed check: no dimOS source here")
+    else:
+        _speed = None
+        for _node in ast.walk(ast.parse(_lp.read_text())):
+            if isinstance(_node, ast.ClassDef) and _node.name == "LocalPlanner":
+                for _st in _node.body:
+                    if (isinstance(_st, ast.AnnAssign) and getattr(_st.target, "id", "") == "_speed"
+                            and isinstance(_st.value, ast.Constant)):
+                        _speed = _st.value.value
+        check("the cruise's 0.55 m/s is dimOS's own LocalPlanner._speed", _speed == SG.PLANNER_SPEED_MPS,
+              f"dimOS {_speed}, guard {SG.PLANNER_SPEED_MPS}")
+
+    # dating the lines
+    sample = SG.parse_odom(odom_line(1, T0, 0.0, 0.0))
+    check("a real-shaped odom line parses", sample is not None)
+    check(f"its stamp comes back as {T0} s", sample is not None and abs(sample[0] - T0) < 1e-6,
+          f"{sample[0]:.6f}" if sample else "")
+    later = SG.parse_odom(odom_line(21, T0 + STEP_S, 1.0, 0.0))
+    check("two lines 2 s apart -> 2.000 s of log time", abs((later[0] - sample[0]) - 2.0) < 1e-6,
+          f"{later[0] - sample[0]:.6f} s")
+
+    # runaway at 0.5 m/s
+    guard = SG.SpeedGuard()
+    speeds, kills = [], []
+    for i, line in enumerate(straight_run(0.5)):
+        v = guard.feed(line)
+        if v is not None:
+            speeds.append(v)
+            if v > SG.LIMIT_MS:
+                kills.append(i)
+    check("6 lines -> 5 intervals (the first line closes none)", len(speeds) == 5, f"{len(speeds)}")
+    check("every interval measures 0.50 m/s", all(abs(v - 0.5) < 1e-9 for v in speeds),
+          ", ".join(f"{v:.3f}" for v in speeds))
+    check("the SECOND line already breaches (1 interval = 1 kill, ~1 m of runaway)", kills[:1] == [1], f"{kills}")
+    check("no strike counter: all 5 intervals breach", len(kills) == 5, f"{kills}")
+
+    # inside the 0.45 m/s ceiling
+    guard = SG.SpeedGuard()
+    measured = [v for v in (guard.feed(line) for line in straight_run(0.25)) if v is not None]
+    check("0.500 m per 2 s line -> every interval 0.25 m/s", len(measured) == 5 and all(abs(v - 0.25) < 1e-9 for v in measured))
+    guard = SG.SpeedGuard()
+    check("the planner's cruise, 0.385 m/s (0.770 m per line), stays silent",
+          all(guard.breach(line) is None for line in straight_run(0.385)))
+    guard = SG.SpeedGuard()
+    check("0.44 m/s (0.880 m per line) stays silent", all(guard.breach(line) is None for line in straight_run(0.44)))
+    guard = SG.SpeedGuard()
+    check("0.46 m/s (0.920 m per line) kills", any(guard.breach(line) is not None for line in straight_run(0.46)))
+    guard = SG.SpeedGuard(limit=0.50)
+    check("with MOSS_MAX_SPEED_MPS=0.5 the same 0.46 m/s stays silent",
+          all(guard.breach(line) is None for line in straight_run(0.46)))
+
+    # geometry: the chord, sign-free
+    guard = SG.SpeedGuard()
+    guard.feed(odom_line(1, T0, 0.0, 0.0))
+    v = guard.feed(odom_line(21, T0 + STEP_S, 0.6, 0.8))
+    check("dx 0.600 m, dy 0.800 m in 2 s -> 0.50 m/s (the chord, not one axis)", abs(v - 0.5) < 1e-9, f"{v:.6f}")
+    guard = SG.SpeedGuard()
+    guard.feed(odom_line(1, T0, 5.0, -3.0))
+    v = guard.feed(odom_line(21, T0 + STEP_S, 5.0, -3.5))
+    check("0.500 m backwards on y in 2 s -> 0.25 m/s (sign-free)", abs(v - 0.25) < 1e-9, f"{v:.6f}")
+
+    # the cadence: the log's own interval jitters around 2 s
+    gaps = [1.699, 2.4, 3.071, 1.9, 2.0, 2.65, 1.75, 3.0, 2.2, 2.05]
+    lines, t, x = [], T0, 0.0
+    lines.append(odom_line(1, t, x, 0.0))
+    for k, g in enumerate(gaps):
+        t += g; x += 0.149 * g
+        lines.append(odom_line(20 * (k + 1), t, x, 0.0))
+    guard = SG.SpeedGuard()
+    crawl = [v for v in (guard.feed(line) for line in lines) if v is not None]
+    check("a 0.149 m/s crawl with gaps of 1.699 to 3.071 s: all 10 intervals measured",
+          len(crawl) == 10 and all(abs(v - 0.149) < 1e-3 for v in crawl), f"{len(crawl)}: {[round(v, 3) for v in crawl]}")
+    check("(a wall-clock window 0.02 < dt < 2.0 would keep only 3 of them)", sum(1 for g in gaps if 0.02 < g < 2.0) == 3)
+    guard = SG.SpeedGuard()
+    check("and the crawl never trips the 0.45 m/s ceiling", all(guard.breach(line) is None for line in lines))
+
+    # the kill: exploration stop on the bus, then the stack down
+    TMPS = tempfile.TemporaryDirectory()
+    STOP_LOG = Path(TMPS.name) / "stack_stop.log"
+    RECORDER = Path(TMPS.name) / "stack_stop.py"
+    RECORDER.write_text("import os, sys\n"
+                        "open(sys.argv[1], 'a').write(os.getcwd() + '\\n')\n"
+                        "print('stack down')\n")
+    published = []
+    saved_pub, saved_stop = EC.publish, SG.STACK_STOP
+    try:
+        EC.publish = lambda cmd: published.append(cmd) or f"/{cmd}_explore_cmd#std_msgs.Bool"
+        SG.STACK_STOP = [sys.executable, str(RECORDER), str(STOP_LOG)]
+        out = io.StringIO()
+        with redirect_stdout(out):
+            SG.stop_all()
+        ran = STOP_LOG.read_text().splitlines() if STOP_LOG.exists() else []
+        check("a breach publishes exactly one 'stop' through explore_ctl (the run's bus)",
+              published == ["stop"] and "STOP EXPLORE published on /stop_explore_cmd" in out.getvalue(), one_line(out))
+        check("then runs the stack stop once, from the checkout root (tools/moss-fly.sh stop by default)",
+              ran == [str(ROOT)] and "STACK STOP" in out.getvalue() and "exit 0: stack down" in out.getvalue(),
+              f"{ran}")
+        check("the default stack stop is tools/moss-fly.sh stop",
+              saved_stop == ["tools/moss-fly.sh", "stop"] if "SPEED_GUARD_STACK_STOP" not in os.environ else True,
+              f"{saved_stop}")
+
+        def sick(cmd):
+            raise RuntimeError("bus down")
+
+        EC.publish = sick
+        out = io.StringIO()
+        with redirect_stdout(out):
+            SG.stop_all()   # must not raise: the watchdog keeps watching
+        ran = STOP_LOG.read_text().splitlines()
+        check("a failing bus is logged, not fatal, and the stack still goes down",
+              "STOP EXPLORE FAILED: bus down" in out.getvalue() and len(ran) == 2, one_line(out))
+        SG.STACK_STOP = [str(Path(TMPS.name) / "no_such_launcher")]
+        out = io.StringIO()
+        with redirect_stdout(out):
+            SG.stop_all()
+        check("a missing launcher is logged, not fatal", "STACK STOP FAILED" in out.getvalue(), one_line(out)[-120:])
+    finally:
+        EC.publish, SG.STACK_STOP = saved_pub, saved_stop
+
+    # junk invents nothing
+    guard = SG.SpeedGuard()
+    guard.feed(odom_line(1, T0, 0.0, 0.0))
+    check("a non-odom line -> None", guard.feed('{"event": "BUMP received", "timestamp": "' + iso(T0 + 1) + '"}') is None)
+    check("an odom line with no timestamp -> None (no wall clock fallback)",
+          guard.feed("lidar odom #7: x=+9.000 y=+9.000 yaw=+0.0deg") is None)
+    check("tail's '==> file <==' header -> None", guard.feed("==> /tmp/moss_fly_launch.log <==\n") is None)
+    check("a line dated BEFORE the previous one -> None", guard.feed(odom_line(41, T0 - 5.0, 9.0, 9.0)) is None)
+    guard = SG.SpeedGuard()
+    guard.feed(odom_line(1, T0, 0.0, 0.0))
+    check("a repeated line (same stamp, dt = 0) -> None, no division", guard.feed(odom_line(1, T0, 0.0, 0.0)) is None)
+    guard = SG.SpeedGuard()
+    lines = straight_run(0.5)
+    lines.insert(3, '{"event": "costmap tick", "timestamp": "' + iso(T0 + 2.5) + '"}')
+    check("junk between odom lines does not break the chain", sum(1 for line in lines if guard.breach(line) is not None) == 5)
+
+    # standing down (fake clock, fake log tree, fake registry)
+    LOGS = Path(TMPS.name) / "state" / "dimos" / "logs"
+    RUNS = Path(TMPS.name) / "state" / "dimos" / "runs"
+    LOGS.mkdir(parents=True); RUNS.mkdir(parents=True)
+    GLOB, RGLOB = str(LOGS / "*"), str(RUNS / "*.json")
+
+    class Clock:
+        def __init__(self, t=1_000_000.0):
+            self.t = t
+
+        def __call__(self):
+            return self.t
+
+    def make_run(parent, name, lines=1, mtime=None):
+        run = Path(parent) / name
+        run.mkdir(parents=True, exist_ok=True)
+        (run / "main.jsonl").write_text("".join(odom_line(i, T0 + i * STEP_S, 0.0, 0.0) + "\n" for i in range(lines)))
+        if mtime:
+            os.utime(run, (mtime, mtime))
+        return run
+
+    RUN_A = make_run(LOGS, "run-a-moss-dimos-moss-explore", lines=2, mtime=T0)
+    clk = Clock()
+    watch = SG.RunWatch(str(RUN_A), idle_s=30.0, glob_pat=GLOB, clock=clk, runs_glob=RGLOB)
+    check("a fresh watchdog on the live run stays on watch", watch.reason() is None)
+    clk.t += 10.0
+    with open(RUN_A / "main.jsonl", "a") as f:
+        f.write(odom_line(9, T0 + 20.0, 0.1, 0.0) + "\n")
+    check("the log grew: still on watch, the idle clock restarts", watch.reason() is None)
+    clk.t += 29.0
+    check("29 s of silence: still on watch (limit 30 s)", watch.reason() is None)
+    clk.t += 2.0
+    why = watch.reason()
+    check("31 s of silence: stands down, and says so in seconds",
+          why is not None and "has not grown for 31 s (limit 30 s)" in why, str(why))
+    clk = Clock()
+    edge = SG.RunWatch(str(RUN_A), idle_s=30.0, glob_pat=GLOB, clock=clk, runs_glob=RGLOB)
+    clk.t += 29.999
+    check("29.999 s: not yet", edge.reason() is None)
+    clk.t += 0.001
+    check("exactly 30.000 s: retired", edge.reason() is not None)
+    orphan = SG.RunWatch(str(RUN_A), idle_s=1e6, glob_pat=GLOB, clock=Clock(), runs_glob=RGLOB)
+    check("still the newest run: on watch", orphan.reason() is None)
+    RUN_B = make_run(LOGS, "run-b-moss-dimos-moss-explore", lines=1, mtime=T0 + 3600)
+    why = orphan.reason()
+    check("a newer run dir retires the orphan at once (idle limit not even reached)",
+          why is not None and RUN_B.name in why and "newest run" in why, str(why))
+    live = SG.RunWatch(str(RUN_B), idle_s=1e6, glob_pat=GLOB, clock=Clock(), runs_glob=RGLOB)
+    check("the watchdog of the NEWEST run keeps watching", live.reason() is None)
+    # a dimOS from a git clone logs under the clone: only the registry names the dir
+    CLONE = Path(TMPS.name) / "clone" / "logs"
+    RUN_C = make_run(CLONE, "run-c-moss-dimos-moss-explore", lines=1, mtime=T0 + 7200)
+    check("a run dir outside the log root is not seen without its registry entry",
+          str(RUN_C.resolve()) not in SG.run_dirs(GLOB, RGLOB))
+    (RUNS / "run-c.json").write_text(json.dumps({"pid": 1, "blueprint": "moss_dimos.moss-explore", "log_dir": str(RUN_C)}))
+    (RUNS / "half-written.json").write_text('{"pid": 1, "log_')
+    check("with its registry entry it is the newest (a half-written entry is skipped)",
+          SG.run_dirs(GLOB, RGLOB)[-1] == str(RUN_C.resolve()), f"{SG.run_dirs(GLOB, RGLOB)[-1:]}")
+    why = live.reason()
+    check("so a run started from a clone retires the previous watchdog too",
+          why is not None and RUN_C.name in why, str(why))
+    (RUNS / "run-c.json").unlink()
+    mine = SG.RunWatch(str(RUN_C), idle_s=1e6, glob_pat=GLOB, clock=Clock(), runs_glob=RGLOB)
+    check("a watchdog given its run dir (SPEED_GUARD_RUN_DIR) whose registry entry is gone does not retire "
+          "for an OLDER dir", mine.reason() is None)
+    CRASHED = LOGS / "run-d-moss-dimos-moss-explore"     # newest run, but the stack died before writing
+    CRASHED.mkdir()
+    os.utime(CRASHED, (T0 + 9000, T0 + 9000))
+    clk = Clock()
+    dead = SG.RunWatch(str(CRASHED), idle_s=30.0, glob_pat=GLOB, clock=clk, runs_glob=RGLOB)
+    check("a newest run dir with no main.jsonl: on watch while the limit runs", dead.reason() is None)
+    clk.t += 30.0
+    why = dead.reason()
+    check("... and retired by the same silence, not left tailing nothing",
+          why is not None and "has not grown for 30 s" in why, str(why))
+    check("defaults: 30 s idle, /tmp/moss_speed_guard.pid",
+          (SG.IDLE_S, SG.PID_FILE) == (30.0, "/tmp/moss_speed_guard.pid")
+          if not (os.environ.get("SPEED_GUARD_IDLE_S") or os.environ.get("SPEED_GUARD_PID_FILE")) else True,
+          f"{SG.IDLE_S} s, {SG.PID_FILE}")
+
+    # the pid file the launcher kills by
+    PID_PATH = str(Path(TMPS.name) / "guard.pid")
+    SG.write_pid_file(PID_PATH)
+    check("write_pid_file stamps our own pid", Path(PID_PATH).read_text().strip() == str(os.getpid()))
+    Path(PID_PATH).write_text("999999\n")
+    SG.clear_pid_file(PID_PATH)
+    check("clear_pid_file leaves a file that names ANOTHER watchdog", Path(PID_PATH).exists())
+    Path(PID_PATH).write_text(f"{os.getpid()}\n")
+    SG.clear_pid_file(PID_PATH)
+    check("and removes it when it names us", not Path(PID_PATH).exists())
+    SG.clear_pid_file(PID_PATH)
+    check("clearing a pid file that is already gone is harmless", not Path(PID_PATH).exists())
+
+    # the real script
+    def guard_env(home, **extra):
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith(("MOSS_", "SPEED_GUARD_")) and k != "XDG_STATE_HOME"}
+        env.update({"HOME": str(home), "PYTHONPATH": str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""),
+                    "PYTHONDONTWRITEBYTECODE": "1", "SPEED_GUARD_PID_FILE": str(Path(home) / "guard.pid"),
+                    "SPEED_GUARD_STACK_STOP": f"{sys.executable} {RECORDER} {Path(home) / 'stack_stop.log'}"})
+        env.update({k: str(v) for k, v in extra.items()})
+        return env
+
+    def run_guard(home, timeout_s=30, after_start=None, **extra):
+        """Launch tools/speed_guard.py for real against a fake HOME; returns
+        (returncode, seconds, stdout, stamped pid, pid, pid file)."""
+        env = guard_env(home, **extra)
+        pid_file = env["SPEED_GUARD_PID_FILE"]
+        t0 = time.monotonic()
+        proc = subprocess.Popen([sys.executable, str(ROOT / "tools" / "speed_guard.py")],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, cwd=str(ROOT))
+        stamped = None
+        while time.monotonic() - t0 < timeout_s and proc.poll() is None:
+            if Path(pid_file).exists():
+                stamped = Path(pid_file).read_text().strip()
+                break
+            time.sleep(0.05)
+        if after_start:
+            after_start()
+        try:
+            out = proc.communicate(timeout=timeout_s)[0]
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out = proc.communicate()[0]
+        return proc.returncode, time.monotonic() - t0, out, stamped, proc.pid, pid_file
+
+    HOME1 = Path(TMPS.name) / "orphan_home"
+    LOGS1 = HOME1 / ".local" / "state" / "dimos" / "logs" / "run-a-moss-dimos-moss-explore"
+    LOGS1.mkdir(parents=True)
+    (LOGS1 / "main.jsonl").write_text(odom_line(1, T0, 0.0, 0.0) + "\n")   # written once, never again
+    rc, took, out, stamped, pid, pid_file = run_guard(HOME1, SPEED_GUARD_IDLE_S=1.0, SPEED_GUARD_POLL_S=0.2)
+    check("the real script stamped its own pid while running", stamped == str(pid), f"{stamped} vs {pid}")
+    check("it exits by itself on a dead log, rc 0", rc == 0, f"rc {rc} after {took:.1f} s")
+    check("in seconds (idle limit 1 s here, 30 s on the robot)", took < 35.0, f"{took:.1f} s")
+    check("with a clear message naming the silent log", "standing down" in out and "has not grown" in out,
+          out.strip().splitlines()[-1] if out.strip() else "(no output)")
+    check("and it watched with the profile's 0.45 m/s limit, the 0.385 m/s cruise said beside it",
+          "(limit 0.45 m/s, cruise 0.385 m/s commanded" in out, out.strip().splitlines()[0] if out.strip() else "")
+    check("the pid file is cleaned up behind it", not Path(pid_file).exists())
+
+    HOME2 = Path(TMPS.name) / "second_run_home"
+    LOGS2 = HOME2 / ".local" / "state" / "dimos" / "logs"
+    (LOGS2 / "run-a-moss-dimos-moss-explore").mkdir(parents=True)
+    (LOGS2 / "run-a-moss-dimos-moss-explore" / "main.jsonl").write_text(odom_line(1, T0, 0.0, 0.0) + "\n")
+    NEXT_RUN = LOGS2 / "run-b-moss-dimos-moss-explore"
+
+    def start_second_run():
+        NEXT_RUN.mkdir()
+        (NEXT_RUN / "main.jsonl").write_text(odom_line(1, T0 + 3600, 0.0, 0.0) + "\n")
+
+    rc, took, out, stamped, pid, pid_file = run_guard(HOME2, after_start=start_second_run,
+                                                      SPEED_GUARD_IDLE_S=1e6, SPEED_GUARD_POLL_S=0.2)
+    check("the previous run's watchdog retires when the next run starts", rc == 0, f"rc {rc} after {took:.1f} s")
+    check("it names the newer run (idle limit 1e6 s: it cannot be the silence)",
+          NEXT_RUN.name in out and "newest run" in out, out.strip().splitlines()[-1] if out.strip() else "(no output)")
+
+    # a runaway on a live log, end to end: the bus refused (not LCM here), the stack still stopped
+    HOME3 = Path(TMPS.name) / "runaway_home"
+    RUN3 = HOME3 / ".local" / "state" / "dimos" / "logs" / "run-a-moss-dimos-moss-explore"
+    RUN3.mkdir(parents=True)
+    (RUN3 / "main.jsonl").write_text("")
+
+    def runaway():
+        time.sleep(0.5)                               # the tail is up
+        with open(RUN3 / "main.jsonl", "a") as f:
+            for line in straight_run(0.5, steps=1):   # 1.000 m in 2 s of log time
+                f.write(line + "\n")
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline and not (HOME3 / "stack_stop.log").exists():
+            time.sleep(0.05)
+        time.sleep(0.3)
+
+    rc, took, out, stamped, pid, pid_file = run_guard(HOME3, after_start=runaway, SPEED_GUARD_IDLE_S=2.0,
+                                                      SPEED_GUARD_POLL_S=0.2, SPEED_GUARD_RUN_DIR=RUN3,
+                                                      DIMOS_TRANSPORT="zenoh")
+    stopped = (HOME3 / "stack_stop.log").read_text().splitlines() if (HOME3 / "stack_stop.log").exists() else []
+    check("a 0.50 m/s interval in the run's log -> the real watchdog says so",
+          "0.50 m/s over the 0.45 m/s envelope" in out, lines_with(out, "envelope"))
+    check("its bus stop is refused off LCM and logged, not fatal",
+          "STOP EXPLORE FAILED" in out and "LCM only" in out, lines_with(out, "STOP EXPLORE")[:160])
+    check("and the stack stop ran, once, from the checkout root", stopped == [str(ROOT)], f"{stopped}")
+
+    HOME4 = Path(TMPS.name) / "killed_home"
+    RUN4 = HOME4 / ".local" / "state" / "dimos" / "logs" / "run-a-moss-dimos-moss-explore"
+    RUN4.mkdir(parents=True)
+    (RUN4 / "main.jsonl").write_text(odom_line(1, T0, 0.0, 0.0) + "\n")
+    env4 = guard_env(HOME4, SPEED_GUARD_IDLE_S="1e6", SPEED_GUARD_POLL_S="0.2", MOSS_MAX_SPEED_MPS="0.5")
+    killed = subprocess.Popen([sys.executable, str(ROOT / "tools" / "speed_guard.py")],
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env4, cwd=str(ROOT))
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline and not Path(env4["SPEED_GUARD_PID_FILE"]).exists():
+        time.sleep(0.05)
+    stamped = Path(env4["SPEED_GUARD_PID_FILE"]).read_text().strip() if Path(env4["SPEED_GUARD_PID_FILE"]).exists() else None
+    if stamped:
+        os.kill(int(stamped), 15)      # exactly what the arm script does: kill the pid in the file
+    try:
+        out4 = killed.communicate(timeout=15)[0]
+        dead_ok = True
+    except subprocess.TimeoutExpired:
+        killed.kill()
+        out4 = killed.communicate()[0]
+        dead_ok = False
+    check("killed by the pid in its file, it dies, rc 0", dead_ok and killed.returncode == 0, f"rc {killed.returncode}")
+    check("and takes its pid file with it", not Path(env4["SPEED_GUARD_PID_FILE"]).exists())
+    check("MOSS_MAX_SPEED_MPS=0.5 in its environment -> it watched with 0.5 m/s", "(limit 0.5 m/s" in out4,
+          out4.strip().splitlines()[0] if out4.strip() else "(no output)")
+
+    # a ceiling the stack's own cruise would cross: the real script refuses to watch
+    HOME5 = Path(TMPS.name) / "low_ceiling_home"
+    RUN5 = HOME5 / ".local" / "state" / "dimos" / "logs" / "run-a-moss-dimos-moss-explore"
+    RUN5.mkdir(parents=True)
+    (RUN5 / "main.jsonl").write_text(odom_line(1, T0, 0.0, 0.0) + "\n")
+    rc, took, out, stamped, pid, pid_file = run_guard(HOME5, timeout_s=20, MOSS_MAX_SPEED_MPS="0.30")
+    check("MOSS_MAX_SPEED_MPS=0.30 (under the 0.385 m/s cruise): exit 1, no pid file ever, the reason said",
+          rc == 1 and stamped is None and not Path(pid_file).exists() and "not above the planner's cruise 0.385" in out,
+          out.strip()[-160:])
+    rc, took, out, stamped, pid, pid_file = run_guard(HOME5, timeout_s=20, MOSS_NERF_SPEED="1.0")
+    check("MOSS_NERF_SPEED=1.0 (a 0.55 m/s cruise) under the 0.45 m/s ceiling: refused the same way",
+          rc == 1 and stamped is None and "cruise 0.550" in out, out.strip()[-160:])
+
+
+# ── T. arming: tools/arm_speed_guard.sh ──────────────────────────────────
+if SG is not None:
+    print("T. tools/arm_speed_guard.sh REPLACES the previous run's watchdog, by pid, and proves the new one")
+    ARM = ROOT / "tools" / "arm_speed_guard.sh"
+    CLK_TCK = os.sysconf("SC_CLK_TCK")
+    SPAWNED = []
+
+    def uptime_s() -> int:
+        return int(float(Path("/proc/uptime").read_text().split()[0]))
+
+    def born_s(pid) -> int:
+        raw = Path(f"/proc/{pid}/stat").read_text()
+        return int(raw.split(") ", 1)[1].split()[19]) // CLK_TCK
+
+    def alive(pid) -> bool:
+        try:
+            raw = Path(f"/proc/{int(pid)}/stat").read_text()
+        except (OSError, ValueError, TypeError):
+            return False
+        return raw.split(") ", 1)[1].split()[0] != "Z"
+
+    def wait_dead(pid, timeout_s=5.0) -> bool:
+        end = time.monotonic() + timeout_s
+        while time.monotonic() < end and alive(pid):
+            time.sleep(0.05)
+        return not alive(pid)
+
+    TMPT = tempfile.TemporaryDirectory()
+    FAKE_DIR = Path(TMPT.name) / "fake"
+    FAKE_DIR.mkdir()
+    FAKE = FAKE_DIR / "speed_guard.py"      # same name: /proc/<pid>/cmdline says speed_guard.py
+    FAKE.write_text("import os, time\n"
+                    "open(os.environ['SPEED_GUARD_PID_FILE'], 'w').write(f'{os.getpid()}\\n')\n"
+                    "time.sleep(600)\n")
+    DEAD = FAKE_DIR / "dies_at_once.py"
+    DEAD.write_text("import sys\nsys.exit('no dimos run logs found')\n")
+    LIAR = FAKE_DIR / "stamps_an_old_pid.py"
+    LIAR.write_text("import os\nopen(os.environ['SPEED_GUARD_PID_FILE'], 'w').write(os.environ['OLD_PID'] + '\\n')\n")
+    INNOCENT = FAKE_DIR / "innocent_worker.py"
+    INNOCENT.write_text("import time\ntime.sleep(600)\n")
+
+    def spawn(script, env_extra=None):
+        p = subprocess.Popen([sys.executable, str(script)], env={**os.environ, **(env_extra or {})},
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        SPAWNED.append(p)
+        return p
+
+    def run_arm(pid_file, guard_py=None, extra=None, args=(), timeout_s=60):
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("MOSS_", "SPEED_GUARD_"))}
+        env.update({"SPEED_GUARD_PID_FILE": str(pid_file), "SPEED_GUARD_PYTHON": sys.executable,
+                    "SPEED_GUARD_LOG": str(Path(pid_file).with_suffix(".log")), "SPEED_GUARD_ARM_DEADLINE_S": "20",
+                    "PYTHONPATH": str(ROOT) + os.pathsep + os.environ.get("PYTHONPATH", ""),
+                    "PYTHONDONTWRITEBYTECODE": "1"})
+        if guard_py:
+            env["SPEED_GUARD_PY"] = str(guard_py)
+        env.update(extra or {})
+        mark = uptime_s()
+        t0 = time.monotonic()
+        r = subprocess.run(["bash", str(ARM), *args], env=env, cwd=str(ROOT), text=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout_s)
+        return r.returncode, r.stdout, time.monotonic() - t0, mark
+
+    def wait_pid_file(path, timeout_s=20.0):
+        end = time.monotonic() + timeout_s
+        while time.monotonic() < end:
+            try:
+                return int(Path(path).read_text().strip())
+            except (OSError, ValueError):
+                time.sleep(0.05)
+        return None
+
+    def first(out):
+        return out.strip().splitlines()[0] if out.strip() else "(silence)"
+
+    def last(out):
+        return out.strip().splitlines()[-1] if out.strip() else "(silence)"
+
+    check("the arm script parses", subprocess.run(["bash", "-n", str(ARM)]).returncode == 0)
+    PID_A = Path(TMPT.name) / "a.pid"
+    spawn(FAKE, {"SPEED_GUARD_PID_FILE": str(PID_A)})
+    OLD_A = wait_pid_file(PID_A)
+    OLD_BORN = born_s(OLD_A)
+    time.sleep(1.2)                      # so the two births land in different seconds
+    rc, out, took, mark = run_arm(PID_A, guard_py=FAKE)
+    NEW_A = int(PID_A.read_text().strip())
+    check("the previous run's watchdog alive in the pid file: arming exits 0", rc == 0, f"rc {rc}")
+    check("the previous watchdog is DEAD, and the script says so", wait_dead(OLD_A) and "retired" in out, first(out))
+    check("the pid file names a DIFFERENT, live pid", NEW_A != OLD_A and alive(NEW_A), f"{OLD_A} -> {NEW_A}")
+    check("born AFTER the launch mark, the retired one BEFORE it", born_s(NEW_A) >= mark > OLD_BORN,
+          f"new born {born_s(NEW_A)} s, mark {mark} s, old born {OLD_BORN} s (since boot)")
+    check("it announces the armed pid and the profile's ceiling",
+          f"pid {NEW_A}" in out and "armed (stops the run beyond 0.45 m/s)" in out, last(out))
+    check("arming takes seconds", took < 10.0, f"{took:.1f} s")
+
+    PID_B = Path(TMPT.name) / "b.pid"
+    rc, out, took, mark = run_arm(PID_B, guard_py=FAKE)
+    NEW_B = int(PID_B.read_text().strip())
+    check("no pid file at all (first run after a boot): armed, rc 0, born after the mark",
+          rc == 0 and alive(NEW_B) and born_s(NEW_B) >= mark and "retired" not in out, f"rc {rc}, pid {NEW_B}")
+
+    DEAD_PID = subprocess.Popen([sys.executable, "-c", "pass"])
+    DEAD_PID.wait()
+    PID_C = Path(TMPT.name) / "c.pid"
+    PID_C.write_text(f"{DEAD_PID.pid}\n")
+    rc, out, took, mark = run_arm(PID_C, guard_py=FAKE)
+    NEW_C = int(PID_C.read_text().strip())
+    check("a stale pid file (its pid is gone): named stale, armed anyway",
+          rc == 0 and "stale pid file" in out and alive(NEW_C) and NEW_C != DEAD_PID.pid, first(out))
+
+    PID_D = Path(TMPT.name) / "d.pid"
+    victim = spawn(INNOCENT)
+    PID_D.write_text(f"{victim.pid}\n")
+    rc, out, took, mark = run_arm(PID_D, guard_py=FAKE)
+    NEW_D = int(PID_D.read_text().strip())
+    check("a pid file naming a live process that is NOT a watchdog: it is left alone",
+          rc == 0 and alive(victim.pid) and "not a speed guard" in out, first(out))
+    check("and a watchdog is armed beside it", alive(NEW_D) and NEW_D != victim.pid and born_s(NEW_D) >= mark)
+
+    PID_E = Path(TMPT.name) / "e.pid"
+    rc, out, took, mark = run_arm(PID_E, guard_py=DEAD, extra={"SPEED_GUARD_ARM_DEADLINE_S": "2"})
+    check("a watchdog that never comes up -> rc 1, the reason on screen, never 'armed'",
+          rc == 1 and "DID NOT COME UP" in out and "armed" not in out, out.strip()[-160:])
+    check("it refuses within its deadline", took < 8.0, f"{took:.1f} s")
+    PID_E2 = Path(TMPT.name) / "e2.pid"
+    elder = spawn(INNOCENT)
+    time.sleep(1.2)
+    rc, out, took, mark = run_arm(PID_E2, guard_py=LIAR, extra={"SPEED_GUARD_ARM_DEADLINE_S": "2", "OLD_PID": str(elder.pid)})
+    check("a pid file naming a LIVE process born BEFORE the launch -> rc 1 (liveness alone proves nothing)",
+          rc == 1 and born_s(elder.pid) < mark and alive(elder.pid), f"rc {rc}")
+    rc, out, took, mark = run_arm(Path(TMPT.name) / "f0.pid", guard_py=FAKE, args=(str(Path(TMPT.name) / "no_such_run"),))
+    check("a RUN_DIR that is not a directory -> rc 1, nothing launched", rc == 1 and "IS NOT A DIRECTORY" in out, last(out))
+
+    HOME_F = Path(TMPT.name) / "rover_home"
+    LOGS_F = HOME_F / ".local" / "state" / "dimos" / "logs"
+    RUN_OLD = LOGS_F / "run-a-moss-dimos-moss-explore"
+    RUN_NEW = LOGS_F / "run-b-moss-dimos-moss-explore"
+    for d in (RUN_OLD, RUN_NEW):
+        d.mkdir(parents=True)
+        (d / "main.jsonl").write_text(odom_line(1, T0, 0.0, 0.0) + "\n")
+    os.utime(RUN_OLD, (T0, T0))
+    os.utime(RUN_NEW, (T0 + 60, T0 + 60))
+    PID_F = Path(TMPT.name) / "f.pid"
+    env_f = {"HOME": str(HOME_F), "SPEED_GUARD_IDLE_S": "1e6", "SPEED_GUARD_POLL_S": "0.5"}
+    rc, out, took, mark = run_arm(PID_F, extra=env_f, args=(str(RUN_NEW),))
+    FIRST = int(PID_F.read_text().strip()) if PID_F.exists() else None
+    check("the REAL watchdog arms with the run dir given, rc 0", rc == 0 and FIRST is not None and alive(FIRST),
+          f"rc {rc}, pid {FIRST}")
+    guard_log = Path(str(PID_F.with_suffix(".log")))
+    for _ in range(40):
+        if "watching" in guard_log.read_text():
+            break
+        time.sleep(0.1)
+    check("and it tails THAT run's log", str(RUN_NEW / "main.jsonl") in guard_log.read_text(), first(guard_log.read_text()))
+    time.sleep(1.2)
+    rc, out, took, mark = run_arm(PID_F, extra=env_f, args=(str(RUN_NEW),))
+    SECOND = int(PID_F.read_text().strip()) if PID_F.exists() else None
+    check("armed again: rc 0 and the PID CHANGED (the arm replaced it)",
+          rc == 0 and SECOND is not None and SECOND != FIRST, f"{FIRST} -> {SECOND}")
+    check("the first real watchdog is dead, the second born after the second mark",
+          wait_dead(FIRST) and SECOND is not None and born_s(SECOND) >= mark)
+    if SECOND:
+        os.kill(SECOND, 15)
+        wait_dead(SECOND)
+    PID_G = Path(TMPT.name) / "g.pid"
+    rc, out, took, mark = run_arm(PID_G, extra={**env_f, "MOSS_MAX_SPEED_MPS": "0.30",
+                                                "SPEED_GUARD_ARM_DEADLINE_S": "3"}, args=(str(RUN_NEW),))
+    check("the REAL watchdog under a 0.30 m/s ceiling (below the cruise): arming fails, rc 1, the reason on screen",
+          rc == 1 and "DID NOT COME UP" in out and "not above the planner's cruise" in out and "armed (" not in out,
+          out.strip()[-200:])
+
+    for p in SPAWNED:
+        p.kill()
+    for p in SPAWNED:
+        p.wait()
+    for leftover in (PID_A, PID_B, PID_C, PID_D):
+        try:
+            os.kill(int(leftover.read_text().strip()), 9)
+        except (OSError, ValueError):
+            pass
+clear_env()
 
 
 # ── D/E need the modules: real dimOS, or a stand-in for every dimOS name ──

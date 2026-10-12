@@ -63,6 +63,27 @@ Two deadmen, both on the robot: the adapter's (0.5 s, in the dimOS process)
 and the firmware's (0.3 s, on the ESP32). A cockpit on a laptop that loses the
 link stops the tracks without anyone's help.
 
+A third guard watches the body itself, for unattended runs: the speed watchdog,
+`tools/speed_guard.py`. It reads the run's dimOS log and measures the speed
+between consecutive `lidar odom #N` lines (one every 2 s), dated by the
+timestamps the log carries. One interval faster than the profile's
+`max_speed_mps` (0.45 m/s, `MOSS_MAX_SPEED_MPS`) stops the run: the exploration
+stop on the bus (`tools/explore_ctl.py stop`), then `tools/moss-fly.sh stop`,
+and the firmware deadman stops the tracks 300 ms later. It guards one run and
+stands down by itself when a newer run starts or the log stays silent for 30 s.
+The ceiling is the planner's cruise plus a margin: dimOS's follower drives at
+0.55 m/s times the launcher's speed scale (`MOSS_NERF_SPEED`, 0.7), 0.385 m/s,
+and 0.45 m/s leaves 0.065 m/s above it. A ceiling at or under that cruise would
+stop every normal run, so the watchdog refuses to start with one and says which
+number to change. `tools/moss-fly.sh` does not arm it on its own: once the stack
+is proven, run `tools/arm_speed_guard.sh <run log dir>` by hand (without the
+argument it takes the newest run). The script kills the previous run's watchdog
+by the pid in `/tmp/moss_speed_guard.pid`, starts a fresh one and exits 1 unless
+that file then names a process born after the launch; the watchdog writes to
+`/tmp/moss_speed_guard.log`. Like the speeds below, the ceiling is a
+placeholder: once the floor speed is measured (`MOSS_MPS_AT_LIMIT`), check that
+what an exploration run really drives stays under it.
+
 The coordinator publishes the firmware telemetry on `/base_telemetry` every
 0.5 s (JSON: `ts`, `fw`, `driver`, `mode`, `reason`, `bus_mV`, `ina_ok`,
 `ticks`, `target_pct`, `output_pct`, `ramp_ms`, `firmware_age_s`, `mock`), so

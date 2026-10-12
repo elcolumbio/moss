@@ -1,19 +1,25 @@
 """ReplanningAStarPlanner that abandons a goal instead of fighting for it.
 
-The stuck detector tells the truth; what goes wrong is a scripted reflex on
-top of it. A blind back-off on every "stuck" verdict walks the robot
-backwards, step by step, into whatever is behind it: a recovery manoeuvre
-that creates the crash is worse than none. So this planner has two rules:
+The detectors tell the truth; what goes wrong is a scripted reflex on top of
+them. A blind back-off on every "stuck" verdict walks the robot backwards,
+step by step, into whatever is behind it (a rover running this planner did
+it in one run: 38 blind reverses and 14 rear hits, all chained by the
+reflex itself): a recovery manoeuvre that creates the crash is worse than
+none. What is left, and it is all of it:
 
-  * stuck -> STOP and abandon the goal (``cancel_goal`` publishes
-    goal_reached=False; the explorer excludes that spot and picks another
-    frontier - the pivot toward it is the only motion that follows).
-    No scripted motion of any kind.
-  * a CONTACT on the ``bump`` stream (on MOSS its producer is the explorer's
-    born-cornered back-off) is the one thing still allowed a scripted move:
-    away from the contact, 0.20 m, once. A second contact during that escape
-    aborts it dead - a contact is never dropped or queued behind a running
-    move.
+  * stuck, or a stall of the base (``stall``: the base's stall guard, tracks
+    commanded and encoders frozen for a second) -> STOP and abandon the goal
+    (``cancel_goal`` publishes goal_reached=False; the explorer excludes that
+    spot and picks another frontier - the pivot toward it is the only motion
+    that follows). No scripted motion of any kind. A stall is inferred, not
+    felt: a pivot that fails to turn reads the same as a wall, and answering
+    it with a blind move is the loop above.
+  * a CONTACT is the one thing still allowed a scripted move: away from the
+    contact, 0.20 m, once. ``bump`` is a contact in front (the IMU's, or the
+    explorer's born-cornered back-off) and backs off in reverse;
+    ``bump_rear`` is a contact behind (the IMU's, felt while reversing or as a
+    forward kick during a pivot) and moves FORWARD. A second contact during that escape aborts it dead - a
+    contact is never dropped or queued behind a running move.
 
 Paths are planned on clearance_cost_map(), a cost field built from the
 active robot profile (moss_dimos.robot_profile) at call time.
@@ -182,7 +188,7 @@ def clearance_cost_map(
 
 
 class RecoveringGlobalPlanner(GlobalPlanner):
-    """Stuck -> stop, abandon the goal. Contact -> one escape move, then abandon."""
+    """Stuck or stall -> stop, abandon the goal. Contact -> one escape move, then abandon."""
 
     escape_distance_m: float = ESCAPE_DISTANCE_M
     escape_speed_mps: float = ESCAPE_SPEED_MPS
@@ -315,6 +321,29 @@ class RecoveringGlobalPlanner(GlobalPlanner):
         self._path_started_at = float("inf")
         self.cancel_goal()
 
+    def stall(self, trigger: str = "stall") -> bool:
+        """A stall of the base (the stall guard: tracks commanded, encoders
+        frozen): an INFERRED contact, so stop and abandon the goal, no motion
+        of any kind, exactly like a stuck verdict.
+
+        A stall during an escape means the escape itself is pushing into
+        something: it stops dead, and the goal it held is dropped with it.
+        Without a goal or an escape there is nothing to give up (the pad was
+        driving): nothing is cancelled. Returns True when a goal or an escape
+        was given up."""
+        with self._lock:
+            self._held_goal = None
+            escaping = self._escaping
+            if escaping:
+                self._escape_abort.set()
+            has_goal = self._current_goal is not None
+        if escaping:
+            logger.warning("Stall during an escape: stopping dead", trigger=trigger)
+        if not (has_goal or escaping):
+            return False
+        self.abandon_goal(trigger=trigger)
+        return True
+
     def escape(self, direction: float, trigger: str) -> bool:
         """Contact escape: the ONE scripted move left. Away from the contact,
         escape_distance_m, once, then the goal is abandoned.
@@ -443,12 +472,16 @@ class RecoveringGlobalPlanner(GlobalPlanner):
 
 class RecoveringPlanner(ReplanningAStarPlanner):
     """Drop-in for ReplanningAStarPlanner where stuck = goal abandoned (no
-    motion) and a contact on the ``bump`` In triggers the one scripted escape
-    move, in reverse. On MOSS the producer of ``bump`` is the explorer's
-    born-cornered back-off (Explorer2.bump); any other contact source can
-    publish on the same stream."""
+    motion), a stall of the base (``stall`` In) = goal abandoned (no motion),
+    and a contact (``bump`` / ``bump_rear`` In) triggers the one scripted
+    escape move away from the contact: in reverse for ``bump`` (in front: the
+    IMU's contacts and the explorer's born-cornered back-off), FORWARD for
+    ``bump_rear`` (behind: the IMU's contacts felt while reversing, or a
+    forward kick during a pivot)."""
 
     bump: In[Bool]
+    bump_rear: In[Bool]
+    stall: In[Bool]
 
     def __init__(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
         super().__init__(**kwargs)
@@ -461,7 +494,21 @@ class RecoveringPlanner(ReplanningAStarPlanner):
             self._planner.halt(trigger="stop_movement")
 
     async def handle_bump(self, msg: Bool) -> None:
-        """Contact ahead: stop, escape 0.20 m in reverse, abandon the goal."""
+        """Front contact: stop, escape 0.20 m in reverse, abandon the goal."""
         if getattr(msg, "data", False):
             acted = self._planner.escape(direction=-1.0, trigger="bump")
-            logger.warning("BUMP received", reflex="escape reverse 0.20 m", acted=acted)
+            logger.warning("BUMP received: front contact", reflex="escape reverse 0.20 m",
+                           acted=acted)
+
+    async def handle_bump_rear(self, msg: Bool) -> None:
+        """Rear contact: stop, escape 0.20 m FORWARD, abandon the goal."""
+        if getattr(msg, "data", False):
+            acted = self._planner.escape(direction=+1.0, trigger="bump_rear")
+            logger.warning("BUMP received: rear contact", reflex="escape forward 0.20 m",
+                           acted=acted)
+
+    async def handle_stall(self, msg: Bool) -> None:
+        """A stall of the base: stop, abandon the goal, no motion."""
+        if getattr(msg, "data", False):
+            acted = self._planner.stall(trigger="stall")
+            logger.warning("STALL received", reflex="stop, goal abandoned, no motion", acted=acted)

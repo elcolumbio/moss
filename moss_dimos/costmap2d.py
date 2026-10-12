@@ -1,74 +1,100 @@
-"""A 2D costmap for MOSS that learns AND unlearns, from the lidar.
+"""A 2D costmap for MOSS that learns AND unlearns, from the lidar and the depth camera.
 
 dimOS's CostMapper turns a 3D voxel map (a set that never forgets) into a
 terrain-slope map meant for a walking robot, and its erosion drops any cell
 whose four neighbours are unobserved, which erases thin obstacles such as
-table legs. This module replaces it for a rover with a single-plane lidar:
+table legs. This module replaces it with the scored grid of the rover this
+stack comes from, adapted to MOSS's two sensors: a single-plane lidar 0.20 m
+above the floor and a depth camera on the nose, 0.075 m above it.
 
   * the map must REINFORCE, but with a ceiling (HIT_CAP), or a ramp the
     rover struggled on becomes a wall after a day;
-  * it must UNLEARN what it sees absent again: every lidar ray that passes
-    through a cell is a miss, down to FREE_FLOOR, so a chair that was moved
-    away fades in a few revolutions;
+  * it must UNLEARN what it sees absent again, down to FREE_FLOOR, so a
+    chair that was moved away fades;
   * reinforcement needs new viewpoints: from one spot a cell gets no more
     certain than OCCUPIED_AT - 1, so a passer-by hammered from one parked spot
     never becomes a wall; a second viewpoint NEW_VIEWPOINT_M away makes it an
     obstacle, and a leg seen from twenty positions is solid (up to HIT_CAP);
-  * what the body drove over (body_clear) is cleared: that one is a physical
-    certainty, not a sensor reading.
+  * two layers, because the sensors do not see the same things. What the
+    lidar put down, a lidar ray may clear (`lidar_revolution`). What the
+    camera put down (a shoe, a step, a chair base under the scan plane, a
+    table top above it) only the camera may clear: by seeing the floor there
+    (`camera_floor`), or by seeing THROUGH it at low height (`camera_rays`). A
+    lidar ray passing over a shoe says nothing about the shoe;
+  * what the body drove over (body_clear) is cleared on both layers: that one
+    is a physical certainty, not a sensor reading.
 
-Two sensors write here, through one cloud. lidar_odometry publishes each
-revolution in `world` with every lidar return at exactly the profile's
-lidar_height_m, plus the depth camera's obstacle points at their true height
-(the things below the scan plane: a shoe, a step, a chair base; and, like the
-lidar, the legs of whoever walks past). `lidar_returns` tells them apart, and
-each sensor has its own layer. Lidar returns hit their cell on the lidar
-layer; camera points hit their cell on the camera layer under the same
-two-viewpoint rule, so a camera obstacle becomes a wall on approach like a leg
-does, and carve nothing (a camera obstacle proves nothing about the floor in
-front of it). The lidar rays carve the lidar layer all around, and the camera
-layer only inside the camera's view.
+The sensors arrive on two clouds. lidar_odometry publishes each revolution in
+`world` with every lidar return at exactly the profile's lidar_height_m, plus
+the depth camera's obstacle points at their true height (`lidar_returns`
+tells them apart), and the bare floor the camera sees on `camera_floor`
+(z = 0), once per depth frame.
 
-The camera layer forgets through the lidar rays and holds what the camera
-keeps seeing. Without the carve, legs the camera saw while somebody walked
-past would stay walls for the rest of the run. The balance, at MOSS's rates:
+Three guards on the camera layer, each one born from a floor run of the
+original rover:
 
-  * where: the camera layer holds what the scan plane misses (a shoe, a
-    chair seat, a table top up to 1.30 m, thin dark legs), so a lidar ray
-    passing under or beside such a cell is no evidence against it unless the
-    camera looks at the cell too. The rays carve the camera layer only in the
-    cells inside the depth camera's horizontal field of view from the current
-    pose: a cone of CAMERA_HFOV_DEG from the camera on the nose, centred on
-    the rover's heading, out to CAMERA_CARVE_MAX_M from the rover. Outside it
-    the camera layer is untouched: a table the rover has turned away from
-    stays a wall, and a passer-by's legs are forgotten once the rover looks
-    back at where they stood;
-  * the carve: a ray that crosses a cell takes 1 from it every RAY_EVERY
-    revolutions (5 per second with the lidar at 10 Hz), within RAY_MAX_M of
-    the rover;
-  * the camera: it runs at 5 fps and lidar_odometry attaches its latest
-    obstacle points to every revolution for up to 0.5 s, so a cell in view
-    takes a camera hit on every revolution (10 per second);
-  * a cell the camera hits in a revolution is spared by that revolution's
-    carve, and a camera hit from the SAME viewpoint adds 1 while the cell is
-    at 0 or above and below OCCUPIED_AT, so what a carve took in a revolution
-    the camera missed comes back on the next one. That hit raises a cell to
-    OCCUPIED_AT only if the cell became a wall from two viewpoints and was
-    not carved back to 0 since (`camera_wall`); any other cell stops at
-    OCCUPIED_AT - 1, so one spot still never makes a wall. Below 0 it adds
-    nothing: floor the camera layer holds as free (down to FREE_FLOOR) needs
-    as many viewpoints to become a wall as on the lidar layer. Above
-    OCCUPIED_AT the parked-rover rule holds: a same-viewpoint hit adds nothing.
+  * thin legs. A cell the camera JUST called an obstacle is deaf to floor
+    samples and to camera rays for LOW_HIT_PROTECT_S. A table leg thinner than
+    a 5 cm cell is seen in one frame and the floor on its own cell in the next
+    (5 cm of quantisation): hit and miss cancelled forever, and a leg was
+    found at -3 after ten real contacts. lidar_odometry's
+    split_floor_and_obstacles only drops floor samples on an obstacle cell of
+    the SAME frame. This takes nothing from the unlearning: an object that is
+    really gone stops being hit, and fades as before once the window is over.
+  * moving objects. A cell takes a camera hit only if the previous depth frame
+    also saw an obstacle within one cell of it. A rolling vacuum or a walking
+    person moves more than a cell between two depth frames and is rarely
+    written; a foot planted for two frames can still mark a cell, and the
+    camera's floor and rays clear it once it is gone. Furniture repeats, and
+    the one cell of tolerance keeps a thin leg that re-projects one cell off.
+    The price is one frame of latency on a new static obstacle. The gate
+    counts DISTINCT depth frames: lidar_odometry attaches the latest frame's
+    obstacle points to every lidar revolution for up to 0.5 s, so a gate run
+    per revolution would compare a frame with itself and always pass, and the
+    rover moving on during those 0.5 s would turn one look into two
+    viewpoints. A cloud whose camera points are the previous cloud's, byte for
+    byte, stamped less than CAMERA_REPEAT_S after it, is that frame again: it
+    writes nothing on the camera layer. The clouds' own stamps (set when
+    lidar_odometry publishes them) measure that, so a costmap handler running
+    late never takes a re-attached frame for a new one.
+  * camera rays. Every cell a camera ray crosses at low height held nothing
+    standing, or the ray would have ended on it: a miss on the camera layer.
+    Floor samples and obstacle points alike: a floor point 3 m ahead proves
+    the low corridor in front of it. The rays start where the camera is (the
+    profile's camera_xyz_base_m, turned by the heading) and stop one cell short
+    of their point.
 
-So a shoe the camera keeps seeing stays a wall, and a camera wall of score s
-that the camera no longer sees while rays cross it inside the camera's view is
-free after s - 1 carves, RAY_EVERY * (s - 1) revolutions: 0.2 s at 2 (two
-viewpoints), 1.8 s at a HIT_CAP of 10. The price: an obstacle inside that view
-that the camera does not see while the rays cross its cell (hidden behind
-something nearer, or a table top nearer than the camera's vertical field of
-view reaches) is forgotten as fast, and becomes a wall again once the camera
-sees it from two viewpoints (NEW_VIEWPOINT_M of motion apart; turning on the
-spot is one viewpoint).
+The carve band (`carve_z_band`). The band of the original was 0.10 to 0.45 m
+for a camera 0.56 m above the floor: a ray crossing a cell inside it proves
+nothing low stands there; a higher ray flies OVER boxes (0.9 m up says nothing
+about a 0.3 m box) and must erase nothing; a lower one grazes the floor it
+ends on. A floor sample's ray drops in a straight line from the camera height
+H to 0 at its range R, so that band is the stretch from
+1 - 0.45 / 0.56 = 20 % to 1 - 0.10 / 0.56 = 82 % of R: not the first fifth,
+where the ray still rides near the lens height over whatever is low, not the
+last 18 %, where it grazes the floor. MOSS's camera sits at
+H = 0.075 m, under that whole band: with 0.10 to 0.45 m no floor ray would
+ever carve, and a ray climbing toward a table top would erase a shoe from
+0.10 m up. So the band is the same two fractions of the camera height
+(CARVE_Z_BAND_OF_CAMERA), read against the profile at call time: 0.013 to
+0.060 m at 0.075 m. A floor ray carves the same stretch of its length as on
+the original; a ray climbing toward anything higher than 6 cm carves nothing.
+
+The camera's floor samples miss the camera layer only. On the original, a
+camera above the scan plane, they missed the lidar layer too; here the camera
+looks UNDER the scan plane, and the floor it sees beneath a sofa's edge or a
+bed frame says nothing about the edge the lidar sees 0.20 m up.
+
+Sensor doctrine: only the lidar and the camera write the map. A contact is a
+reflex (the planner's escape), not a mapper. MOSS_CONTACT_WALL=1 turns MOSS's
+contact memory back on, off by default: a contact on `bump` (a front contact;
+a contact felt while reversing goes out on `bump_rear`, which this module does
+not read) marks a short band just ahead of the body as a wall, and only when
+the odometry says the rover was driving straight forward when it came: at
+least CONTACT_FORWARD_M along its heading over the last CONTACT_MOTION_S,
+turning less than CONTACT_TURN_DEG. A pivot, a reverse, or a back-off asked by
+an explorer standing still writes nothing; every contact on an open map says
+in the log whether it was written.
 
 Mission gate: the map writes only once the mission has started. A rover parked
 with a spinning lidar thickens the obstacles around its one viewpoint and
@@ -77,13 +103,14 @@ events: the rover moving MISSION_START_M away from its first pose, or an
 `explore_cmd` (the order to explore, which comes just before the first
 motion). It then stays open for the rest of the run: the end of an
 exploration (`explore_done`, `stop_explore_cmd`) stops the explorer, not the
-map, because the lidar map is MOSS's only obstacle source and a cockpit goal
-or STOP sends `stop_explore_cmd` mid-run.
+map, because a cockpit goal or STOP sends `stop_explore_cmd` mid-run.
 
 Numbers (HIT_CAP, FREE_FLOOR, OCCUPIED_AT, RAY_MAX_M) are a starting point to
-be tested. HIT_CAP, FREE_FLOOR and RAY_MAX_M are read once, at import, from
-MOSS_HIT_CAP, MOSS_FREE_FLOOR and MOSS_RAY_MAX_M: a flight tries other values
-without a code change, and the "costmap up" log line says which ones it runs.
+be tested. HIT_CAP, FREE_FLOOR, OCCUPIED_AT, NEW_VIEWPOINT_M, PUBLISH_EVERY,
+RAY_MAX_M and the contact wall are read once, at import, from MOSS_HIT_CAP,
+MOSS_FREE_FLOOR, MOSS_OCCUPIED_AT, MOSS_NEW_VIEWPOINT_M, MOSS_PUBLISH_EVERY,
+MOSS_RAY_MAX_M and MOSS_CONTACT_WALL: a flight tries other values without a
+code change, and the "costmap up" log line says which ones it runs.
 """
 
 from __future__ import annotations
@@ -91,6 +118,7 @@ from __future__ import annotations
 import math
 import os
 import time
+from collections import deque
 from typing import Any
 
 import numpy as np
@@ -106,6 +134,7 @@ from dimos.utils.logging_config import setup_logger
 from dimos_lcm.std_msgs import Bool
 
 from moss_dimos.robot_profile import current as _current_profile
+from moss_dimos.robot_profile import env_on
 
 logger = setup_logger()
 
@@ -131,18 +160,19 @@ def _env_float(name: str, default: float, lo: float, hi: float) -> float:
 
 RESOLUTION_M = 0.05
 GRID_SPAN_M = 24.0           # world-fixed square, centred on the first pose
-OCCUPIED_AT = int(round(_env_float("MOSS_OCCUPIED_AT", 1, 1, 10)))   # hits before a cell is an obstacle. 1: the first sighting
-                             # counts (the planner reacts within one revolution; a passer-by is carved back within a second).
-                             # 2 = the cautious rule, a wall only from two places 10 cm apart (MOSS_OCCUPIED_AT=2)
+OCCUPIED_AT = int(round(_env_float("MOSS_OCCUPIED_AT", 2, 1, 10)))   # two hits from two places = an obstacle: whole flights were once
+                             # spent walled in by cells painted from one parked spot. 1 makes the first sighting a wall (a faster
+                             # block, tried as a flag on the original and never judged in flight; MOSS_OCCUPIED_AT=1)
 # The layers are int8: the ceiling stays within 127, and at OCCUPIED_AT or above
 # (below it nothing could ever become a wall); the floor stays within [-128, 0].
 HIT_CAP = int(round(_env_float("MOSS_HIT_CAP", 10, OCCUPIED_AT, 127)))       # ceiling: no cell gets more certain than this.
-                             # A lower cap unlearns a passer-by faster (a cell at the cap needs HIT_CAP - 1 carves,
-                             # RAY_EVERY revolutions each, to stop being a wall) and keeps a wall less long once
-                             # nothing sees it any more.
+                             # A lower cap unlearns a passer-by faster (a cell at the cap needs HIT_CAP - OCCUPIED_AT + 1
+                             # misses to stop being a wall) and keeps a wall less long once nothing sees it any more.
 FREE_FLOOR = int(round(_env_float("MOSS_FREE_FLOOR", -3, -128, 0)))          # floor: no cell gets more "free" than this.
                              # A floor nearer 0 lets a new obstacle on long-seen floor become a wall in fewer hits.
-NEW_VIEWPOINT_M = _env_float("MOSS_NEW_VIEWPOINT_M", 0.05, 0.0, 1.0)   # a hit counts only if the rover moved this much since the cell's last hit
+NEW_VIEWPOINT_M = _env_float("MOSS_NEW_VIEWPOINT_M", 0.10, 0.0, 1.0)   # a hit counts only if the rover moved this much since the
+                             # cell's last hit (MOSS_NEW_VIEWPOINT_M=0.05 with MOSS_OCCUPIED_AT=1 is the faster-block trial)
+LOW_HIT_PROTECT_S = 3.0      # after a camera obstacle hit, that cell's camera layer ignores floor samples and camera rays this long
 LIDAR_Z_TOL_M = 1e-6         # lidar returns sit at EXACTLY the profile's lidar_height_m: the tag survives the float32 round trip to 5 nm (see lidar_returns)
 PUBLISH_EVERY = int(round(_env_float("MOSS_PUBLISH_EVERY", 2, 1, 20)))   # one grid every N revolutions (2 = 5 Hz at 10 Hz). A 24 m grid is ~230 kB and every
                              # subscriber (planner, explorer, recorder, cockpit) decodes each one; the map
@@ -150,20 +180,50 @@ PUBLISH_EVERY = int(round(_env_float("MOSS_PUBLISH_EVERY", 2, 1, 20)))   # one g
 RAY_MAX_M = _env_float("MOSS_RAY_MAX_M", 4.0, 0.0, GRID_SPAN_M)   # rays are carved (misses) up to this range only:
                              # a cell farther than RAY_MAX_M from every viewpoint is never unlearned, so a passer-by
                              # 4.5 m away stays until the rover comes within RAY_MAX_M of where they stood. 0 = no carving.
-RAY_EVERY = 2                # carve on every other revolution; hits are taken on all
-CAMERA_HFOV_DEG = 87.0       # the D455's horizontal field of view: the rays carve the camera layer only inside it
+RAY_EVERY = 2                # lidar rays carve on every other revolution; hits are taken on all
+CARVE_Z_BAND_OF_CAMERA = (0.10 / 0.56, 0.45 / 0.56)   # a camera ray carves where it crosses a cell between these two fractions
+                             # of the camera's height: the original's 0.10-0.45 m band over its 0.56 m camera, 0.013-0.060 m
+                             # on MOSS's 0.075 m (module docstring, carve_z_band)
+CAMERA_REPEAT_S = 1.0        # camera points equal to the previous cloud's, byte for byte, on a cloud stamped this soon after it:
+                             # the same depth frame again (lidar_odometry re-attaches one frame for 0.5 s; twice that for jitter)
+CONTACT_WALL = env_on("MOSS_CONTACT_WALL", False)   # a contact on `bump` marks the band ahead as a wall (off: contacts are reflexes)
 CONTACT_BAND_M = (0.02, 0.20)   # a contact marks the band this far beyond the body's front edge, across its width
-CAMERA_CARVE_MAX_M = 3.0     # ...and only this close to the rover. Coupled to lidar_odometry's DEPTH_MAX_M (depth
-                             # range along the camera's axis) and OBSTACLE_MAX_M (camera obstacles, measured from
-                             # base_link), both 3.0 m: measured from base_link, a cell within this range ahead of the
-                             # camera is inside both. Past them the camera reports nothing, so it could not hold a cell.
+CONTACT_MOTION_S = 0.5       # with the contact wall on, a contact writes only if the odometry of the last 0.5 s shows the base
+CONTACT_FORWARD_M = 0.03     # ...advancing at least this far along its heading
+CONTACT_TURN_DEG = 10.0      # ...and turning less than this (3 cm and 10 deg: the motion body_clear waits for)
 MISSION_START_M = 0.05       # the map opens when the rover has moved this far from its first pose (or on explore_cmd).
                              # Measuring the displacement needs no clock: the wait accumulates nothing however
                              # long it lasts, and the first useful revolution leaves with the rover.
 
 
+def carve_z_band(camera_z_m: float | None = None) -> tuple[float, float]:
+    """The heights (m) between which a camera ray crossing a cell carves it:
+    CARVE_Z_BAND_OF_CAMERA times the camera's height above the floor, the
+    profile's camera_xyz_base_m[2] unless given (0.013-0.060 m at 0.075 m).
+    The module docstring has the derivation."""
+    h = _current_profile().camera_xyz_base_m[2] if camera_z_m is None else camera_z_m
+    return CARVE_Z_BAND_OF_CAMERA[0] * h, CARVE_Z_BAND_OF_CAMERA[1] * h
+
+
+def camera_xy(pose_xy: tuple[float, float], yaw: float) -> tuple[float, float]:
+    """Where the camera itself is, from the base pose: the profile's
+    camera_xyz_base_m (read at call time, the same numbers lidar_odometry
+    projects the depth with) turned by the heading.
+
+    Rays cast from the base would open the carve band at the wrong range and
+    sweep beside the cells the camera really looked through: on MOSS the
+    camera is 0.156 m AHEAD of base_link, so a floor sample's ray cast from
+    the base carves three cells right in front of the nose that the camera's
+    own ray crosses above the band. The original rover's costmap kept its
+    camera offset as a constant beside the odometry's, and when the camera
+    moved, the two disagreed: here both read the profile."""
+    cx, cy = _current_profile().camera_xyz_base_m[:2]
+    c, s = math.cos(yaw), math.sin(yaw)
+    return (pose_xy[0] + c * cx - s * cy, pose_xy[1] + s * cx + c * cy)
+
+
 class ScoredGrid:
-    """One int8 score layer over a fixed world grid, plus where each cell was last hit from."""
+    """Two int8 score layers over a fixed world grid, plus where each cell was last hit from."""
 
     def __init__(self, resolution: float = RESOLUTION_M, span_m: float = GRID_SPAN_M,
                  centre: tuple[float, float] = (0.0, 0.0)) -> None:
@@ -172,10 +232,14 @@ class ScoredGrid:
         self.ox = centre[0] - span_m / 2.0
         self.oy = centre[1] - span_m / 2.0
         self.lidar = np.zeros((self.n, self.n), dtype=np.int8)     # what the lidar saw in its scan plane
-        self.camera = np.zeros((self.n, self.n), dtype=np.int8)    # what the depth camera saw: hit by it, freed by its floor samples AND carved by the lidar rays inside its view
-        self.camera_wall = np.zeros((self.n, self.n), dtype=bool)  # camera cells that became a wall from two viewpoints and were not carved back to 0 since
+        self.camera = np.zeros((self.n, self.n), dtype=np.int8)    # what the depth camera saw: hit by it, freed only by its floor samples, its rays and the body
         self.seen = np.zeros((self.n, self.n), dtype=bool)
         self._last_hit_xy = np.full((self.n, self.n, 2), np.nan, dtype=np.float32)
+        # when the camera last called each cell an obstacle (monotonic seconds):
+        # it protects a thin leg for LOW_HIT_PROTECT_S. Runtime only: a
+        # monotonic clock means nothing in another process.
+        self._last_low_hit = np.full((self.n, self.n), -np.inf, dtype=np.float64)
+        self._cam_prev = np.zeros((self.n, self.n), dtype=bool)   # camera obstacle cells of the PREVIOUS depth frame (moving-object gate)
 
     # ---- coordinates -------------------------------------------------------
     def cell(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -195,38 +259,22 @@ class ScoredGrid:
         moved = np.isnan(last[:, 0]) | (np.hypot(last[:, 0] - from_xy[0], last[:, 1] - from_xy[1]) >= NEW_VIEWPOINT_M)
         cur = layer[gy, gx].astype(np.int16)
         # An obstacle is REAL when it was seen from two viewpoints: a
-        # passer-by hammered from one parked spot must never become a wall.
+        # passer-by hammered from one parked spot must never become a wall
+        # (whole flights were once spent walled in by exactly such cells).
         # From one viewpoint a cell rises to OCCUPIED_AT - 1 and no
-        # further; the second viewpoint (0.10 m of motion) makes it a wall.
-        # Driving toward anything real crosses viewpoints within a metre, so
-        # legs and furniture still map on approach.
+        # further; the second viewpoint (NEW_VIEWPOINT_M of motion, 0.10 m)
+        # makes it a wall. Driving toward anything real crosses viewpoints
+        # within a metre, so legs and furniture still map on approach.
         # The viewpoint rule bounds the INCREASE, never the value: a
         # same-viewpoint hit adds nothing and takes nothing away. Clamping the
         # value instead would let one revolution from a parked rover push a
         # wall built from twenty viewpoints back below OCCUPIED_AT, and
         # occupancy() would publish free floor where the wall stands.
-        new = np.where(moved, np.minimum(cur + 1, HIT_CAP), cur)
-        took = moved
-        if layer is self.camera:
-            # The camera layer is carved by the lidar rays, so the camera must
-            # be able to hold what it keeps seeing: a same-viewpoint hit adds 1
-            # while the cell is at 0 or above and below its ceiling. The
-            # ceiling is OCCUPIED_AT for a cell that became a wall from two
-            # viewpoints (the hit puts back what the carve took), OCCUPIED_AT
-            # - 1 for any other (one spot never makes a wall). Below 0 the hit
-            # adds nothing, as on the lidar layer: the hold only undoes a
-            # carve, and floor seen free for long still needs new viewpoints.
-            # Above OCCUPIED_AT the parked-rover rule holds: a same-viewpoint
-            # hit adds nothing and takes nothing away.
-            wall = self.camera_wall[gy, gx]
-            held = ~moved & (cur >= 0) & (cur < np.where(wall, OCCUPIED_AT, OCCUPIED_AT - 1))
-            new = np.where(held, cur + 1, new)
-            took = moved | held
-            self.camera_wall[gy, gx] = wall | (new >= OCCUPIED_AT)
-        layer[gy, gx] = new.astype(np.int8)
+        new = np.where(moved, np.minimum(cur + 1, HIT_CAP), cur).astype(np.int8)
+        layer[gy, gx] = new
         self._last_hit_xy[gy[moved], gx[moved]] = from_xy
         self.seen[gy, gx] = True
-        return int(took.sum())
+        return int(moved.sum())
 
     def _miss(self, layer: np.ndarray, gx: np.ndarray, gy: np.ndarray) -> None:
         if len(gx) == 0:
@@ -235,83 +283,142 @@ class ScoredGrid:
         new = np.maximum(cur - 1, FREE_FLOOR).astype(np.int8)
         layer[gy, gx] = new
         self.seen[gy, gx] = True
-        if layer is self.camera:
-            self.camera_wall[gy, gx] &= new > 0     # carved back to 0: forgotten, one spot no longer holds it
 
     _revs: int = 0
 
-    def lidar_revolution(self, hits_xy: np.ndarray, from_xy: tuple[float, float],
-                         camera_xy: np.ndarray | None = None, yaw: float | None = None) -> None:
-        """World-frame lidar hits of one revolution, seen from `from_xy` with
-        the rover heading `yaw`: the cells along each ray (up to just short of
-        the hit, RAY_MAX_M at most, every RAY_EVERY-th revolution) take a miss
-        on the lidar layer, and those of them inside the camera's view
-        (`camera_view`) a miss on the camera layer; the hit cells take a hit
-        on the lidar layer. A ray that crosses a cell where the camera saw an
-        obstacle, inside the camera's view, carves it like any other cell, so
-        what the camera stops seeing is forgotten (the module docstring has
-        the balance). Without `yaw` the camera's view is unknown and the
-        camera layer is not carved.
-
-        `camera_xy` are the camera obstacle points of the same revolution:
-        their cells are spared on the camera layer. A ray passing over a cell
-        does not erase what the camera sees in it during that revolution;
-        without the spare, a second viewpoint that lands on a carving
-        revolution loses its hit to the carve and the obstacle never becomes
-        a wall on approach."""
+    def lidar_revolution(self, hits_xy: np.ndarray, from_xy: tuple[float, float]) -> None:
+        """World-frame lidar hits of one revolution, seen from `from_xy`:
+        the cells along each ray (up to just short of the hit, RAY_MAX_M at
+        most, every RAY_EVERY-th revolution) take a miss, the hit cells a hit.
+        Lidar layer only: a ray 0.20 m up passes over what the camera holds
+        (a shoe, a chair base), so it is no evidence against it."""
         if len(hits_xy) == 0:
             return
         self._revs += 1
         if self._revs % RAY_EVERY == 0:
             cells = self._ray_cells(from_xy, hits_xy)
             if cells is not None:
-                gx, gy = cells
-                self._miss(self.lidar, gx, gy)
-                if yaw is not None:
-                    view = self.camera_view(gx, gy, from_xy, yaw)
-                    gx, gy = gx[view], gy[view]
-                    if camera_xy is not None and len(camera_xy):
-                        cx, cy = self.cell(camera_xy[:, 0], camera_xy[:, 1])
-                        keep = ~np.isin(gy * self.n + gx, cy * self.n + cx)
-                        gx, gy = gx[keep], gy[keep]
-                    self._miss(self.camera, gx, gy)
+                self._miss(self.lidar, cells[0], cells[1])
         self._hit(self.lidar, hits_xy[:, 0], hits_xy[:, 1], from_xy)
 
-    def camera_view(self, gx: np.ndarray, gy: np.ndarray, from_xy: tuple[float, float], yaw: float) -> np.ndarray:
-        """Which cells (gx, gy) lie inside the depth camera's horizontal field
-        of view from the pose (from_xy, yaw): the cell centre within
-        CAMERA_HFOV_DEG / 2 of the rover's heading, seen from the camera's
-        position (the profile's camera_xyz_base_m, read at call time; the
-        camera looks along the heading), and within CAMERA_CARVE_MAX_M of the
-        rover."""
-        cam = _current_profile().camera_xyz_base_m
-        c, s = math.cos(yaw), math.sin(yaw)
-        cam_x = from_xy[0] + c * cam[0] - s * cam[1]
-        cam_y = from_xy[1] + s * cam[0] + c * cam[1]
-        xs = self.ox + (gx + 0.5) * self.res
-        ys = self.oy + (gy + 0.5) * self.res
-        bearing = np.arctan2(ys - cam_y, xs - cam_x) - yaw
-        bearing = (bearing + np.pi) % (2 * np.pi) - np.pi
-        near = np.hypot(xs - from_xy[0], ys - from_xy[1]) <= CAMERA_CARVE_MAX_M
-        return near & (np.abs(bearing) <= math.radians(CAMERA_HFOV_DEG) / 2)
+    def camera_obstacles(self, pts_xy: np.ndarray, from_xy: tuple[float, float],
+                         now: float | None = None) -> tuple[int, int]:
+        """One depth frame's obstacle points, seen from `from_xy`: a hit on
+        the camera layer (the two-viewpoint rule as for lidar hits), and the
+        cell is stamped: for the next LOW_HIT_PROTECT_S the floor beside it
+        may not erase it (the thin leg, module docstring).
 
-    def camera_hits(self, hits_xy: np.ndarray, from_xy: tuple[float, float]) -> int:
-        """World-frame obstacle points from the depth camera, seen from `from_xy`:
-        a hit on their cells (two-viewpoint rule as for lidar hits, plus the
-        same-viewpoint hit that holds a wall the camera keeps seeing at
-        OCCUPIED_AT), no ray carved. Returns the number of cells whose score
-        took the hit."""
-        if len(hits_xy) == 0:
-            return 0
-        return self._hit(self.camera, hits_xy[:, 0], hits_xy[:, 1], from_xy)
+        MOVING things are never written into the map: a cell only takes a hit
+        if the camera ALSO saw an obstacle within one cell of it in the
+        previous frame. One call per DISTINCT depth frame (MossCostMap keys
+        the calls on the frames); an empty frame clears the memory.
+
+        Returns (cells that took a hit, cells held back by the gate)."""
+        gx, gy = self.cell(pts_xy[:, 0], pts_xy[:, 1])
+        if len(gx) == 0:
+            self._cam_prev[:] = False
+            return 0, 0
+        # NEIGHBOURHOOD repeat, not exact-cell repeat: a THIN standing leg
+        # re-projects a cell off between frames (5 cm of quantisation from a
+        # moving rover), and an exact-cell repeat would filter it out like a
+        # mover. One cell of tolerance keeps every immobile thing; a walker or
+        # a vacuum still jumps further than 10 cm per frame.
+        prev_near = self._cam_prev.copy()
+        prev_near[:-1, :] |= self._cam_prev[1:, :]
+        prev_near[1:, :] |= self._cam_prev[:-1, :]
+        prev_near[:, :-1] |= prev_near[:, 1:]
+        prev_near[:, 1:] |= prev_near[:, :-1]
+        keep = prev_near[gy, gx]
+        self._cam_prev[:] = False
+        self._cam_prev[gy, gx] = True
+        held = int(len(np.unique(gy[~keep] * self.n + gx[~keep])))
+        if not keep.any():
+            return 0, held
+        rx = self.ox + (gx[keep] + 0.5) * self.res
+        ry = self.oy + (gy[keep] + 0.5) * self.res
+        took = self._hit(self.camera, rx, ry, from_xy)
+        self._last_low_hit[gy[keep], gx[keep]] = time.monotonic() if now is None else now
+        return took, held
+
+    def camera_floor(self, pts_xy: np.ndarray, now: float | None = None) -> None:
+        """The camera saw bare floor here: a miss on the camera layer, the
+        sensor's way to forget a shoe that was taken away.
+
+        Except on a cell the camera called an obstacle less than
+        LOW_HIT_PROTECT_S ago: there the floor sample is dropped. A thing
+        thinner than a 5 cm cell is seen in one frame and its floor in the
+        next, and the two cancelled forever.
+
+        The lidar layer is untouched: the camera looks under the scan plane,
+        and floor seen beneath a sofa's edge says nothing about the edge the
+        lidar sees 0.20 m up."""
+        now = time.monotonic() if now is None else now
+        gx, gy = self.cell(pts_xy[:, 0], pts_xy[:, 1])
+        if len(gx) == 0:
+            return
+        flat = np.unique(gy * self.n + gx)
+        gx, gy = flat % self.n, flat // self.n
+        protected = self._last_low_hit[gy, gx] > now - LOW_HIT_PROTECT_S
+        self._miss(self.camera, gx[~protected], gy[~protected])
+
+    def camera_rays(self, pts_xyz: np.ndarray, from_xy: tuple[float, float],
+                    now: float | None = None) -> None:
+        """The camera's rays carve the camera layer, symmetric to the lidar's:
+        the map corrects itself every time the camera passes over a spot,
+        instead of a ghost living until somebody clears the map.
+
+        `from_xy` is where the camera is (`camera_xy`), at the profile's
+        camera height. Every cell a ray crosses inside the carve band
+        (`carve_z_band`) held nothing standing, or the ray would have ended
+        on it: a miss. Obstacle endpoints and floor samples alike; a ray stops
+        one cell short of its point and at RAY_MAX_M. Cells the camera called
+        an obstacle less than LOW_HIT_PROTECT_S ago are skipped: a real thing
+        is re-hit every frame, so only what the camera has STOPPED confirming
+        fades. The lidar layer is never touched: only a lidar ray may retract
+        a lidar claim."""
+        if len(pts_xyz) == 0:
+            return
+        now = time.monotonic() if now is None else now
+        h = _current_profile().camera_xyz_base_m[2]
+        lo, hi = carve_z_band(h)
+        dx = pts_xyz[:, 0] - from_xy[0]
+        dy = pts_xyz[:, 1] - from_xy[1]
+        r = np.hypot(dx, dy)
+        keep = r > self.res
+        if not keep.any():
+            return
+        dx, dy, r = dx[keep], dy[keep], r[keep]
+        z_end = pts_xyz[keep, 2]
+        end = np.minimum(r - self.res, RAY_MAX_M)   # stop one cell short of the point
+        nmax = int(np.floor(end.max() / self.res))
+        if nmax < 1:
+            return
+        d = (np.arange(1, nmax + 1) * self.res)[None, :]
+        f = d / r[:, None]
+        z = h + (z_end[:, None] - h) * f
+        valid = (d <= end[:, None]) & (z > lo) & (z < hi)
+        if not valid.any():
+            return
+        ux, uy = (dx / r)[:, None], (dy / r)[:, None]
+        xs = (from_xy[0] + ux * d)[valid]
+        ys = (from_xy[1] + uy * d)[valid]
+        gx, gy = self.cell(xs, ys)
+        if len(gx) == 0:
+            return
+        flat = np.unique(gy * self.n + gx)
+        gx, gy = flat % self.n, flat // self.n
+        unprotected = self._last_low_hit[gy, gx] <= now - LOW_HIT_PROTECT_S
+        self._miss(self.camera, gx[unprotected], gy[unprotected])
 
     def contact(self, pose: tuple) -> int:
-        """The rover pushed against something its sensors did not map (the stall
-        guard fired): the cells of a short band right ahead of the body become a
-        wall on the camera layer at once (no viewpoint rule: a contact is a
-        physical certainty, like body_clear). The planner then routes around the
-        spot instead of driving back into it. Freed like any camera wall: by the
-        camera seeing bare floor there, or by the body driving over it."""
+        """The rover pushed against something (MossCostMap.handle_bump, with
+        MOSS_CONTACT_WALL=1 and the rover driving straight forward): the cells
+        of a short band right ahead of the body become a wall on the camera
+        layer at once (no viewpoint rule: a contact is a physical certainty,
+        like body_clear). The planner then routes around the spot instead of
+        driving back into it. Freed like any camera wall: by the camera seeing
+        bare floor there or through it at low height, or by the body driving
+        over it."""
         x, y, yaw = pose
         c, s = np.cos(yaw), np.sin(yaw)
         hx, hy = _current_profile().body_clear_m
@@ -324,20 +431,8 @@ class ScoredGrid:
         flat = np.unique(gy * self.n + gx)
         gx, gy = flat % self.n, flat // self.n
         self.camera[gy, gx] = np.maximum(self.camera[gy, gx], np.int8(OCCUPIED_AT))
-        self.camera_wall[gy, gx] = True
         self.seen[gy, gx] = True
         return int(len(gx))
-
-    def camera_floor(self, floor_xy: np.ndarray) -> None:
-        """World-frame bare-floor samples from the depth camera: a miss on the
-        camera layer (a shoe that was taken away stops being an obstacle once
-        the camera sees the floor where it stood). The lidar layer is untouched."""
-        if len(floor_xy) == 0:
-            return
-        gx, gy = self.cell(floor_xy[:, 0], floor_xy[:, 1])
-        if len(gx):
-            flat = np.unique(gy * self.n + gx)
-            self._miss(self.camera, flat % self.n, flat // self.n)
 
     def _ray_cells(self, from_xy: tuple[float, float], hits_xy: np.ndarray):
         """Cells crossed by the rays from `from_xy` to each hit (capped at
@@ -367,10 +462,10 @@ class ScoredGrid:
 
     def body_clear(self, pose: tuple) -> None:
         """The body IS here: every cell under the profile's body_clear_m
-        footprint (half extents around base_link) is certainly free, and seen.
-        Without it, cells written before the rover drove over them stay and
-        can wall it in. Keep the footprint exact, never wider, so a wall
-        right against the body survives."""
+        footprint (half extents around base_link) is certainly free, on both
+        layers, and seen. Without it, cells written before the rover drove
+        over them stay and can wall it in. Keep the footprint exact, never
+        wider, so a wall right against the body survives."""
         x, y, yaw = pose
         c, s = np.cos(yaw), np.sin(yaw)
         hx, hy = _current_profile().body_clear_m
@@ -381,7 +476,6 @@ class ScoredGrid:
         if len(gx):
             self.lidar[gy, gx] = FREE_FLOOR
             self.camera[gy, gx] = FREE_FLOOR
-            self.camera_wall[gy, gx] = False
             self.seen[gy, gx] = True
 
     # ---- output ------------------------------------------------------------
@@ -415,7 +509,9 @@ def lidar_returns(pts: np.ndarray) -> np.ndarray:
     the last bit of a float32. Any other point the cloud carries (a depth
     camera's, at its true height) can sit within millimetres of the scan
     plane, so the tag is read as one exact value (LIDAR_Z_TOL_M), never as a
-    band.
+    band: read as a 5 mm band it once stole every camera point at the scan
+    plane's height, past the moving-object gate and out of the camera rays'
+    reach, and a person's side became a permanent wall.
     """
     return np.abs(pts[:, 2] - _current_profile().lidar_height_m) < LIDAR_Z_TOL_M
 
@@ -424,20 +520,23 @@ class MossCostMap(Module):
     """Replaces dimOS's CostMapper on MOSS.
 
     Ins: `lidar` (the world cloud from lidar_odometry, lidar returns tagged
-    with z = profile.lidar_height_m exactly), `odom` (base pose in world),
-    `explore_cmd` (the order that opens the map), `explore_done` and
-    `stop_explore_cmd` (logged; the map keeps writing).
+    with z = profile.lidar_height_m exactly, the depth camera's obstacle
+    points at their true height), `camera_floor` (the camera's bare floor,
+    z = 0), `odom` (base pose in world), `explore_cmd` (the order that opens
+    the map), `explore_done` and `stop_explore_cmd` (logged; the map keeps
+    writing), `clear_map_cmd` (a fresh grid), `bump` (a front contact: a wall
+    ahead only with MOSS_CONTACT_WALL=1, module docstring).
     Out: `global_costmap` (the stream name the planner and the explorer
     listen to)."""
 
     lidar: In[PointCloud2]
-    camera_floor: In[PointCloud2]   # bare floor the depth camera saw (lidar_odometry): frees camera obstacles
+    camera_floor: In[PointCloud2]   # bare floor the depth camera saw (lidar_odometry), once per depth frame: frees camera obstacles
     odom: In[PoseStamped]
     explore_done: In[Bool]          # explorer2 found no reachable frontier left: logged, the map keeps writing
     stop_explore_cmd: In[Bool]      # exploration stopped on request (explore_ctl.py stop, the cockpit): logged, the map keeps writing
     explore_cmd: In[Bool]           # the order to explore: opens the map before the first motion
     clear_map_cmd: In[Bool]         # the cockpit's Clear map (explore_ctl.py clear): a fresh grid, the mission gate as it is
-    bump: In[Bool]                  # a contact (the base's stall guard, the explorer's back-off): the band ahead becomes a wall
+    bump: In[Bool]                  # a front contact: logged; with MOSS_CONTACT_WALL=1 and the rover driving straight forward, the band ahead becomes a wall
     global_costmap: Out[OccupancyGrid]
 
     def __init__(self, world_frame: str = "world", **kwargs: Any) -> None:
@@ -445,10 +544,18 @@ class MossCostMap(Module):
         self.world_frame = world_frame
         self._grid: ScoredGrid | None = None
         self._pose_xy: tuple[float, float] | None = None
-        self._pose_yaw = 0.0
+        self._pose_yaw = 0.0                   # the camera rides on the nose: its rays need the heading
+        self._poses: deque = deque()           # (monotonic s, x, y, yaw) of the last CONTACT_MOTION_S, for the contact wall
         self._revolutions = 0
-        self._camera_pts = 0           # camera obstacle points since the last publish (log only)
-        self._camera_cells = 0         # ...and the cells they hit
+        # the depth frame the camera layer last took (moving-object gate): its
+        # points as bytes and the stamp of the cloud that first carried them
+        self._cam_key: bytes | None = None
+        self._cam_key_t = 0.0
+        self._camera_pts = 0           # camera obstacle points of the frames taken since the last publish (log only)
+        self._camera_cells = 0         # ...the cells they hit
+        self._camera_held = 0          # ...the cells the moving-object gate held back
+        self._camera_frames = 0        # ...how many distinct depth frames
+        self._camera_repeats = 0       # ...and how many clouds carried a frame already taken
         self._last_clear: tuple | None = None   # (x, y, yaw) of the last body_clear
         # The pre-mission gate, closed at construction: a rover parked with a
         # spinning lidar would write the room it waits in, from one spot. It
@@ -460,13 +567,19 @@ class MossCostMap(Module):
     @rpc
     def start(self) -> None:
         super().start()
+        lo, hi = carve_z_band()
         logger.info(f"costmap up: {RESOLUTION_M} m cells, hit cap {HIT_CAP}, free floor {FREE_FLOOR}, "
-                    f"occupied at {OCCUPIED_AT}, rays carved to {RAY_MAX_M:g} m")
+                    f"occupied at {OCCUPIED_AT} (new viewpoint {NEW_VIEWPOINT_M:g} m), rays carved to {RAY_MAX_M:g} m, "
+                    f"camera rays carve {lo:.3f}-{hi:.3f} m up, contact wall {'on' if CONTACT_WALL else 'off'}")
 
     async def handle_odom(self, msg: PoseStamped) -> None:
         self._pose_xy = (float(msg.position.x), float(msg.position.y))
         q = msg.orientation
         self._pose_yaw = float(np.arctan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z)))
+        now = time.monotonic()
+        self._poses.append((now, self._pose_xy[0], self._pose_xy[1], self._pose_yaw))
+        while self._poses and now - self._poses[0][0] > CONTACT_MOTION_S:
+            self._poses.popleft()
         if self._grid is None:
             self._grid = ScoredGrid(centre=self._pose_xy)
             logger.info(f"costmap: grid centred on ({self._pose_xy[0]:+.2f}, {self._pose_xy[1]:+.2f})")
@@ -507,7 +620,7 @@ class MossCostMap(Module):
 
     async def handle_explore_done(self, msg: Bool) -> None:
         """explorer2 ran out of reachable frontier. The explorer stops; the map
-        keeps writing (the lidar map is the only obstacle source)."""
+        keeps writing."""
         if bool(getattr(msg, "data", False)):
             logger.info("costmap: exploration complete - map writing continues")
 
@@ -532,17 +645,46 @@ class MossCostMap(Module):
             self._mission_frozen = False
             logger.info("costmap: explore_cmd received - map writing OPEN for the mission")
 
+    def _recent_motion(self, now: float | None = None) -> tuple[float, float]:
+        """How the base moved over the last CONTACT_MOTION_S of odometry
+        before `now`: (metres along the heading it had at the window's start,
+        degrees turned). Less than two poses in the window (the odometry
+        quiet) -> (0, 0)."""
+        now = time.monotonic() if now is None else now
+        poses = [p for p in self._poses if now - p[0] <= CONTACT_MOTION_S]
+        if len(poses) < 2:
+            return 0.0, 0.0
+        _, x0, y0, yaw0 = poses[0]
+        _, x1, y1, yaw1 = poses[-1]
+        forward = (x1 - x0) * math.cos(yaw0) + (y1 - y0) * math.sin(yaw0)
+        turn = math.degrees((yaw1 - yaw0 + math.pi) % (2 * math.pi) - math.pi)
+        return forward, turn
+
     async def handle_bump(self, msg: Bool) -> None:
-        """A contact: the cells just ahead of the body become a wall at once, so the
-        planner routes around what the sensors did not see (a cable, a step, a
-        bin edge below the camera's view) instead of driving into it again."""
+        """A front contact. Contacts are reflexes (the planner's escape), so by
+        default nothing is written. With MOSS_CONTACT_WALL=1, a contact felt
+        while driving straight forward (`_recent_motion`) turns the cells
+        just ahead of the body into a wall at once, so the planner routes
+        around what the sensors did not see (a cable, a bin edge below the
+        camera's view) instead of driving into it again. Each contact says in
+        the log whether it was written."""
         if not bool(getattr(msg, "data", False)) or self._grid is None or self._pose_xy is None:
             return
         if self._write_frozen():
             return
+        where = (f"costmap: contact at ({self._pose_xy[0]:+.2f}, {self._pose_xy[1]:+.2f}) heading "
+                 f"{np.degrees(self._pose_yaw):+.0f} deg")
+        if not CONTACT_WALL:
+            logger.info(f"{where} - not written: contacts are reflexes, only the lidar and the camera write the map "
+                        "(MOSS_CONTACT_WALL=1 writes a forward contact)")
+            return
+        forward, turn = self._recent_motion()
+        if forward < CONTACT_FORWARD_M or abs(turn) >= CONTACT_TURN_DEG:
+            logger.info(f"{where} - not written: not driving straight forward ({forward * 100:+.0f} cm along the "
+                        f"heading, {turn:+.0f} deg in the last {CONTACT_MOTION_S:g} s)")
+            return
         n = self._grid.contact((self._pose_xy[0], self._pose_xy[1], self._pose_yaw))
-        logger.info(f"costmap: contact at ({self._pose_xy[0]:+.2f}, {self._pose_xy[1]:+.2f}) heading "
-                    f"{np.degrees(self._pose_yaw):+.0f} deg: {n} cells ahead marked as a wall")
+        logger.info(f"{where}: {n} cells ahead marked as a wall")
         self._publish()
 
     async def handle_clear_map_cmd(self, msg: Bool) -> None:
@@ -554,16 +696,55 @@ class MossCostMap(Module):
             return
         self._grid = ScoredGrid(centre=self._pose_xy)
         self._revolutions = 0
-        self._camera_pts = self._camera_cells = 0
+        self._cam_key = None
+        self._camera_pts = self._camera_cells = self._camera_held = self._camera_frames = self._camera_repeats = 0
         logger.info(f"costmap: map CLEARED on request - fresh grid centred on ({self._pose_xy[0]:+.2f}, "
                     f"{self._pose_xy[1]:+.2f}), mission {'open' if not self._mission_frozen else 'not started'}")
+
+    def _camera_xy(self) -> tuple[float, float]:
+        """The ray origin for everything the camera saw (see camera_xy)."""
+        assert self._pose_xy is not None
+        return camera_xy(self._pose_xy, self._pose_yaw)
 
     async def handle_camera_floor(self, msg: PointCloud2) -> None:
         if self._grid is None or self._pose_xy is None or self._write_frozen():
             return
         pts = np.asarray(msg.as_numpy()[0], dtype=np.float64)
         if len(pts):
-            self._grid.camera_floor(pts[:, :2])
+            now = time.monotonic()
+            self._grid.camera_floor(pts[:, :2], now=now)
+            self._grid.camera_rays(pts, self._camera_xy(), now=now)
+
+    def _camera_frame(self, cam: np.ndarray, stamp: float) -> None:
+        """The camera points of one revolution's cloud (stamped `stamp`, wall
+        seconds), taken once per depth frame: hits through the moving-object
+        gate, then the frame's rays.
+
+        A cloud whose points equal the last frame's, byte for byte, stamped
+        less than CAMERA_REPEAT_S after the cloud that first carried them,
+        carries that frame again (lidar_odometry re-attaches it to every
+        revolution for 0.5 s) and writes nothing. A cloud without camera
+        points means no frame of the last 0.5 s saw an obstacle: the gate
+        forgets, like an empty frame."""
+        if len(cam) == 0:
+            if self._cam_key is not None:
+                self._grid.camera_obstacles(cam[:, :2], self._pose_xy)
+                self._cam_key = None
+            return
+        key = cam.tobytes()
+        if key == self._cam_key and stamp - self._cam_key_t < CAMERA_REPEAT_S:
+            self._camera_repeats += 1
+            return
+        self._cam_key, self._cam_key_t = key, stamp
+        now = time.monotonic()
+        # hits first: they stamp the 3 s protection, so a frame never carves
+        # the very cells it is confirming
+        took, held = self._grid.camera_obstacles(cam[:, :2], self._pose_xy, now=now)
+        self._grid.camera_rays(cam, self._camera_xy(), now=now)
+        self._camera_frames += 1
+        self._camera_pts += len(cam)
+        self._camera_cells += took
+        self._camera_held += held
 
     async def handle_lidar(self, msg: PointCloud2) -> None:
         if self._grid is None or self._pose_xy is None or self._write_frozen():
@@ -575,17 +756,18 @@ class MossCostMap(Module):
         hits = pts[tag]
         if len(hits) == 0:
             return                  # no lidar return on this cloud: not a revolution
-        cam = pts[~tag][:, :2]
-        self._grid.lidar_revolution(hits[:, :2], self._pose_xy, camera_xy=cam, yaw=self._pose_yaw)
-        if len(cam):
-            self._camera_cells += self._grid.camera_hits(cam, self._pose_xy)
-            self._camera_pts += len(cam)
+        # the cloud's own stamp (lidar_odometry's publish time), else the wall clock
+        self._camera_frame(pts[~tag], float(getattr(msg, "ts", 0.0) or 0.0) or time.time())
+        self._grid.lidar_revolution(hits[:, :2], self._pose_xy)
         self._revolutions += 1
         if self._revolutions % PUBLISH_EVERY == 0:
             if self._camera_pts:
                 logger.info(f"costmap: camera obstacles: {self._camera_pts} points, {self._camera_cells} cell hits "
-                            f"over the last {PUBLISH_EVERY} revolutions")
-                self._camera_pts = self._camera_cells = 0
+                            f"over the last {PUBLISH_EVERY} revolutions ({self._camera_frames} depth frames, "
+                            f"{self._camera_repeats} repeats skipped, {self._camera_held} cells held back by the "
+                            "moving-object gate)")
+            self._camera_pts = self._camera_cells = self._camera_held = 0
+            self._camera_frames = self._camera_repeats = 0
             self._publish()
 
     def _publish(self) -> None:
