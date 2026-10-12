@@ -513,7 +513,7 @@ except W.Refused as e:
     check("clearance 1: the drive pose stays plannable", False, str(e)[:100])
 r = run(["--random", "--speed", "1500", "--plan-only", "--table", str(table_path), "--calib", str(calib_path),
          "--duration", "10", "--log", str(TMP / "g.jsonl")])
-check("speed 1500 without --clearance is refused", r[0] == 1 and "needs --clearance" in r[1], r[1].strip().splitlines()[0][:100])
+check("speed 1500 without --clearance is refused", r[0] == 1 and "needs --clearance" in (r[5] or ""), (r[5] or "").strip().splitlines()[0][:100] if r[5] else "")
 
 # ── F. the start ──
 print("F. the start")
