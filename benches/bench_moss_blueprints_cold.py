@@ -1,4 +1,4 @@
-"""Cold bench for moss_dimos.blueprints: devices, the import, the five
+"""Cold bench for moss_dimos.blueprints: devices, the import, the six
 blueprints, the coordinator in a fresh worker.
 
 Known input -> known output in physical units. Groups:
@@ -21,8 +21,8 @@ Known input -> known output in physical units. Groups:
   E. the camera   - the base_link -> camera_link mount from the profile
                     (pitch -> quaternion)
   H. wrist index  - wrist_camera_index() on a fake /dev/v4l/by-id
-  F. entry points - pyproject: distribution moss-dimos, the five entry points
-                    on the five lazy builders; then each one resolved through
+  F. entry points - pyproject: distribution moss-dimos, the six entry points
+                    on the six lazy builders; then each one resolved through
                     dimOS's own `dimos run` lookup (get_by_name) from a
                     temporary dist-info built from pyproject.toml
   G. blueprints   - moss-base, moss-gamepad, moss-nav and moss-explore build:
@@ -243,7 +243,7 @@ check("the import runs in a clean interpreter", got is not None, f"rc {probe.ret
 got = got or {}
 check("'moss' unknown to the registry before the import", got.get("before") is None, f"{got.get('before')}")
 check(f"after it: 'moss' -> {FACTORY} (the factory path is a string)", got.get("after") == FACTORY, f"{got.get('after')}")
-check("no blueprint built at import (all five are lazy)", got.get("built") == [], f"{got.get('built')}")
+check("no blueprint built at import (all six are lazy)", got.get("built") == [], f"{got.get('built')}")
 check("no pad, lidar, map, planner, explorer, recorder or camera module imported with it",
       got.get("heavy") == [], f"{got.get('heavy')}")
 check("no environment variable set by the import (ROBOT_PROFILE, PERSISTENT_MAP untouched)",
@@ -375,9 +375,10 @@ TARGETS = {"moss-base": "moss_dimos.blueprints:moss_base_blueprint",
            "moss-gamepad": "moss_dimos.blueprints:moss_gamepad_blueprint",
            "moss-nav": "moss_dimos.blueprints:moss_nav_blueprint",
            "moss-explore": "moss_dimos.blueprints:moss_explore_blueprint",
-           "moss-arm": "moss_dimos.blueprints:moss_arm_blueprint"}
+           "moss-arm": "moss_dimos.blueprints:moss_arm_blueprint",
+           "moss-litter": "moss_dimos.blueprints:moss_litter_blueprint"}
 check("distribution name moss-dimos (the dimOS namespace)", project.get("name") == "moss-dimos", f"{project.get('name')}")
-check("exactly the five MOSS entry points, on moss_dimos.blueprints", eps == TARGETS, f"{eps}")
+check("exactly the six MOSS entry points, on moss_dimos.blueprints", eps == TARGETS, f"{eps}")
 check("every target has a lazy builder", {t.split(":")[1] for t in eps.values()} == set(mb._BUILDERS),
       f"{sorted(mb._BUILDERS)}")
 check("names match dimOS's ^[a-z0-9]+(-[a-z0-9]+)*$", bool(eps) and all(re.match(r"^[a-z0-9]+(-[a-z0-9]+)*$", k) for k in eps))
@@ -399,8 +400,8 @@ from dimos.robot.external_blueprints import list_external_blueprint_names  # noq
 from dimos.robot.get_all_blueprints import get_by_name  # noqa: E402
 
 listed = [n for n in list_external_blueprint_names() if n.startswith("moss-dimos.")]
-check("dimOS lists moss-dimos.moss-arm / moss-base / moss-explore / moss-gamepad / moss-nav",
-      listed == ["moss-dimos.moss-arm", "moss-dimos.moss-base", "moss-dimos.moss-explore", "moss-dimos.moss-gamepad", "moss-dimos.moss-nav"],
+check("dimOS lists moss-dimos.moss-arm / moss-base / moss-explore / moss-gamepad / moss-litter / moss-nav",
+      listed == ["moss-dimos.moss-arm", "moss-dimos.moss-base", "moss-dimos.moss-explore", "moss-dimos.moss-gamepad", "moss-dimos.moss-litter", "moss-dimos.moss-nav"],
       f"{listed}")
 resolved = {}
 for local in TARGETS:

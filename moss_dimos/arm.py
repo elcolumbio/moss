@@ -61,6 +61,7 @@ GAP_CLOSED_M = 0.0
 GRIPPER_SPEED_M_PER_S = 0.2      # the task's ceiling on the gripper: the whole gap in half a second
 START_TOLERANCE_RAD = 0.05       # the task refuses a trajectory starting further from the arm than this
 
+ARM_COORDINATOR_NAME = "ArmCoordinator"   # the arm's coordinator serves its RPCs under this name: the base's keeps ControlCoordinator
 SIM_ADAPTER = "sim_mujoco"                                    # dimOS's shared-memory MuJoCo adapter
 REAL_ADAPTER = "feetech_so101"
 REAL_ADAPTER_PATH = "moss_dimos.arm_feetech:FeetechSo101Adapter"
@@ -280,10 +281,18 @@ def velocity_limits() -> dict[str, float]:
 
 
 def arm_trajectory_task():
+    """The coordinator's trajectory task on the six joints. The per-joint
+    ceiling goes in where the installed dimOS takes it (`velocity_limits`);
+    an older dimOS caps at 1 rad/s itself, and the servos' own goal speed
+    (the Feetech adapter sets it) holds the sweep's ceiling on the robot."""
+    import inspect
+
     from dimos.control.tasks.trajectory_task.trajectory_task import joint_trajectory_task
 
-    return joint_trajectory_task(list(JOINT_NAMES), start_position_tolerance=START_TOLERANCE_RAD,
-                                 velocity_limits=velocity_limits())
+    kw = {"start_position_tolerance": START_TOLERANCE_RAD}
+    if "velocity_limits" in inspect.signature(joint_trajectory_task).parameters:
+        kw["velocity_limits"] = velocity_limits()
+    return joint_trajectory_task(list(JOINT_NAMES), **kw)
 
 
 def sim_parts(scene: str | os.PathLike, start_rad: list[float] | None = None, gap_m: float = GAP_CLOSED_M):

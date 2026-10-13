@@ -690,20 +690,14 @@ def build_moss_nav():
     ])
 
 
-def build_moss_explore():
-    """moss-nav's modules plus the planner, the arbiter and the explorer. The
-    pad stays on tele_cmd_vel: MovementManager lets it win and cancels any
-    navigation. Exploration waits for `explore_cmd`."""
-    from dimos.core.coordination.blueprints import autoconnect
+def _explore_parts(profile, ports):
+    """moss-nav's modules plus the planner, the arbiter and the explorer."""
     from dimos.msgs.geometry_msgs.Twist import Twist
     from dimos.msgs.geometry_msgs.Vector3 import Vector3
     from dimos.navigation.movement_manager.movement_manager import MovementManager
     from moss_dimos.explorer2 import Explorer2
     from moss_dimos.recovering_planner import RecoveringPlanner
 
-    profile = robot_profile.current()
-    ports = moss_ports()
-    _announce(ports, profile)
     lethal, pivot = robot_profile.derived(profile)
     parts = _common_parts(ports, profile) + [
         RecoveringPlanner.blueprint(robot_width=profile.robot_width_m,
@@ -722,6 +716,49 @@ def build_moss_explore():
     if reloc_map:
         from dimos.mapping.relocalization.lidar.module import LidarWindowRelocalization  # dimOS main only
         parts.append(LidarWindowRelocalization.blueprint(map_file=reloc_map))
+    return parts
+
+
+def build_moss_explore():
+    """moss-nav's modules plus the planner, the arbiter and the explorer. The
+    pad stays on tele_cmd_vel: MovementManager lets it win and cancels any
+    navigation. Exploration waits for `explore_cmd`."""
+    from dimos.core.coordination.blueprints import autoconnect
+
+    profile = robot_profile.current()
+    ports = moss_ports()
+    _announce(ports, profile)
+    return _jpeg_camera(autoconnect(*_explore_parts(profile, ports))).remappings([
+        (MossControlCoordinator, "twist_command", "cmd_vel"),
+    ])
+
+
+LITTER_MIN_DETECTIONS_ENV = "MOSS_LITTER_MIN_DETECTIONS"   # sightings before an object is confirmed (6)
+LITTER_MIN_DETECTIONS = 6
+LITTER_DISTANCE_M = 0.2                                      # two sightings closer than this are one object
+
+
+def build_moss_litter():
+    """moss-explore plus the litter detection on the nose camera and the
+    mission: explore, see litter, go to it, put it at the arm's pick point,
+    run the cycle on the arm's coordinator (moss-arm, another `dimos run`),
+    explore again. docs/litter.md."""
+    from dimos.core.coordination.blueprints import autoconnect
+    from moss_dimos.litter_detect import LitterDetection
+    from moss_dimos.mission import LitterMission
+
+    profile = robot_profile.current()
+    ports = moss_ports()
+    _announce(ports, profile)
+    try:
+        min_det = int(os.environ.get(LITTER_MIN_DETECTIONS_ENV, "").strip() or LITTER_MIN_DETECTIONS)
+    except ValueError:
+        min_det = LITTER_MIN_DETECTIONS
+    parts = _explore_parts(profile, ports) + [
+        LitterDetection.blueprint(target_frame="world", min_detections_for_permanent=min_det,
+                                  distance_threshold=LITTER_DISTANCE_M),
+        LitterMission.blueprint(),
+    ]
     return _jpeg_camera(autoconnect(*parts)).remappings([
         (MossControlCoordinator, "twist_command", "cmd_vel"),
     ])
@@ -729,7 +766,8 @@ def build_moss_explore():
 
 def build_moss_arm():
     """The arm alone: one coordinator with the six-joint component and the
-    trajectory task (tools/moss_arm_play.py sends the cycle over RPC).
+    trajectory task, serving its RPCs as ArmCoordinator so it can run next
+    to the base's coordinator (tools/moss_arm_play.py sends the cycle over RPC).
     `dimos --simulation mujoco run moss-dimos.moss-arm` adds the simulator on
     the CAD scene and drives the sim adapter; without the flag the Feetech
     adapter opens the arm's port (MOSS_ARM_PORT). Ticks at 50 Hz on the
@@ -755,7 +793,7 @@ def build_moss_arm():
         tick = ARM_TICK_HZ
     return autoconnect(
         ControlCoordinator.blueprint(hardware=[hw], tasks=[arm.arm_trajectory_task()],
-                                     tick_rate=tick, instance_name=COORDINATOR_INSTANCE_NAME),
+                                     tick_rate=tick, instance_name=arm.ARM_COORDINATOR_NAME),
         *extra,
     )
 
@@ -766,6 +804,7 @@ ARM_TICK_HZ = 50.0   # the real bus: six reads and six writes at about 1.2 ms ea
 # pyproject entry point target -> builder. Keys must equal the targets.
 _BUILDERS = {"moss_base_blueprint": build_moss_base,
              "moss_arm_blueprint": build_moss_arm,
+             "moss_litter_blueprint": build_moss_litter,
              "moss_gamepad_blueprint": build_moss_gamepad,
              "moss_nav_blueprint": build_moss_nav,
              "moss_explore_blueprint": build_moss_explore}

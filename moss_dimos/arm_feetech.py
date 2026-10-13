@@ -265,7 +265,10 @@ class FeetechSo101Adapter:
         return self._dof
 
     def get_limits(self):
-        from dimos.hardware.spec import JointLimits
+        try:
+            from dimos.hardware.spec import JointLimits
+        except ImportError:  # the robot's dimOS keeps it with the manipulator spec
+            from dimos.hardware.manipulators.spec import JointLimits
 
         lo, hi = [], []
         for j in A.ARM_JOINTS:

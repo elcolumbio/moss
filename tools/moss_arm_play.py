@@ -82,7 +82,7 @@ def main() -> int:
     from dimos.control.tasks.trajectory_task.trajectory_task import TrajectoryExecutionStatus
     from dimos.core.rpc_client import RPCClient
 
-    client = RPCClient(None, ControlCoordinator)
+    client = RPCClient(None, ControlCoordinator, remote_name=A.ARM_COORDINATOR_NAME)
     try:
         now = client.get_joint_positions() or {}
         missing = [j for j in A.JOINT_NAMES if j not in now]
