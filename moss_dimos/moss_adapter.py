@@ -299,7 +299,14 @@ class MossGeometry:
     @classmethod
     def from_env(cls) -> "MossGeometry":
         pct = int(_env_float("MOSS_MAX_PCT", FIRMWARE_MAX_PCT))
-        tpm = _env_float("MOSS_TICKS_PER_M", None)
+        raw_tpm = os.environ.get("MOSS_TICKS_PER_M", "").strip()
+        if not raw_tpm:
+            tpm = cls.ticks_per_m            # unset: the measured default
+        else:
+            try:
+                tpm = float(raw_tpm)         # set: that value; unreadable: no odometry rather than a random scale
+            except ValueError:
+                tpm = None
         max_pct = max(1, min(FIRMWARE_MAX_PCT, pct))
         floor = int(_env_float("MOSS_MIN_PCT", cls.min_pct))
         return cls(track_m=_env_float("MOSS_TRACK_M", cls.track_m),
