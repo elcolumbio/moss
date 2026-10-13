@@ -68,10 +68,13 @@ bench drives it on a fake robot; the module around it reads `objects`,
 
 **The pick point** is where the cycle's `pick` pose puts the tool, in
 base_link (the lidar's floor projection): `MOSS_PICK_XY_M`, default
-`0.209 -0.098` (the cycle's tool point less the lidar's carriage in the
-CAD scene). The whole final approach rests on it; a tape measure from the
-lidar's axis to the arm's pan axis on the rover is the number to set
-before a run. `MOSS_STANDOFF_M` (0.6) and `MOSS_PICK_TOL_M` (0.02) are the
+`0.215 -0.094` (the cycle's tool point `0.345 -0.010` less the scanner's
+axis `0.130 0.084`, both in the CAD scene's chassis coordinates). The
+camera's mount must use the same origin: with base_link at the scanner,
+`MOSS_CAMERA_XYZ_M="0.026 -0.084 0.075"` (the CAD nose position less the
+scanner's axis; the profile's default is the CAD nose position itself). The
+whole final approach rests on these; a tape measure from the lidar's axis
+to the arm's pan axis on the rover is the number to set before a run. `MOSS_STANDOFF_M` (0.6) and `MOSS_PICK_TOL_M` (0.02) are the
 other two knobs. `MOSS_MISSION_AUTOSTART=0` leaves the first `explore_cmd`
 to the cockpit.
 

@@ -37,8 +37,9 @@ States and what they publish:
 
 The pick point is where the cycle's `pick` pose puts the tool, in
 base_link (the lidar's floor projection): PICK_XY_M, from the CAD scene by
-default (the lidar's carriage as base_link) and set from a tape measure on
-the robot with MOSS_PICK_XY_M. The whole final approach depends on it.
+default (the tool point less the scanner's axis) and set from a tape
+measure on the robot with MOSS_PICK_XY_M. The whole final approach depends
+on it, and the camera's mount must share the origin (MOSS_CAMERA_XYZ_M).
 """
 
 from __future__ import annotations
@@ -56,7 +57,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 PICK_XY_ENV = "MOSS_PICK_XY_M"
-PICK_XY_DEFAULT = (0.209, -0.098)    # the cycle's pick tool point less the lidar carriage, CAD scene; to measure
+PICK_XY_DEFAULT = (0.215, -0.094)    # the cycle's pick tool point (0.345, -0.010) less the scanner's axis (0.130, 0.084), CAD scene; to measure
 STANDOFF_ENV = "MOSS_STANDOFF_M"
 STANDOFF_DEFAULT = 0.6
 TOL_ENV = "MOSS_PICK_TOL_M"

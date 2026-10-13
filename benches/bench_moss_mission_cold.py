@@ -85,7 +85,7 @@ class Clock:
         return self.t
 
 
-PICK = (0.209, -0.098)
+PICK = M.PICK_XY_DEFAULT
 
 # ── A. geometry ──
 print("A. geometry")
