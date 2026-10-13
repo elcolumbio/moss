@@ -150,6 +150,17 @@ except ValueError as _exc:
                     f"{_existing or 'another path'!r}; {MOSS_ADAPTER_PATH!r} is NOT used "
                     f"in this process ({_exc})")
 
+# The arm's adapter, the same way (moss_dimos.arm_feetech; docs/arm.md).
+from dimos.hardware.manipulators.registry import adapter_registry as _manipulator_registry  # noqa: E402
+from moss_dimos.arm import REAL_ADAPTER as ARM_ADAPTER_NAME, REAL_ADAPTER_PATH as ARM_ADAPTER_PATH  # noqa: E402
+try:
+    _manipulator_registry.register_path(ARM_ADAPTER_NAME, ARM_ADAPTER_PATH)
+except ValueError as _exc:
+    _existing = getattr(_manipulator_registry, "_factory_paths", {}).get(ARM_ADAPTER_NAME)
+    _logger.warning(f"manipulator adapter '{ARM_ADAPTER_NAME}' is already registered as "
+                    f"{_existing or 'another path'!r}; {ARM_ADAPTER_PATH!r} is NOT used "
+                    f"in this process ({_exc})")
+
 # Velocity commands must never queue up (stale twists drive the rover past
 # the point asked): clamp the LCM queue of command channels to one message.
 from moss_dimos.lcm_latest import install as _install_latest_only  # noqa: E402
@@ -638,7 +649,7 @@ def _jpeg_camera(bp):
     return bp.transports(transports) if transports else bp
 
 
-# ── the four blueprints, built on first access ──────────────────────────────
+# ── the blueprints, built on first access ──────────────────────────────
 
 def build_moss_base():
     """The coordinator and the tracked base, twist_command on cmd_vel: any
@@ -716,8 +727,45 @@ def build_moss_explore():
     ])
 
 
+def build_moss_arm():
+    """The arm alone: one coordinator with the six-joint component and the
+    trajectory task (tools/moss_arm_play.py sends the cycle over RPC).
+    `dimos --simulation mujoco run moss-dimos.moss-arm` adds the simulator on
+    the CAD scene and drives the sim adapter; without the flag the Feetech
+    adapter opens the arm's port (MOSS_ARM_PORT). Ticks at 50 Hz on the
+    robot: six reads and up to six writes on a 1 Mbps bus fit in a tick."""
+    from dimos.control.coordinator import ControlCoordinator
+    from dimos.core.coordination.blueprints import autoconnect
+    from dimos.core.global_config import global_config
+    from moss_dimos import arm
+
+    sim = bool(global_config.simulation)
+    if sim:
+        cad = arm.find_cad()
+        if cad is None:
+            raise FileNotFoundError(f"moss-arm in simulation needs the CAD scene: {arm.CAD_ENV}, or {arm.CAD_GLOB}")
+        scene = arm.sim_scene(cad)
+        _logger.info(f"moss-arm: simulation scene {scene} from {cad}")
+        hw = arm.arm_hardware(sim=True, address=scene)
+        extra = arm.sim_parts(scene)
+        tick = 100.0
+    else:
+        hw = arm.arm_hardware(sim=False)
+        extra = ()
+        tick = ARM_TICK_HZ
+    return autoconnect(
+        ControlCoordinator.blueprint(hardware=[hw], tasks=[arm.arm_trajectory_task()],
+                                     tick_rate=tick, instance_name=COORDINATOR_INSTANCE_NAME),
+        *extra,
+    )
+
+
+ARM_TICK_HZ = 50.0   # the real bus: six reads and six writes at about 1.2 ms each
+
+
 # pyproject entry point target -> builder. Keys must equal the targets.
 _BUILDERS = {"moss_base_blueprint": build_moss_base,
+             "moss_arm_blueprint": build_moss_arm,
              "moss_gamepad_blueprint": build_moss_gamepad,
              "moss_nav_blueprint": build_moss_nav,
              "moss_explore_blueprint": build_moss_explore}

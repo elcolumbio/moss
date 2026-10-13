@@ -33,6 +33,7 @@ moss-base = "moss_dimos.blueprints:moss_base_blueprint"
 moss-gamepad = "moss_dimos.blueprints:moss_gamepad_blueprint"
 moss-nav = "moss_dimos.blueprints:moss_nav_blueprint"
 moss-explore = "moss_dimos.blueprints:moss_explore_blueprint"
+moss-arm = "moss_dimos.blueprints:moss_arm_blueprint"
 
 [tool.setuptools]
 packages = ["moss_dimos", "moss_pi"]

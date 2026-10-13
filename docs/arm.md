@@ -457,3 +457,66 @@ python benches/bench_arm_drop_cold.py
 grid step apart at most) with the guard, `segment_allowed` and the sweep's
 box rule, prints one line per move with the reason of a refusal, and with
 `--mujoco` counts the contacts of the whole sequence in the CAD scene.
+
+## The arm in dimOS
+
+`moss_dimos/arm.py` puts the arm under dimOS's control coordinator: one
+hardware component (`arm/shoulder_pan` … `arm/wrist_roll`, `arm/gripper`),
+one joint-trajectory task capped at the sweep's 400 ticks per second, and
+the cycle of `config/arm_drop_poses.json` sampled into one `JointTrajectory`
+(the quintic on the joints, the cubic on the jaw gap, every move stretched
+to the cap). Units are the model's radians and the jaw gap in metres; the
+adapters speak ticks.
+
+```sh
+dimos --simulation mujoco run moss-dimos.moss-arm   # the CAD scene in MuJoCo, dimOS's sim adapter
+dimos run moss-dimos.moss-arm                        # the arm on its port (MOSS_ARM_PORT), the Feetech adapter
+tools/moss_arm_play.py [--sim] [--stop-after release] [--from back_to_clear] [--dry-run]
+```
+
+`moss-arm` is a coordinator alone; `tools/moss_arm_play.py` sends the cycle
+over RPC from wherever the arm is (a `goto` move first when it is not at
+the cycle's first pose), reads the joints back every 50 ms and prints the
+worst following error per joint; a joint more than `--max-lag` ticks behind
+for `--lag-seconds` cancels the trajectory and the run ends with `ARM LAG`.
+`--stop-after release` leaves the arm over the bin; `--from back_to_clear`
+is the return.
+
+**Simulation.** `arm.sim_scene` writes a simulation scene from the CAD
+scene into the MOSS state directory: the mesh directory made absolute, the
+arm joints' ranges and the actuators' control ranges set to the
+calibration's measured end stops (the delivered scene carries the upstream
+model's nominal ranges, which stop short of the drive pose: the lift 4,
+the elbow 5 and the wrist flex 9 degrees), the jaw actuator stiffened (the
+delivered one crawls), and the three self-contact pairs of the folded arm
+left out (in the delivered scene the forearm's collider sinks 16 mm into
+the shoulder's at the drive pose, where the real arm rests). Arm-rover
+contacts stay: `benches/bench_moss_arm_sim_cold.py` runs the whole cycle in
+this process and counts them (none), checks the joints read back what was
+commanded (the pan +30 degrees reads +30.00) and the jaws measure their
+gap (53 mm, 90 mm). The sim adapter's gripper value is inverted over the
+joint's range in both directions; `sim_gripper_command` and
+`sim_gripper_gap` are the only places that know it. The calibration file
+lives on the robot (`config/arm_calibration.json`); elsewhere point
+`MOSS_ARM_CALIB` at a copy.
+
+**The robot.** `moss_dimos/arm_feetech.py` is the `feetech_so101` adapter:
+scservo_sdk on the arm's port, one read of the six present positions per
+tick and a goal write for every servo whose target moved by a tick; goal
+speed 400 and acceleration 50 set once, the gripper's force limit 400 on
+registers 44 and 48, torque on at activate and off at deactivate. It
+watches what the coordinator does not: a servo more than 150 ticks from
+its goal and not moving for a second sets `FOLLOWING_ERROR` in
+`read_error()`; a bus that stops answering keeps the last positions and
+turns `has_live_state()` off, which stops the coordinator's commands.
+`benches/bench_moss_arm_feetech_cold.py` runs it on a fake bus, under the
+coordinator too. The coordinator ticks at 50 Hz on the robot: six reads
+and six writes at about 1.2 ms each fit in a tick.
+
+What the scene check found on the way: the keep-out table refuses the
+delivered travel and drop poses, but the CAD scene posed at one degree per
+joint between samples finds no contact along the whole sequence (1 021
+poses, 2 mm margin, the can held). The refusals are the table's grid
+(steps of 14 to 19 degrees, 49 on the roll: a forbidden neighbour 16 to
+31 degrees away), not the poses. The cycle therefore runs as delivered;
+the table stays the veto for moves the scene check has not seen.
