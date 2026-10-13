@@ -62,7 +62,7 @@ bench drives it on a fake robot; the module around it reads `objects`,
 | EXPLORING | the explorer drives; a confirmed object of a litter class within 4 m, not picked or skipped, becomes the target |
 | STOPPING | `stop_explore_cmd`, then 3 s for the explorer's own "stay here" goal to land first |
 | APPROACHING | `goal_request`: 0.6 m before the object on the line from the robot, facing it; `goal_reached` True → SERVOING, False → the object is skipped; 90 s → SERVOING from wherever the rover is |
-| SERVOING | `tele_cmd_vel` at every tick (the pad's channel: the movement manager lets it win): turn until the object's bearing is the pick point's, creep until its range is the pick point's, within 2 cm; at most 0.08 m/s and 0.4 rad/s; 60 s → skipped |
+| SERVOING | `tele_cmd_vel` at every tick (the pad's channel: the movement manager lets it win): one law drives the robot's pick point onto the object (the pick point is the controlled point: `w = vy / px`, `v = vx + w py`), within 2 cm; at most 0.08 m/s and 0.4 rad/s. The base raises any non-zero command to its power floor and pivots at full power, so within `MOSS_SERVO_FAR_M` (0.25) the twist comes in pulses: one tick on (`MOSS_SERVO_PULSE_S`, 0.1), `MOSS_SERVO_REST_S` (0.4) of zeros, a step at a time; farther it is continuous. 60 s → skipped |
 | PICKING | the pick command (`MOSS_PICK_CMD`, default `tools/moss_arm_play.py`; `MOSS_PICK_SIM=1` adds `--sim`; `none` marks the object picked without moving the arm); exit 0 → picked, else skipped |
 | RESUMING | `explore_cmd`, then EXPLORING; a picked object, and anything within 0.15 m of it, is never a target again; a skipped one is tried again after 10 min |
 

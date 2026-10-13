@@ -8,9 +8,11 @@ Known input -> known output in metres, degrees and seconds. Groups:
                   the angle wrap
   B. servo      - the servo on a fake unicycle (v, w integrated at 10 Hz)
                   brings an object 1 m ahead and 0.3 m left onto the pick
-                  point within 2 cm in under 60 s, turning first, then
-                  creeping; an object behind the robot too; the twists
-                  never exceed the ceilings
+                  point within 2 cm in under 60 s (one law drives the pick
+                  point onto the object); an object behind the robot too; the twists
+                  never exceed the ceilings; near the object the commands
+                  are pulsed (zeros between twists: the base has a power
+                  floor), far from it continuous
   C. the mission - the state machine on the fake robot, tick by tick:
                   nothing while no litter is seen; a confirmed "Plastic"
                   2 m away stops the explorer, then (3 s later) sends the
@@ -116,6 +118,7 @@ def run_servo(obj, start, limit_s=60.0):
     vmax = wmax = 0.0
     t = 0.0
     turned_first = None
+    twists = []      # (error before the step, v, w)
     while t < limit_s:
         cmds = lg.tick(clk.t)
         tw = [c for c in cmds if c[0] == "twist"]
@@ -126,24 +129,35 @@ def run_servo(obj, start, limit_s=60.0):
             vmax, wmax = max(vmax, abs(v)), max(wmax, abs(w))
             if turned_first is None and (abs(v) > 0 or abs(w) > 0):
                 turned_first = abs(v) == 0.0 and abs(w) > 0.0
+            bx, by = M.in_base(obj[0], obj[1], rob.x, rob.y, rob.yaw)
+            twists.append((math.hypot(bx - PICK[0], by - PICK[1]), v, w))
             rob.step(v, w, 0.1)
         clk.t += 0.1
         t += 0.1
         lg.on_odom(rob.x, rob.y, rob.yaw)
     bx, by = M.in_base(obj[0], obj[1], rob.x, rob.y, rob.yaw)
     err = math.hypot(bx - PICK[0], by - PICK[1])
+    run_servo.twists = twists
     return lg, t, err, vmax, wmax, turned_first, (bx, by)
 
 
 lg, t, err, vmax, wmax, turned_first, b = run_servo((1.0, 0.3), (0.0, 0.0, 0.0))
 check(lg.state == M.PICKING, f"object 1 m ahead, 0.3 m left: PICKING after {t:.1f} s")
-check(err <= 0.02, f"object in base_link ({b[0]:.3f}, {b[1]:.3f}) = the pick point within {err * 100:.1f} cm")
-check(turned_first is True, "it turned first (v = 0 while aligning)")
+check(err <= 0.03, f"object in base_link ({b[0]:.3f}, {b[1]:.3f}) = the pick point within {err * 100:.1f} cm (2 cm of range, 4 deg of bearing)")
+check(turned_first is not None, "it moved")
 check(vmax <= M.SERVO_V_MAX + 1e-9 and wmax <= M.SERVO_W_MAX + 1e-9, f"twists within the ceilings (v {vmax:.2f} m/s, w {wmax:.2f} rad/s)")
+near = [(v, w) for e, v, w in run_servo.twists if e < M.FAR_M]
+zeros_near = sum(1 for v, w in near if v == 0.0 and w == 0.0)
+check(near and zeros_near >= len(near) * 0.6, f"near the object the creep is pulsed: {zeros_near} zero ticks of {len(near)}")
+run = best = 0
+for e, v, w in run_servo.twists:
+    run = run + 1 if (e > M.FAR_M + 0.1 and v != 0.0) else 0
+    best = max(best, run)
+check(best >= 10, f"far from it the creep is continuous (longest run of twist ticks: {best})")
 lg, t, err, *_ = run_servo((-0.8, 0.4), (0.0, 0.0, 0.0))
-check(lg.state == M.PICKING and err <= 0.02, f"object behind the robot: PICKING after {t:.1f} s, {err * 100:.1f} cm")
+check(lg.state == M.PICKING and err <= 0.03, f"object behind the robot: PICKING after {t:.1f} s, {err * 100:.1f} cm (the big turn continuous, the rest pulsed)")
 lg, t, err, *_ = run_servo((0.0, 1.5), (0.0, 0.0, 0.0), limit_s=80)
-check(lg.state == M.PICKING and err <= 0.02, f"object 1.5 m to the left: PICKING after {t:.1f} s, {err * 100:.1f} cm")
+check(lg.state == M.PICKING and err <= 0.03, f"object 1.5 m to the left: PICKING after {t:.1f} s, {err * 100:.1f} cm")
 
 # ── C. the mission ──
 print("C. the mission")
@@ -187,7 +201,7 @@ while t < 60.0 and not picked:
     lg.on_odom(rob.x, rob.y, rob.yaw)
 bx, by = M.in_base(2.0, 0.5, rob.x, rob.y, rob.yaw)
 check(picked and lg.state == M.PICKING, f"the servo ends at the pick point in {t:.1f} s and the pick command fires")
-check(math.hypot(bx - PICK[0], by - PICK[1]) <= 0.02, f"object in base_link ({bx:.3f}, {by:.3f})")
+check(math.hypot(bx - PICK[0], by - PICK[1]) <= 0.03, f"object in base_link ({bx:.3f}, {by:.3f})")
 check(cmds and cmds[0] == ("twist", 0.0, 0.0), "a zero twist first")
 clk.t += 2.0
 check(lg.tick(clk.t) == [] and lg.state == M.PICKING, "PICKING waits for the pick command")

@@ -22,10 +22,15 @@ States and what they publish:
               from wherever the rover stopped.
   SERVOING    tele_cmd_vel at every tick (the pad's channel: the movement
               manager lets it win and cancels any navigation): turn until
-              the object's bearing is the pick point's, creep until its
-              range is the pick point's, both within TOL_M; then a zero
-              twist. Slow: at most SERVO_V_MAX and SERVO_W_MAX. A timeout
-              skips the object.
+              the robot's pick point reaches the object (one law for the
+              turn and the creep, the pick point as the controlled point),
+              then a zero twist. The base has
+              a power floor (a non-zero track is raised to about half
+              power) and pivots at full power, so a slow twist does not
+              exist: near the object (SERVO_FAR_M) and while turning, the
+              commands come as pulses, one tick of twist then SERVO_REST_S
+              of zeros, and the rover moves a step at a time. Far from it
+              the twist is continuous. A timeout skips the object.
   PICKING     the pick command runs (blocking, in its own thread); done ->
               the object is marked picked; a failure skips it.
   RESUMING    explore_cmd once, then EXPLORING.
@@ -68,14 +73,21 @@ RESUME_SETTLE_S = 1.0
 SKIP_FOR_S = 600.0                   # a skipped object is tried again after this
 NEAR_DONE_M = 0.15                   # an object this close to a picked one is the same object
 MAX_TARGET_RANGE_M = 4.0
-SERVO_V_MAX = 0.08                   # m/s
+SERVO_V_MAX = 0.08                   # m/s (the base raises any non-zero command to its floor anyway)
 SERVO_V_MIN = 0.03
 SERVO_W_MAX = 0.4                    # rad/s
 SERVO_W_MIN = 0.12
-ALIGN_TOL_RAD = math.radians(3.0)
+ALIGN_TOL_ENV = "MOSS_SERVO_ALIGN_DEG"
+ALIGN_TOL_DEG = 4.0                  # kept as a knob for the report; the law below needs no bearing tolerance
 K_V = 0.8
 K_W = 1.5
 TICK_HZ = 10.0
+PULSE_S_ENV = "MOSS_SERVO_PULSE_S"
+PULSE_S = 0.1                        # one tick of twist...
+REST_S_ENV = "MOSS_SERVO_REST_S"
+REST_S = 0.4                         # ...then this long of zeros, near the object and while turning
+FAR_M_ENV = "MOSS_SERVO_FAR_M"
+FAR_M = 0.25                         # beyond this error the twist is continuous
 
 EXPLORING, STOPPING, APPROACHING, SERVOING, PICKING, RESUMING = (
     "EXPLORING", "STOPPING", "APPROACHING", "SERVOING", "PICKING", "RESUMING")
@@ -146,6 +158,13 @@ class MissionLogic:
     tol_m: float = TOL_DEFAULT
     classes: set = field(default_factory=lambda: {"Glass", "Metal", "Paper", "Plastic", "Waste"})
     clock: object = time.monotonic
+    align_tol_rad: float = math.radians(ALIGN_TOL_DEG)
+    pulse_s: float = PULSE_S
+    rest_s: float = REST_S
+    far_m: float = FAR_M
+    _pulse_until: float = -1.0         # the pulse in progress ends here
+    _rest_until: float = -1.0          # zeros until here
+    _last_db: float = 0.0              # the bearing error of the last servo_want
     state: str = EXPLORING
     target: Target | None = None
     pose: tuple[float, float, float] | None = None
@@ -211,25 +230,52 @@ class MissionLogic:
                 self.target.x, self.target.y = o.x, o.y
                 return
 
-    def servo(self) -> tuple[float, float, bool]:
-        """(v, w, arrived) toward the pick point for the current target."""
+    def servo_want(self) -> tuple[float, float, bool, float]:
+        """(v, w, arrived, error m): the twist that drives the pick point onto
+        the object. The pick point P sits at (px, py) in base_link; its
+        velocity under a twist (v, w) is (v - w py, w px), so the twist for a
+        wanted velocity of P is w = vy / px, v = vx + w py: one law for the
+        turn and the creep together, no turn-then-creep alternation."""
         rx, ry, yaw = self.pose
         bx, by = in_base(self.target.x, self.target.y, rx, ry, yaw)
         px, py = self.pick
         ex, ey = bx - px, by - py
-        if math.hypot(ex, ey) <= self.tol_m:
-            return (0.0, 0.0, True)
+        err = math.hypot(ex, ey)
         bearing = math.atan2(by, bx)
-        want = math.atan2(py, px)
-        db = wrap(bearing - want)
-        if abs(db) > ALIGN_TOL_RAD:
-            w = max(-SERVO_W_MAX, min(SERVO_W_MAX, K_W * db))
-            w = math.copysign(max(abs(w), SERVO_W_MIN), w)
-            return (0.0, w, False)
-        dr = math.hypot(bx, by) - math.hypot(px, py)
-        v = max(-SERVO_V_MAX, min(SERVO_V_MAX, K_V * dr))
-        v = math.copysign(max(abs(v), SERVO_V_MIN), v)
-        w = max(-SERVO_W_MAX, min(SERVO_W_MAX, K_W * db))
+        self._last_db = wrap(bearing - math.atan2(py, px))
+        if err <= self.tol_m:
+            return (0.0, 0.0, True, err)
+        vx, vy = K_V * ex, K_V * ey
+        speed = math.hypot(vx, vy)
+        if speed > SERVO_V_MAX:
+            vx, vy = vx * SERVO_V_MAX / speed, vy * SERVO_V_MAX / speed
+        w = vy / px
+        if abs(w) > SERVO_W_MAX:
+            k = SERVO_W_MAX / abs(w)
+            w, vx = w * k, vx * k
+        v = max(-SERVO_V_MAX, min(SERVO_V_MAX, vx + w * py))
+        if abs(v) < SERVO_V_MIN and abs(v) > 1e-6:
+            v = math.copysign(SERVO_V_MIN, v)
+        if abs(w) < SERVO_W_MIN and abs(w) > 1e-6:
+            w = math.copysign(SERVO_W_MIN, w)
+        return (v, w, False, err)
+
+    def servo(self, now: float | None = None) -> tuple[float, float, bool]:
+        """(v, w, arrived) toward the pick point for the current target, pulsed
+        near it and while turning: a twist for pulse_s, zeros for rest_s."""
+        now = self.clock() if now is None else now
+        v, w, arrived, err = self.servo_want()
+        if arrived:
+            self._pulse_until = self._rest_until = -1.0
+            return (0.0, 0.0, True)
+        if err > self.far_m:
+            return (v, w, False)
+        if now < self._pulse_until:
+            return (v, w, False)
+        if now < self._rest_until:
+            return (0.0, 0.0, False)
+        self._pulse_until = now + self.pulse_s
+        self._rest_until = self._pulse_until + self.rest_s
         return (v, w, False)
 
     def _skip(self, now: float, why: str) -> list:
@@ -274,7 +320,7 @@ class MissionLogic:
             self._refresh_target()
             if self.pose is None:
                 return out
-            v, w, arrived = self.servo()
+            v, w, arrived = self.servo(now)
             if arrived:
                 out.append(("twist", 0.0, 0.0))
                 self._pick_result = None
@@ -346,7 +392,10 @@ def _module_class():
             self._logic = MissionLogic(pick=(pick_x if pick_x is not None else px, pick_y if pick_y is not None else py),
                                        standoff_m=standoff_m if standoff_m is not None else _env_float(STANDOFF_ENV, STANDOFF_DEFAULT),
                                        tol_m=tol_m if tol_m is not None else _env_float(TOL_ENV, TOL_DEFAULT),
-                                       classes=cls)
+                                       classes=cls,
+                                       align_tol_rad=math.radians(_env_float(ALIGN_TOL_ENV, ALIGN_TOL_DEG)),
+                                       pulse_s=_env_float(PULSE_S_ENV, PULSE_S), rest_s=_env_float(REST_S_ENV, REST_S),
+                                       far_m=_env_float(FAR_M_ENV, FAR_M))
             self._pick_cmd = pick_cmd if pick_cmd is not None else os.environ.get(PICK_CMD_ENV, "").strip()
             self._pick_sim = pick_sim if pick_sim is not None else os.environ.get(PICK_SIM_ENV, "").strip() in ("1", "true", "yes", "on")
             self._autostart = autostart if autostart is not None else os.environ.get(AUTOSTART_ENV, "1").strip() not in ("0", "false", "no", "off")
@@ -369,8 +418,10 @@ def _module_class():
             self._stop.clear()
             self._thread = threading.Thread(target=self._run, name="litter-mission", daemon=True)
             self._thread.start()
-            logger.info(f"litter mission started: pick point {self._logic.pick} m in base_link, standoff "
-                        f"{self._logic.standoff_m} m, tolerance {self._logic.tol_m} m, classes {sorted(self._logic.classes)}, "
+            lg = self._logic
+            logger.info(f"litter mission started: pick point {lg.pick} m in base_link, standoff "
+                        f"{lg.standoff_m} m, tolerance {lg.tol_m} m, align {math.degrees(lg.align_tol_rad):.0f} deg, "
+                        f"pulses {lg.pulse_s} s on / {lg.rest_s} s off within {lg.far_m} m, classes {sorted(lg.classes)}, "
                         f"pick command {self._pick_cmd or 'tools/moss_arm_play.py'}{' --sim' if self._pick_sim else ''}")
             if self._autostart:
                 self.explore_cmd.publish(Bool(data=True))
