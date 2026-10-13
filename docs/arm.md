@@ -432,3 +432,28 @@ pose or a wrong joint).
 4. Commit `config/arm_keepout.json`. Its `model.sha256` and
    `model.geometry_sha256` say which scene it came from (the second one
    changes with any mesh); its `joint_map` is the one it replaced.
+
+## Drop
+
+`config/arm_drop_poses.json` holds a pick-and-drop sequence (format
+`moss-arm-drop/1`): drive, travel, pick (the gripper closes), lift, clear
+(the arm folded high over the base: the pose to wait in), drop over the bin
+(the gripper opens), clear, drive. Each pose is five model radians (`rad`),
+its ticks through the table's `joint_map` (`ticks`, recomputed by the tool)
+and its tool point in the model's world frame (`tcp_m`). Each move of
+`sequence` names its poses, its duration, the jaw gap at both ends
+(`gap_mm`, turned into gripper ticks by the line through `open` and
+`grasp` of `gripper`) and whether the can is held. A move is a straight line
+in joint space timed by a quintic smootherstep; the pan is never wrapped.
+`shift_deg` on a pose and `via` on a move are the smallest changes that pass
+the guard at clearance 1; `--as-delivered` leaves them out.
+
+```sh
+python tools/moss_arm_drop.py plan [--as-delivered] [--clearance 1] [--suggest] [--mujoco auto]
+python benches/bench_arm_drop_cold.py
+```
+
+`plan` moves nothing: it checks every sample of every move (a quarter of a
+grid step apart at most) with the guard, `segment_allowed` and the sweep's
+box rule, prints one line per move with the reason of a refusal, and with
+`--mujoco` counts the contacts of the whole sequence in the CAD scene.
