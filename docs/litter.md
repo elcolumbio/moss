@@ -7,8 +7,13 @@ calls its cycle over RPC.
 
 ```sh
 .venv/bin/dimos run moss-dimos.moss-arm        # one terminal: the arm's coordinator
-.venv/bin/dimos run moss-dimos.moss-litter     # another: explore, detect, approach, pick, explore
+EXPLORE=1 tools/moss-fly.sh litter             # another: the gates, then explore, detect, approach, pick, explore
 ```
+
+`tools/moss-fly.sh litter` runs the same gates and proofs as `explore` and
+keeps the arming: the mission does not send the first `explore_cmd` itself
+under the launcher (`MOSS_MISSION_AUTOSTART=0`). By hand,
+`.venv/bin/dimos run moss-dimos.moss-litter` starts exploring on its own.
 
 ## Detection
 

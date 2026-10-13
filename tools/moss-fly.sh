@@ -7,6 +7,7 @@
 #     tools/moss-fly.sh map                gates, then moss-dimos.moss-nav (mapping + pad, recording)
 #     tools/moss-fly.sh explore            gates, then moss-dimos.moss-explore; exploration NOT armed
 #     EXPLORE=1 tools/moss-fly.sh explore  ... and arm exploration once the stack is proven
+#     EXPLORE=1 tools/moss-fly.sh litter   the litter chain (explore + detection + mission), armed the same way
 #     tools/moss-fly.sh stop               stop exploration, then the stack
 #     tools/moss-fly.sh log [N]            what the base, the lidar, the map and the pad said
 #     tools/moss-fly.sh cockpit            start the cockpit (tools/moss_cockpit.py) if needed, print its URL
@@ -51,7 +52,7 @@ EXPLORE_PROOF_S=15
 if [ "${FLY_TEST:-0}" = "1" ]; then . "${FLY_TEST_STUBS:?FLY_TEST=1 needs FLY_TEST_STUBS}"; fi
 
 usage() {
-  echo "usage: tools/moss-fly.sh check|map|explore|stop|log [N]|cockpit   (EXPLORE=1 with explore, MOCK=1 with map/explore)"
+  echo "usage: tools/moss-fly.sh check|map|explore|litter|stop|log [N]|cockpit   (EXPLORE=1 with explore/litter, MOCK=1 with map/explore/litter)"
 }
 
 # The stack's environment, exported once so the flight check sees exactly what
@@ -234,10 +235,13 @@ case "$CMD" in
     exit $? ;;
   map) BP=moss-nav ;;
   explore) BP=moss-explore ;;
+  # the litter chain: moss-explore plus the detection and the mission (docs/litter.md). The
+  # launcher keeps the arming: the mission does not send the first explore_cmd itself.
+  litter) BP=moss-litter; export MOSS_MISSION_AUTOSTART="${MOSS_MISSION_AUTOSTART:-0}" ;;
   *) usage; exit 1 ;;
 esac
 
-if [ "${EXPLORE:-0}" = "1" ] && [ "$CMD" != "explore" ]; then
+if [ "${EXPLORE:-0}" = "1" ] && [ "$CMD" != "explore" ] && [ "$CMD" != "litter" ]; then
   echo "CONTRADICTORY: EXPLORE=1 with '$CMD' - the mapping stack has no explorer; use: EXPLORE=1 tools/moss-fly.sh explore"; exit 1
 fi
 take_lock
