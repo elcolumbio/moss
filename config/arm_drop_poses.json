@@ -1,7 +1,13 @@
 {
  "format": "moss-arm-drop/1",
  "about": "A pick-and-drop sequence: from the drive pose to travel, down to the pick, the gripper closing, up through lift to clear (the arm folded high over the base: the pose to wait in), the base turned to the drop pose over the bin, the gripper opening, back to clear, then to the drive pose. docs/arm.md, section Drop.",
- "joints": ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"],
+ "joints": [
+  "shoulder_pan",
+  "shoulder_lift",
+  "elbow_flex",
+  "wrist_flex",
+  "wrist_roll"
+ ],
  "units": {
   "rad": "model radians (the keep-out table's model)",
   "ticks": "servo positions as reported (homing offset applied)",
@@ -12,46 +18,170 @@
  "ticks_rule": "ticks = the table's joint_map on rad (today zero 2048 and sign +1 on every joint: round(2048 + rad * 4096 / (2 pi))); ticks are written here for reading, the tool recomputes them",
  "interpolation": "each move is a straight line in joint space, timed by the quintic smootherstep u -> 6u^5 - 15u^4 + 10u^3 over its duration; angles are never wrapped (the pan turns the way the numbers say); the jaw gap follows the cubic smoothstep 3u^2 - 2u^3 over gap_duration_s (default the move's)",
  "gripper": {
-  "open": {"gap_mm": 90, "ticks": 3674},
-  "grasp": {"gap_mm": 53, "ticks": 2780},
+  "open": {
+   "gap_mm": 90,
+   "ticks": 3674
+  },
+  "grasp": {
+   "gap_mm": 53,
+   "ticks": 2780
+  },
   "force": 400,
-  "force_registers": [44, 48],
+  "force_registers": [
+   44,
+   48
+  ],
   "rule": "ticks for a gap: the straight line through open and grasp (24.2 ticks per mm); the grasp value is the goal that closed on an object with the force limited, not a measured 53 mm"
  },
- "rest": ["drive", "clear"],
+ "rest": [
+  "drive",
+  "clear"
+ ],
  "poses": {
   "travel": {
-   "rad": [1.357552549, -0.809755548, 0.383285798, 1.551888428, -0.685999941],
-   "ticks": [2933, 1520, 2298, 3060, 1601],
-   "tcp_m": [0.26, -0.01, 0.245],
-   "shift_deg": {"elbow_flex": -3, "wrist_flex": -6},
+   "rad": [
+    1.357552549,
+    -0.809755548,
+    0.383285798,
+    1.551888428,
+    -0.685999941
+   ],
+   "ticks": [
+    2933,
+    1520,
+    2298,
+    3060,
+    1601
+   ],
+   "tcp_m": [
+    0.26,
+    -0.01,
+    0.245
+   ],
+   "shift_deg": {
+    "elbow_flex": -3,
+    "wrist_flex": -6
+   },
    "shift_why": "the pose as delivered is refused at clearance 1: forbidden: the arm touches SO101 base link 1 at the grid point shoulder_pan +1.270, shoulder_lift -0.640, elbow_flex +0.622, wrist_flex +1.833, wrist_roll -1.232 rad"
   },
   "pick": {
-   "rad": [1.340075828, 0.616745644, -0.066675235, 1.020729568, -1.585330564],
-   "ticks": [2922, 2450, 2005, 2713, 1015],
-   "tcp_m": [0.345, -0.01, 0.082],
-   "shift_deg": {"elbow_flex": -6},
+   "rad": [
+    1.340075828,
+    0.616745644,
+    -0.066675235,
+    1.020729568,
+    -1.585330564
+   ],
+   "ticks": [
+    2922,
+    2450,
+    2005,
+    2713,
+    1015
+   ],
+   "tcp_m": [
+    0.345,
+    -0.01,
+    0.082
+   ],
+   "shift_deg": {
+    "elbow_flex": -6
+   },
    "shift_why": "the pose as delivered is refused at clearance 1: within 1 grid step(s) of a forbidden grid point (clearance 1): the arm touches Hull R23 - open battery bay smooth underside and driver access at the grid point shoulder_pan +0.988, shoulder_lift +0.640, elbow_flex +0.124, wrist_flex +1.494, wrist_roll -2.082 rad"
   },
   "lift": {
-   "rad": [1.345484884, -0.64214476, 0.107309414, 1.319621434, -0.6859997],
-   "ticks": [2925, 1629, 2118, 2908, 1601],
-   "tcp_m": [0.31, -0.01, 0.295]
+   "rad": [
+    1.345484884,
+    -0.64214476,
+    0.107309414,
+    1.319621434,
+    -0.6859997
+   ],
+   "ticks": [
+    2925,
+    1629,
+    2118,
+    2908,
+    1601
+   ],
+   "tcp_m": [
+    0.31,
+    -0.01,
+    0.295
+   ]
   },
   "clear": {
-   "rad": [1.411992262, -1.233952819, -0.344509226, 1.651086912, -1.585357879],
-   "ticks": [2968, 1244, 1823, 3124, 1015],
-   "tcp_m": [0.18, -0.01, 0.405],
-   "shift_deg": {"shoulder_lift": 7},
+   "rad": [
+    1.411992262,
+    -1.233952819,
+    -0.344509226,
+    1.651086912,
+    -1.585357879
+   ],
+   "ticks": [
+    2968,
+    1244,
+    1823,
+    3124,
+    1015
+   ],
+   "tcp_m": [
+    0.18,
+    -0.01,
+    0.405
+   ],
+   "shift_deg": {
+    "shoulder_lift": 7
+   },
    "shift_why": "the pose as delivered is refused at clearance 1: within 1 grid step(s) of a forbidden grid point (clearance 1): the arm touches R8H reference - bin corrected printed at the grid point shoulder_pan +0.988, shoulder_lift -1.664, elbow_flex -0.622, wrist_flex +1.156, wrist_roll -2.932 rad"
   },
   "drop": {
-   "rad": [-1.847528266, -0.78564082, -0.181778048, 1.287015828, -0.800001218],
-   "ticks": [844, 1536, 1929, 2887, 1526],
-   "tcp_m": [-0.071, -0.005, 0.385],
-   "shift_deg": {"shoulder_lift": -9, "wrist_flex": -10},
+   "rad": [
+    -1.847528266,
+    -0.78564082,
+    -0.181778048,
+    1.287015828,
+    -0.800001218
+   ],
+   "ticks": [
+    844,
+    1536,
+    1929,
+    2887,
+    1526
+   ],
+   "tcp_m": [
+    -0.071,
+    -0.005,
+    0.385
+   ],
+   "shift_deg": {
+    "shoulder_lift": -9,
+    "wrist_flex": -10
+   },
    "shift_why": "the pose as delivered is refused at clearance 1: forbidden: the arm touches R8H reference - bin corrected printed at the grid point shoulder_pan -2.117, shoulder_lift -0.640, elbow_flex -0.124, wrist_flex +1.494, wrist_roll -1.232 rad"
+  },
+  "pick_low": {
+   "rad": [
+    1.340075828,
+    0.836746,
+    -0.106675,
+    0.86073,
+    -1.585330564
+   ],
+   "ticks": [
+    2922,
+    2593,
+    1978,
+    2609,
+    1015
+   ],
+   "tcp_m": [
+    0.3431,
+    -0.0101,
+    0.0412
+   ],
+   "note": "the pick for an object lying on the floor: the jaws' lowest point 21 mm above the floor (62 mm at pick), the gripper straight down, the same spot on the floor; found by scanning lift, elbow and wrist flex around pick over the keep-out table, checked in the CAD scene with the can held: no contact. Plays in place of pick with MOSS_ARM_PICK_POSE=pick_low (tools/moss_arm_play.py --pick-pose pick_low)"
   }
  },
  "sequence": [
@@ -60,14 +190,32 @@
    "from": "drive",
    "to": "travel",
    "duration_s": 10.3,
-   "gap_mm": [90, 90],
+   "gap_mm": [
+    90,
+    90
+   ],
    "added": true,
    "via": [
     {
-     "rad": [1.345301151, -0.981747704, 0.335941793, 1.122873937, -0.437184525],
-     "ticks": [2925, 1408, 2267, 2780, 1763],
+     "rad": [
+      1.345301151,
+      -0.981747704,
+      0.335941793,
+      1.122873937,
+      -0.437184525
+     ],
+     "ticks": [
+      2925,
+      1408,
+      2267,
+      2780,
+      1763
+     ],
      "at": 0.9,
-     "shift_deg": {"shoulder_lift": -4, "elbow_flex": -8},
+     "shift_deg": {
+      "shoulder_lift": -4,
+      "elbow_flex": -8
+     },
      "why": "the straight move between its poses is refused at clearance 1"
     }
    ]
@@ -77,49 +225,122 @@
    "from": "travel",
    "to": "pick",
    "duration_s": 3,
-   "gap_mm": [90, 90],
+   "gap_mm": [
+    90,
+    90
+   ],
    "via": [
     {
-     "rad": [1.346835132, -0.05829127, -0.170271867, 1.170427341, -1.270136092],
-     "ticks": [2926, 2010, 1937, 2811, 1220],
+     "rad": [
+      1.346835132,
+      -0.05829127,
+      -0.170271867,
+      1.170427341,
+      -1.270136092
+     ],
+     "ticks": [
+      2926,
+      2010,
+      1937,
+      2811,
+      1220
+     ],
      "at": 0.65,
-     "shift_deg": {"shoulder_lift": -10, "elbow_flex": -10},
+     "shift_deg": {
+      "shoulder_lift": -10,
+      "elbow_flex": -10
+     },
      "why": "the straight move between its poses is refused at clearance 1"
     }
    ]
   },
-  {"phase": "grasp", "from": "pick", "to": "pick", "duration_s": 1, "gap_mm": [90, 53]},
+  {
+   "phase": "grasp",
+   "from": "pick",
+   "to": "pick",
+   "duration_s": 1,
+   "gap_mm": [
+    90,
+    53
+   ]
+  },
   {
    "phase": "lift",
    "from": "pick",
    "to": "lift",
    "duration_s": 2.6,
-   "gap_mm": [53, 53],
+   "gap_mm": [
+    53,
+    53
+   ],
    "holds_can": true,
    "via": [
     {
-     "rad": [1.342233189, 0.302194215, -0.171805848, 1.043106936, -1.359106978],
-     "ticks": [2923, 2245, 1936, 2728, 1162],
+     "rad": [
+      1.342233189,
+      0.302194215,
+      -0.171805848,
+      1.043106936,
+      -1.359106978
+     ],
+     "ticks": [
+      2923,
+      2245,
+      1936,
+      2728,
+      1162
+     ],
      "at": 0.25,
-     "shift_deg": {"elbow_flex": -4, "wrist_flex": -3},
+     "shift_deg": {
+      "elbow_flex": -4,
+      "wrist_flex": -3
+     },
      "why": "the straight move between its poses is refused at clearance 1"
     }
    ]
   },
-  {"phase": "clear", "from": "lift", "to": "clear", "duration_s": 2.2, "gap_mm": [53, 53], "holds_can": true},
+  {
+   "phase": "clear",
+   "from": "lift",
+   "to": "clear",
+   "duration_s": 2.2,
+   "gap_mm": [
+    53,
+    53
+   ],
+   "holds_can": true
+  },
   {
    "phase": "transfer",
    "from": "clear",
    "to": "drop",
    "duration_s": 3.2,
-   "gap_mm": [53, 53],
+   "gap_mm": [
+    53,
+    53
+   ],
    "holds_can": true,
    "via": [
     {
-     "rad": [-0.730174855, -0.99248557, -0.231631099, 1.098330244, -1.035437032],
-     "ticks": [1572, 1401, 1897, 2764, 1373],
+     "rad": [
+      -0.730174855,
+      -0.99248557,
+      -0.231631099,
+      1.098330244,
+      -1.035437032
+     ],
+     "ticks": [
+      1572,
+      1401,
+      1897,
+      2764,
+      1373
+     ],
      "at": 0.7,
-     "shift_deg": {"shoulder_pan": 8, "wrist_flex": -10},
+     "shift_deg": {
+      "shoulder_pan": 8,
+      "wrist_flex": -10
+     },
      "why": "the straight move between its poses is refused at clearance 1"
     }
    ]
@@ -129,7 +350,10 @@
    "from": "drop",
    "to": "drop",
    "duration_s": 1,
-   "gap_mm": [53, 90],
+   "gap_mm": [
+    53,
+    90
+   ],
    "holds_can": true,
    "gap_duration_s": 0.7
   },
@@ -138,31 +362,76 @@
    "from": "drop",
    "to": "clear",
    "duration_s": 2.2,
-   "gap_mm": [90, 90],
+   "gap_mm": [
+    90,
+    90
+   ],
    "via": [
     {
-     "rad": [-0.730174855, -0.99248557, -0.231631099, 1.098330244, -1.035437032],
-     "ticks": [1572, 1401, 1897, 2764, 1373],
+     "rad": [
+      -0.730174855,
+      -0.99248557,
+      -0.231631099,
+      1.098330244,
+      -1.035437032
+     ],
+     "ticks": [
+      1572,
+      1401,
+      1897,
+      2764,
+      1373
+     ],
      "at": 0.3,
-     "shift_deg": {"shoulder_pan": 8, "wrist_flex": -10},
+     "shift_deg": {
+      "shoulder_pan": 8,
+      "wrist_flex": -10
+     },
      "why": "the straight move between its poses is refused at clearance 1"
     }
    ]
   },
-  {"phase": "hold", "from": "clear", "to": "clear", "duration_s": 0.8, "gap_mm": [90, 90]},
+  {
+   "phase": "hold",
+   "from": "clear",
+   "to": "clear",
+   "duration_s": 0.8,
+   "gap_mm": [
+    90,
+    90
+   ]
+  },
   {
    "phase": "to_drive",
    "from": "clear",
    "to": "drive",
    "duration_s": 10.6,
-   "gap_mm": [90, 90],
+   "gap_mm": [
+    90,
+    90
+   ],
    "added": true,
    "via": [
     {
-     "rad": [1.377514748, -1.096796263, 0.167203906, 0.958737992, -0.908116626],
-     "ticks": [2946, 1333, 2157, 2673, 1456],
+     "rad": [
+      1.377514748,
+      -1.096796263,
+      0.167203906,
+      0.958737992,
+      -0.908116626
+     ],
+     "ticks": [
+      2946,
+      1333,
+      2157,
+      2673,
+      1456
+     ],
      "at": 0.2,
-     "shift_deg": {"shoulder_lift": 9, "elbow_flex": 5},
+     "shift_deg": {
+      "shoulder_lift": 9,
+      "elbow_flex": 5
+     },
      "why": "the straight move between its poses is refused at clearance 1"
     }
    ]

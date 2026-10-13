@@ -181,6 +181,10 @@ check(abs(g_before - 0.090) < 1e-6 and abs(g_after - 0.053) < 1e-6,
 real = A.cycle_trajectory(cyc.steps, sim=False)
 check(abs(real.points[0].positions[5] - 0.090) < 1e-12 and abs(A.sample(real, t_grasp_end)[5] - 0.053) < 1e-6,
       "on the robot the gripper rides as the gap in metres (0.090 then 0.053)")
+low = A.load_cycle(calibration=calib, pick_pose="pick_low")
+grasp_low = next(s for s in low.steps if s.phase == "grasp")
+check([A.rad_to_ticks(v) for v in grasp_low.q_from] == [2922, 2593, 1978, 2609, 1015] and low.steps[1].end == "pick",
+      "pick_pose='pick_low' plays the low pick (ticks 2922 2593 1978 2609 1015) where the sequence says pick")
 goto = A.goto_step([0.0] * 5, 0.090, drive, 0.090)
 check(goto.duration_s >= 1.0 and abs(goto.duration_s - A.QUINTIC_PEAK * max(abs(v) for v in drive) * A.TICKS_PER_RAD / 400) < 1e-9,
       f"a goto from the zero pose to drive takes {goto.duration_s:.2f} s at the ceiling")

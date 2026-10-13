@@ -25,6 +25,8 @@ Options:
   --speed TICKS_PER_S   the ceiling (400)
   --stop-after PHASE    end the cycle after this phase (e.g. release)
   --from PHASE          start the cycle at this phase (e.g. back_to_clear: the return from the bin)
+  --pick-pose NAME      the pose played as "pick": pick (the video's, an object standing) or pick_low (lying on
+                        the floor); MOSS_ARM_PICK_POSE
   --max-lag TICKS       the following error that counts as a lag (150 = 13 deg)
   --lag-seconds S       how long a lag must last before the stop (1.0)
   --no-goto             refuse to start unless the arm is at the cycle's first pose
@@ -60,14 +62,17 @@ def main() -> int:
     ap.add_argument("--speed", type=float, default=A.SPEED_TICKS_PER_S)
     ap.add_argument("--stop-after", default=None)
     ap.add_argument("--from", dest="start", default=None)
+    ap.add_argument("--pick-pose", default=None)
     ap.add_argument("--max-lag", type=float, default=150.0)
     ap.add_argument("--lag-seconds", type=float, default=1.0)
     ap.add_argument("--no-goto", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
-    cycle = A.load_cycle(a.poses, calibration=a.calib, speed=a.speed, stop_after=a.stop_after, start=a.start)
-    say(f"cycle: {len(cycle.steps)} moves, {cycle.timed_s:.1f} s as timed, {cycle.duration_s:.1f} s at {a.speed:g} ticks/s")
+    cycle = A.load_cycle(a.poses, calibration=a.calib, speed=a.speed, stop_after=a.stop_after, start=a.start,
+                         pick_pose=a.pick_pose)
+    say(f"cycle: {len(cycle.steps)} moves, {cycle.timed_s:.1f} s as timed, {cycle.duration_s:.1f} s at {a.speed:g} ticks/s, "
+        f"pick pose {a.pick_pose or A.pick_pose_name()}")
     for s in cycle.steps:
         say(f"  {s.phase:14s} {s.start:>7s} -> {s.end:<7s} {s.duration_s:5.2f} s  gap {s.gap_from_m * 1000:.0f} -> {s.gap_to_m * 1000:.0f} mm"
             f"{'  (holds the can)' if s.holds_can else ''}")

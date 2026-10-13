@@ -480,7 +480,11 @@ the cycle's first pose), reads the joints back every 50 ms and prints the
 worst following error per joint; a joint more than `--max-lag` ticks behind
 for `--lag-seconds` cancels the trajectory and the run ends with `ARM LAG`.
 `--stop-after release` leaves the arm over the bin; `--from back_to_clear`
-is the return.
+is the return. At the video's `pick` the jaws' lowest point is 62 mm above
+the floor: right for an object standing, too high for a can lying down;
+`--pick-pose pick_low` (or `MOSS_ARM_PICK_POSE=pick_low`) plays the
+`pick_low` pose instead, the jaws 21 mm above the floor at the same spot,
+checked in the CAD scene with the can held.
 
 **Simulation.** `arm.sim_scene` writes a simulation scene from the CAD
 scene into the MOSS state directory: the mesh directory made absolute, the

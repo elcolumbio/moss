@@ -43,6 +43,7 @@ ROOT = Path(__file__).resolve().parent.parent
 POSES_PATH = ROOT / "config" / "arm_drop_poses.json"
 CALIBRATION_PATH = ROOT / "config" / "arm_calibration.json"
 CALIBRATION_ENV = "MOSS_ARM_CALIB"       # a calibration file elsewhere (a rig without the robot's config)
+PICK_POSE_ENV = "MOSS_ARM_PICK_POSE"     # the pose played where the sequence says "pick": pick (the video's) or pick_low (an object lying on the floor)
 
 HW_ID = "arm"
 ARM_JOINTS = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll")
@@ -358,20 +359,32 @@ def stretched(q_a: list[float], q_b: list[float], timed_s: float, speed: float =
     return max(timed_s, QUINTIC_PEAK * d / speed) if d else timed_s
 
 
+def pick_pose_name(env: dict | None = None) -> str:
+    env = os.environ if env is None else env
+    return env.get(PICK_POSE_ENV, "").strip() or "pick"
+
+
 def load_cycle(path: str | os.PathLike = POSES_PATH, calibration: str | os.PathLike | None = None,
                speed: float = SPEED_TICKS_PER_S, stop_after: str | None = None,
-               start: str | None = None) -> Cycle:
+               start: str | None = None, pick_pose: str | None = None) -> Cycle:
     """The sequence of the JSON as delivered: its poses as they are (no shift,
     no via), the drive pose from the calibration, each move stretched to
     `speed`. `stop_after` keeps the moves up to that phase (e.g. "release":
     the arm stays over the bin, the return is another run); `start` drops
-    the moves before that phase (e.g. "back_to_clear": the return)."""
+    the moves before that phase (e.g. "back_to_clear": the return);
+    `pick_pose` (MOSS_ARM_PICK_POSE) names the pose played where the
+    sequence says "pick"."""
     doc = json.loads(Path(path).read_text())
     joints = list(doc.get("joints") or ARM_JOINTS)
     if tuple(joints) != ARM_JOINTS:
         raise ValueError(f"{path}: joints {joints} are not {list(ARM_JOINTS)}")
     poses = {name: [float(v) for v in rec["rad"]] for name, rec in doc["poses"].items()}
     poses.setdefault("drive", drive_pose_rad(calibration))
+    chosen = pick_pose or pick_pose_name()
+    if chosen != "pick":
+        if chosen not in poses:
+            raise KeyError(f"{path}: no pose named {chosen!r} for {PICK_POSE_ENV}")
+        poses["pick"] = list(poses[chosen])
     steps: list[Step] = []
     skipping = start is not None
     for m in doc["sequence"]:
