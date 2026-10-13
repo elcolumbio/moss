@@ -156,10 +156,10 @@ check(twist_to_tracks(0.15, 0.0, GF) == (25, 25), "floor 12: the limit is untouc
 check(twist_to_tracks(0.09, 0.0, GF) == (15, 15), "floor 12: 15 % above the floor passes as is")
 check(twist_to_tracks(0.06, 0.0, G) == (10, 10), "floor 0 (explicit): L=10 R=10 unchanged")
 GD = MossGeometry()   # the MOSS default: the tracks only turn at full duty
-check(GD.min_pct == 50, f"the default floor is 50: {GD.min_pct}")
-check(twist_to_tracks(0.02, 0.0, GD) == (50, 50), f"default: a slow forward twist -> 50/50: {twist_to_tracks(0.02, 0.0, GD)}")
-check(twist_to_tracks(0.0, 0.2, GD) == (-50, 50), f"default: the planner's slowest pivot (0.2 rad/s) -> -50/+50 before pivot_tracks: {twist_to_tracks(0.0, 0.2, GD)}")
-check(twist_to_tracks(-0.02, 0.0, GD) == (-50, -50), "default: slow reverse -> -50/-50 (sign kept)")
+check(GD.min_pct == 20, f"the default floor is 20 (measured with the 90:1 motors): {GD.min_pct}")
+check(twist_to_tracks(0.02, 0.0, GD) == (20, 20), f"default: a slow forward twist -> 20/20: {twist_to_tracks(0.02, 0.0, GD)}")
+check(twist_to_tracks(0.0, 0.2, GD) == (-20, 20), f"default: the planner's slowest pivot (0.2 rad/s) -> -20/+20 before pivot_tracks: {twist_to_tracks(0.0, 0.2, GD)}")
+check(twist_to_tracks(-0.02, 0.0, GD) == (-20, -20), "default: slow reverse -> -20/-20 (sign kept)")
 check(twist_to_tracks(0.0001, 0.0, GD) == (0, 0), "default: a twist that rounds to 0 is still a stop")
 check(twist_to_tracks(0.06, 0.0, MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=25, min_pct=99)) == (25, 25),
       "a floor above the limit is clamped to the limit")
@@ -277,7 +277,7 @@ check(MossGeometry.from_env().min_pct == MossGeometry.from_env().max_pct, "MOSS_
 os.environ["MOSS_MIN_PCT"] = "-5"
 check(MossGeometry.from_env().min_pct == 0, "MOSS_MIN_PCT negative -> 0")
 os.environ.pop("MOSS_MIN_PCT", None)
-check(MossGeometry.from_env().min_pct == 50, "MOSS_MIN_PCT unset -> 50 (measured floor 40 on a full battery, 10 of margin)")
+check(MossGeometry.from_env().min_pct == 20, "MOSS_MIN_PCT unset -> 20 (both tracks turn from 20 % with the 90:1 motors)")
 
 # ── 8. the fake is the firmware: its own refusals ──────────────────────
 print("8. fake firmware fidelity (Control.h)")

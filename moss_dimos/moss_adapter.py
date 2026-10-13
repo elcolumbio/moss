@@ -286,14 +286,15 @@ def _env_float(name: str, default):
 
 @dataclass
 class MossGeometry:
-    """Everything the twist <-> tracks mapping needs. PLACEHOLDERS until
-    measured on the rover (ticks per revolution included). Each field has an
-    env override so a flight can be re-scaled without a code change."""
+    """Everything the twist <-> tracks mapping needs, measured on the floor
+    with the 90:1 motors (tools/moss_floor_probe.py, tools/moss_speed_profile.py;
+    the track centre distance is still the CAD's). Each field has an env
+    override so a flight can be re-scaled without a code change."""
     track_m: float = robot_profile.MOSS.track_m   # PLACEHOLDER 0.266 (CAD track centre distance), to measure
-    mps_at_limit: float = 0.45     # PLACEHOLDER: floor speed at 100 % (JGB37-520 178 rpm on a ~60 mm sprocket ~ 0.5 m/s), to measure
+    mps_at_limit: float = 0.32     # measured: the plateau at 100 % is 5 420 ticks/s = 0.32 m/s (it takes 3.5 s to get there on the 3 A driver)
     max_pct: int = FIRMWARE_MAX_PCT
-    ticks_per_m: float | None = None   # None = no encoder calibration yet
-    min_pct: int = 50    # static-friction floor: a non-zero track command below this percent is raised to it (sign kept). 0 = off. MOSS_MIN_PCT. 50 on MOSS: both tracks turn from 40 % on a full battery, and a half-full one sags under load, so 10 % of margin
+    ticks_per_m: float | None = 17190.0   # measured: 1.00 m in 5 s at 100 % = 17 234 / 17 144 ticks (left / right)
+    min_pct: int = 20    # static-friction floor: a non-zero track command below this percent is raised to it (sign kept). 0 = off. MOSS_MIN_PCT. 20 with the 90:1 motors: both tracks turn from 20 % (the earlier motors needed 40, plus margin)
 
     @classmethod
     def from_env(cls) -> "MossGeometry":
