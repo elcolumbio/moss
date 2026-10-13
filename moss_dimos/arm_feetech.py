@@ -13,7 +13,9 @@ Per coordinator tick: one read of every servo's present position (register
 56), then one goal write (register 42) for every servo whose target moved
 by a tick or more. Goal speed (46) and acceleration (41) are set once at
 connect: the servo's own ceiling, so a streamed position cannot ask more
-than the sweep's speed. Torque (40) goes on at activate and off at
+than the sweep's speed. Torque (40) goes on at activate, after every goal
+register has been set to the present position (a servo enables onto the
+goal its register holds, and would jump to a stale one), and off at
 deactivate; the gripper's force limit goes to registers 44 and 48 at
 connect.
 
@@ -401,15 +403,29 @@ class FeetechSo101Adapter:
         return ok
 
     def write_enable(self, enable: bool) -> bool:
+        """Torque on or off on the six servos. Before torque goes on, every
+        servo's goal register is set to its present position: a servo
+        enables onto whatever goal its register holds (the last run's,
+        after a power cycle anything), and the arm would jump there."""
         if not self._connected:
             return False
         ok = True
+        if enable:
+            if self._read_all() is None:
+                self._error = (BUS_ERROR, "the servos do not answer before torque on")
+                return False
+            for j in self._joints():
+                if self._bus.write2(self._ids[j], REG_GOAL, self._present[j]):
+                    self._goal[j] = self._present[j]
+                else:
+                    ok = False
+            if not ok:
+                self._error = (BUS_ERROR, "a goal could not be latched before torque on; torque stays off")
+                return False
         for j in self._joints():
             ok &= self._bus.write1(self._ids[j], REG_TORQUE, 1 if enable else 0)
         if ok:
             self._enabled = bool(enable)
-            if enable:
-                self._goal = dict(self._present)   # torque on: hold where the arm is
             self._lag_since.clear()
         return ok
 

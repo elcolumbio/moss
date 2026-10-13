@@ -9,8 +9,10 @@ Known input -> known output in physical units. Groups:
   B. connect   - the adapter opens the fake bus, reads the six servos, sets
                  speed 400 and acceleration 50 on the five arm servos, the
                  force 400 on the gripper's registers 44 and 48, writes no
-                 torque; activate turns torque on and holds the present
-                 position; limits = the calibration's end stops in radians
+                 torque; activate latches every servo's goal register to its
+                 present position (six writes of register 42, all before the
+                 first torque write) then turns torque on; limits = the
+                 calibration's end stops in radians
   C. follow    - a goal of +30 deg on the pan writes 2389 to register 42 of
                  servo 1 and the fake servo reaches it at 400 ticks/s: read
                  back +30.0 deg; the gripper to 53 mm writes 2780 and reads
@@ -186,8 +188,16 @@ check(ad.present_ticks() == {"shoulder_pan": 2857, "shoulder_lift": 860, "elbow_
 q = ad.read_joint_positions()
 check(abs(q[0] * DEG - 71.1) < 0.05 and abs(q[5] - 0.090) < 1e-9, f"positions: pan {q[0] * DEG:.1f} deg, gap {q[5] * 1000:.0f} mm")
 check(not ad.read_enabled() and ad.write_joint_positions(q) is False, "no command before activate")
+n0 = len(bus.writes)
 check(ad.activate() and ad.read_enabled() and all(s.torque == 1 for s in bus.servos.values()), "activate: torque on, six servos")
-check(ad.goal_ticks() == ad.present_ticks(), "torque on holds the present position")
+w = bus.writes[n0:]
+goals = [(sid, val) for sid, addr, val in w if addr == F.REG_GOAL]
+first_torque = next((i for i, (sid, addr, val) in enumerate(w) if addr == F.REG_TORQUE), None)
+last_goal = max((i for i, (sid, addr, val) in enumerate(w) if addr == F.REG_GOAL), default=None)
+check(len(goals) == 6 and all(val == bus.servos[sid].goal == int(round(bus.servos[sid].pos)) for sid, val in goals),
+      "before torque: every servo's goal register latched to its present position (six writes of register 42)")
+check(first_torque is not None and last_goal is not None and last_goal < first_torque, "all six goal writes come before the first torque write")
+check(ad.goal_ticks() == ad.present_ticks(), "the host's goal cache holds the present position too")
 lim = ad.get_limits()
 check(abs(lim.position_lower[1] * DEG + 104.4) < 0.05 and abs(lim.position_upper[0] * DEG - 118.3) < 0.05 and lim.position_upper[5] == 0.090,
       f"limits: lift from {lim.position_lower[1] * DEG:.1f} deg, pan to {lim.position_upper[0] * DEG:.1f} deg, gap to 90 mm")
