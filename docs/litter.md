@@ -41,7 +41,7 @@ rover's CPU is the expectation; the camera runs at 5 fps):
 
 ```sh
 uv pip install --python .venv/bin/python --index-url https://download.pytorch.org/whl/cpu torch torchvision
-uv pip install --python .venv/bin/python ultralytics
+uv pip install --python .venv/bin/python ultralytics lap    # lap: the tracker ultralytics would otherwise fetch on first use
 ```
 
 ## The mission
