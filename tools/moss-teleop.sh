@@ -49,10 +49,12 @@ fi
 echo "  none"
 
 echo "== 1/5 gamepad =="
-if [ ! -e /dev/input/js0 ]; then
-  echo "NO PAD (no /dev/input/js0) - receiver plugged into the rover? if plugged but invisible: replug it, else sudo reboot"; exit 1
+# any /dev/input/js*: the pad on its cable (an Xbox 360 pad to the kernel) keeps the number after the
+# dongle's, and SDL numbers the pads it can see from 0 whatever the js number (MOSS_PAD_INDEX picks)
+if ! ls /dev/input/js* >/dev/null 2>&1; then
+  echo "NO PAD (no /dev/input/js*) - receiver or cable plugged into the rover? if plugged but invisible: replug it, else sudo reboot"; exit 1
 fi
-echo "  js0 present (if the pad is mute: button UNDER the pad, then move a stick)"
+echo "  pad(s): $(for j in /dev/input/js*; do n=$(basename $j); printf '%s=%s ' "$n" "$(cat /sys/class/input/$n/device/name 2>/dev/null | tr ' ' '_')"; done)(dongle mute: button UNDER the pad, then move a stick; cable: MOSS_PAD_LAYOUT=xinput)"
 
 echo "== 2/5 MOSS board =="
 PORT=$(ls /dev/serial/by-id/*QT_Py* 2>/dev/null | head -1)

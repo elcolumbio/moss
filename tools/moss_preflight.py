@@ -626,8 +626,16 @@ def check_wrist(ctx: dict) -> None:
 
 def check_gamepad(ctx: dict) -> None:
     section("gamepad")
-    if _exists(JS_PATH):
-        verdict(True, "gamepad", f"{JS_PATH} present (if mute: button under the pad, then move a stick)")
+    pads = sorted(glob.glob("/dev/input/js*"))   # any number: the pad on its cable keeps js1 after the dongle's js0
+    if pads:
+        names = []
+        for j in pads:
+            try:
+                with open(f"/sys/class/input/{os.path.basename(j)}/device/name", encoding="utf-8") as f:
+                    names.append(f"{os.path.basename(j)}={f.read().strip()}")
+            except OSError:
+                names.append(os.path.basename(j))
+        verdict(True, "gamepad", ", ".join(names) + " (dongle mute: button under the pad, then move a stick; cable = Xbox 360 pad: MOSS_PAD_LAYOUT=xinput)")
         return
     usb = _usb_devices()
     if PAD_SHANWAN in usb:
