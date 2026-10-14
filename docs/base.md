@@ -89,6 +89,23 @@ The coordinator publishes the firmware telemetry on `/base_telemetry` every
 `ticks`, `target_pct`, `output_pct`, `ramp_ms`, `firmware_age_s`, `mock`), so
 nothing else ever has to open the serial port.
 
+## robot.env: what this robot is, declared once
+
+`~/.local/state/moss/robot.env` (or `$MOSS_STATE_DIR/robot.env`), `KEY=VALUE` lines. The launchers
+(`tools/moss-fly.sh`, `tools/moss-teleop.sh`) read it before anything else, the flight check reads the
+same file, so a verdict there is a verdict on what will actually run. The shell's own exports win.
+
+```
+MOSS_DRIVER=mdd10a          # the motor driver on the board: the flight check refuses a firmware built for another one
+MOSS_PAD_LAYOUT=xinput      # android = the pad on its 2.4 GHz dongle; xinput = the same pad on its USB cable (an Xbox 360 pad to the kernel)
+MOSS_MIN_PCT=20             # measured floor: both tracks turn from 20 %
+```
+
+The flight check then refuses, in red, what used to pass as "OK": a firmware that does not match
+`MOSS_DRIVER`, a pad the receiver has never heard (every axis at its never-reported value), a pad
+plugged in a layout other than the declared one. And `tools/moss-teleop.sh` prints "YOU CAN DRIVE"
+only once the stack itself has written that it saw the sticks at neutral and trusts the commands.
+
 ## Calibrate before trusting a number
 
 The firmware is open loop (PWM percent). Three numbers turn a twist into

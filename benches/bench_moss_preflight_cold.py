@@ -115,6 +115,9 @@ class FakeSerial:
 def default_world():
     return {
         "files": {QTPY, C1, WRIST, "/dev/input/js0"},
+        "pad_names": {"/dev/input/js0": "shanwan Android GamePad"},
+        "pad_axes": {"/dev/input/js0": [0, 0, 0, 0, 0, 0, 0, 0]},   # alive at rest
+        "robot_env": None,          # text of <state>/robot.env, None = absent
         "runs": [],                 # (run_id, pid)
         "alive": set(),
         "cmdlines": [(1, "/sbin/init")],
@@ -146,7 +149,8 @@ def default_world():
 
 
 ENV_KEYS = ("MOSS_PORT", "MOSS_LIDAR_PORT", "MOSS_MOCK_BUS", "MOSS_RS_SERIAL", "MOSS_CAMERA",
-            "MOSS_WRIST", "MOSS_REQUIRE_PAD", "MOSS_STATE_DIR")
+            "MOSS_WRIST", "MOSS_REQUIRE_PAD", "MOSS_STATE_DIR",
+            "MOSS_DRIVER", "MOSS_PAD_LAYOUT", "MOSS_PAD_INDEX")   # robot.env setdefaults these: cleared per case
 
 
 def run(argv=(), **over):
@@ -165,6 +169,9 @@ def run(argv=(), **over):
 
     mp._ls = lambda pat: sorted(f for f in w["files"] if fnmatch.fnmatch(f, pat))
     mp._exists = lambda p: p in w["files"]
+    mp._pad_name = lambda js: w["pad_names"].get(js, "?")
+    mp._pad_init_axes = lambda js, listen_s=1.0: w["pad_axes"].get(js)
+    mp._read_text = lambda path: (w["robot_env"] if str(path).endswith("robot.env") else None)
     mp._runs_dir = lambda: runs_dir
     mp._pid_alive = lambda pid: pid in w["alive"]
     mp._proc_cmdlines = lambda: list(w["cmdlines"])
@@ -261,7 +268,7 @@ check("firmware version read from telemetry", "qtpy-mdd3a-v3" in line_of(out, "f
 check("firmware disarmed: mode 0", "mode 0 (off)" in line_of(out, "firmware disarmed"))
 check("ticks L 160585 R 158263", "L 160585 R 158263" in line_of(out, "encoder ticks"))
 check("driver absent -> informational OK with the build note",
-      line_of(out, "motor driver") == "OK  motor driver - not reported (a firmware build older than the driver key)",
+      line_of(out, "motor driver") == "OK  motor driver - not reported (a firmware build older than the driver key); set MOSS_DRIVER in robot.env to make this a check",
       line_of(out, "motor driver"))
 check("telemetry parsed across chunk boundaries (3 lines, banner ignored)",
       "3 line(s)" in line_of(out, "firmware telemetry"), line_of(out, "firmware telemetry"))
@@ -288,7 +295,7 @@ check("the stack's moss_dimos comes from this checkout",
       line_of(out, "moss-dimos install"))
 check("the state dir and recordings/ were created", (w["state"] / "recordings").is_dir())
 check("sections in the spec order",
-      [r["section"].split(" ")[0] for r in res][:1] == ["stack"]
+      [r["section"].split(" ")[0] for r in res][:2] == ["robot.env", "stack"]
       and [out.find("\n" + h + "\n") for h in HEADERS] == sorted(out.find("\n" + h + "\n") for h in HEADERS)
       and -1 not in [out.find("\n" + h + "\n") for h in HEADERS])
 rc, out, res, w = run(lo_flags=0x1009)
@@ -362,13 +369,60 @@ check("057e:2009 -> the Nintendo sentence, as a warning (nothing refuses a missi
       and "WARN" in line_of(out, "gamepad"),
       line_of(out, "gamepad"))
 rc, out, res, w = run(files=files_nopad, usb={"2563:0526"})
-check("2563:0526 -> receiver visible, no js0", "receiver visible (2563:0526), no js0: replug or reboot" in line_of(out, "gamepad"))
+check("2563:0526 -> receiver visible, no js device", "receiver visible (2563:0526), no js device: replug or reboot" in line_of(out, "gamepad"))
 rc, out, res, w = run(files=files_nopad, usb=set())
 check("nothing -> no pad, still a warning", "no pad" in line_of(out, "gamepad") and line_of(out, "gamepad").startswith("OK"))
 rc, out, res, w = run(files=files_nopad, usb=set(), env={"MOSS_REQUIRE_PAD": "1"})
 check("MOSS_REQUIRE_PAD=1 -> no pad is a KO and the check fails", line_of(out, "gamepad").startswith("KO") and rc == 1)
 rc, out, res, w = run(usb={"057e:2009"})
 check("js0 present wins over any USB id", line_of(out, "gamepad").startswith("OK"))
+
+# E2. the pad must be ALIVE and in the layout the stack will use (14 Oct: a mute dongle passed as OK;
+#     the pad on its cable is an Xbox 360 pad with another button map)
+rc, out, res, w = run(files={QTPY, C1, "/dev/input/js0"}, pad_axes={"/dev/input/js0": [-32767] * 8})
+check("every axis at -32767 (never reported) -> KO MUTE with the cause",
+      line_of(out, "gamepad").startswith("KO") and "MUTE" in line_of(out, "gamepad") and "not paired" in line_of(out, "gamepad"),
+      line_of(out, "gamepad"))
+rc, out, res, w = run(files={QTPY, C1, "/dev/input/js1"}, pad_names={"/dev/input/js1": "Microsoft X-Box 360 pad"},
+                      pad_axes={"/dev/input/js1": [0, 0, -32767, 0, 0, -32767, 0, 0]})
+check("Xbox pad (cable) with the default android layout -> KO, fix = MOSS_PAD_LAYOUT=xinput",
+      line_of(out, "gamepad").startswith("KO") and "MOSS_PAD_LAYOUT=xinput" in line_of(out, "gamepad"), line_of(out, "gamepad"))
+rc, out, res, w = run(files={QTPY, C1, "/dev/input/js1"}, pad_names={"/dev/input/js1": "Microsoft X-Box 360 pad"},
+                      pad_axes={"/dev/input/js1": [0, 0, -32767, 0, 0, -32767, 0, 0]}, env={"MOSS_PAD_LAYOUT": "xinput"})
+check("Xbox pad with MOSS_PAD_LAYOUT=xinput -> OK, alive, layout xinput",
+      line_of(out, "gamepad").startswith("OK") and "layout xinput" in line_of(out, "gamepad"), line_of(out, "gamepad"))
+rc, out, res, w = run(files={QTPY, C1, "/dev/input/js0"}, env={"MOSS_PAD_LAYOUT": "xinput"})
+check("dongle (shanwan) with MOSS_PAD_LAYOUT=xinput -> KO, fix = android",
+      line_of(out, "gamepad").startswith("KO") and "MOSS_PAD_LAYOUT=android" in line_of(out, "gamepad"), line_of(out, "gamepad"))
+rc, out, res, w = run(files={QTPY, C1, "/dev/input/js0", "/dev/input/js1"},
+                      pad_names={"/dev/input/js0": "shanwan Android GamePad", "/dev/input/js1": "Microsoft X-Box 360 pad"},
+                      pad_axes={"/dev/input/js0": [-32767] * 8, "/dev/input/js1": [0, 0, -32767, 0, 0, -32767, 0, 0]},
+                      env={"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_INDEX": "1"})
+check("two pads, MOSS_PAD_INDEX=1 -> the Xbox one is judged (OK), the mute dongle only listed",
+      line_of(out, "gamepad").startswith("OK") and "js1:" in line_of(out, "gamepad") and "also plugged: js0" in line_of(out, "gamepad"),
+      line_of(out, "gamepad"))
+check("pad_verdict: cannot read -> KO", mp.pad_verdict("x", None, "android")[0] is False)
+
+# E3. robot.env: read before the checks, the shell wins, the driver is checked against it
+rc, out, res, w = run(robot_env="# MOSS robot\nMOSS_DRIVER=mdd10a\nexport MOSS_PAD_LAYOUT=\"xinput\"\n",
+                      files={QTPY, C1, "/dev/input/js1"}, pad_names={"/dev/input/js1": "Microsoft X-Box 360 pad"},
+                      pad_axes={"/dev/input/js1": [0, 0, -32767, 0, 0, -32767, 0, 0]})
+check("robot.env line lists what it declared", "MOSS_DRIVER=mdd10a" in line_of(out, "robot.env") and "MOSS_PAD_LAYOUT=xinput" in line_of(out, "robot.env"),
+      line_of(out, "robot.env"))
+check("MOSS_PAD_LAYOUT from robot.env reaches the pad check (xinput -> OK)", line_of(out, "gamepad").startswith("OK"), line_of(out, "gamepad"))
+check("firmware without a driver key, robot.env expects mdd10a -> KO with the reflash line",
+      line_of(out, "motor driver").startswith("KO") and "reflash the mdd10a build" in line_of(out, "motor driver"), line_of(out, "motor driver"))
+rc, out, res, w = run(robot_env="MOSS_DRIVER=mdd10a\n", telemetry=dict(TELEMETRY, driver="mdd10a"))
+check("firmware driver = MOSS_DRIVER -> OK", line_of(out, "motor driver").startswith("OK") and "= MOSS_DRIVER" in line_of(out, "motor driver"), line_of(out, "motor driver"))
+rc, out, res, w = run(robot_env="MOSS_DRIVER=mdd10a\n", telemetry=dict(TELEMETRY, driver="mdd3a"))
+check("firmware mdd3a, robot.env mdd10a -> KO naming both", line_of(out, "motor driver").startswith("KO") and "built for mdd3a" in line_of(out, "motor driver"), line_of(out, "motor driver"))
+rc, out, res, w = run(robot_env="MOSS_DRIVER=mdd3a\n", env={"MOSS_DRIVER": "mdd10a"}, telemetry=dict(TELEMETRY, driver="mdd10a"))
+check("the shell's MOSS_DRIVER wins over robot.env", line_of(out, "motor driver").startswith("OK"), line_of(out, "motor driver"))
+rc, out, res, w = run()
+check("no robot.env, no driver key -> informative OK that says how to make it a check",
+      line_of(out, "motor driver").startswith("OK") and "set MOSS_DRIVER in robot.env" in line_of(out, "motor driver"), line_of(out, "motor driver"))
+check("load_robot_env: comments, export, quotes, junk", mp.load_robot_env("# c\nexport A=\"1 2\"\nB='x'\nnot a pair\nlower=3\nC=\n") == {"A": "1 2", "B": "x", "C": ""})
+check("driver_verdict pure: expected set and nothing reported -> KO", mp.driver_verdict("mdd10a", None) == (False, "not reported, robot.env expects mdd10a: reflash the mdd10a build (bench/README.md)"))
 
 print("F. --json")
 rc, out, res, w = run(["--json"], telemetry=dict(TELEMETRY, bus_mV=10500))
@@ -415,7 +469,7 @@ rc, out, res, w = run(serial_chunks=[b"", b"garbage\n"])
 check("mute firmware -> KO, no further firmware verdict",
       line_of(out, "firmware telemetry").startswith("KO") and "mute" in out and not find(res, "battery"))
 rc, out, res, w = run(telemetry=dict(TELEMETRY, driver="mdd10a"))
-check("driver reported -> shown", line_of(out, "motor driver") == "OK  motor driver - mdd10a")
+check("driver reported -> shown (informative without MOSS_DRIVER)", line_of(out, "motor driver").startswith("OK  motor driver - mdd10a; set MOSS_DRIVER"))
 rc, out, res, w = run(realsense=[dict(D455, usb="2.1")])
 check("RealSense on USB 2.1 -> KO 5 fps max", "on USB 2: 5 fps max" in line_of(out, "RealSense D455")
       and line_of(out, "RealSense D455").startswith("KO"))

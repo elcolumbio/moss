@@ -18,6 +18,17 @@
 # stay up with the pad on the table.
 set -u
 cd "$(dirname "$0")/.." || exit 1
+# robot.env: what THIS robot is (MOSS_DRIVER, MOSS_PAD_LAYOUT, measured numbers), next to the
+# recordings; the flight check reads the same file, so its verdicts match what runs here.
+# The shell's own exports win over the file.
+ROBOT_ENV="${MOSS_STATE_DIR:-$HOME/.local/state/moss}/robot.env"
+if [ -f "$ROBOT_ENV" ]; then
+  while IFS= read -r _l || [ -n "$_l" ]; do
+    _l="${_l#export }"; case "$_l" in ''|'#'*) continue;; esac
+    _k="${_l%%=*}"; _v="${_l#*=}"; _v="${_v%\"}"; _v="${_v#\"}"
+    case "$_k" in [A-Z]*) [ -z "${!_k:-}" ] && export "$_k=$_v";; esac
+  done < "$ROBOT_ENV"
+fi
 DIMOS=.venv/bin/dimos
 PY=.venv/bin/python
 LAUNCH_LOG=/tmp/moss_teleop_launch.log
@@ -107,23 +118,28 @@ if [ "${MOCK:-0}" = "1" ]; then export MOSS_MOCK_BUS=1; else export MOSS_PORT="$
 export MOSS_MAX_PCT="${MOSS_MAX_PCT:-100}"   # firmware limit 100; lower it here for a cautious lap
 export MOSS_RAMP_MS="${MOSS_RAMP_MS:-5 5}"       # firmware ramp, ms per % up/down (the pad slew still takes 0.75 s to full)
 nohup $DIMOS --rerun-open none run moss-dimos.moss-gamepad --daemon > "$LAUNCH_LOG" 2>&1 < /dev/null &
-OK_BASE=0; OK_PAD=0
+# "YOU CAN DRIVE" is a commitment: the base connected, the pad connected AND seen at neutral by the
+# stack itself ("commands now trusted"). A mute pad (dongle without its pad) connects but is never
+# trusted: that is a refusal here, not a banner.
+OK_BASE=0; OK_PAD=0; OK_TRUST=0
 for i in $(seq 1 40); do
   sleep 1
-  L=$($DIMOS log 2>/dev/null | grep -a "MOSS base: connected\|MOSS base: MOCK BUS\|Gamepad connected\|MOSS base: cannot open\|MOSS base: no telemetry\|Traceback")
+  L=$($DIMOS log 2>/dev/null | grep -a "MOSS base: connected\|MOSS base: MOCK BUS\|Gamepad connected\|commands now trusted\|MOSS base: cannot open\|MOSS base: no telemetry\|Traceback")
   echo "$L" | grep -q "MOSS base: connected\|MOSS base: MOCK BUS" && OK_BASE=1
   echo "$L" | grep -q "Gamepad connected" && OK_PAD=1
+  echo "$L" | grep -q "commands now trusted" && OK_TRUST=1
   echo "$L" | grep -q "cannot open\|no telemetry\|Traceback" && break
-  [ $OK_BASE = 1 ] && [ $OK_PAD = 1 ] && break
+  [ $OK_BASE = 1 ] && [ $OK_PAD = 1 ] && [ $OK_TRUST = 1 ] && break
 done
 $DIMOS log 2>/dev/null | grep -a "MOSS\|[Gg]amepad\|Traceback\|Error" | tail -8
-if [ $OK_BASE != 1 ] || [ $OK_PAD != 1 ]; then
-  echo "STACK NOT READY (base=$OK_BASE pad=$OK_PAD) - see above and $LAUNCH_LOG; stopping"
+if [ $OK_BASE != 1 ] || [ $OK_PAD != 1 ] || [ $OK_TRUST != 1 ]; then
+  echo "STACK NOT READY (base=$OK_BASE pad=$OK_PAD trusted=$OK_TRUST) - see above and $LAUNCH_LOG; stopping"
+  [ $OK_PAD = 1 ] && [ $OK_TRUST != 1 ] && echo "  the pad connected but the stack never saw its sticks at neutral: a MUTE pad (dongle without its pad, or off), or the wrong MOSS_PAD_LAYOUT (cable = xinput, dongle = android) in robot.env"
   tail -5 "$LAUNCH_LOG"; $DIMOS stop >/dev/null 2>&1; exit 1
 fi
 
-echo "== 5/5 YOU CAN DRIVE =="
-echo "  deadman = R1 (right shoulder, SDL button 7) held the whole time"
+echo "== 5/5 YOU CAN DRIVE (base connected, pad seen at neutral by the stack, layout ${MOSS_PAD_LAYOUT:-android}) =="
+echo "  deadman = R1 (right shoulder) held the whole time"
 echo "  left stick up/down = forward/back   right stick left/right = turn   R2 = boost (capped at ${MOSS_MAX_PCT} %)"
 echo "  release R1 = 0.5 s of zeros then silence; the firmware stops 300 ms after the last drive"
 echo "  stop:  tools/moss-teleop.sh stop      watch:  tools/moss-teleop.sh log"

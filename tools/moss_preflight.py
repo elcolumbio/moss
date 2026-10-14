@@ -126,6 +126,53 @@ def _exists(path: str) -> bool:
     return os.path.exists(path)
 
 
+def _read_text(path) -> str | None:
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _pad_name(js: str) -> str:
+    try:
+        return Path(f"/sys/class/input/{os.path.basename(js)}/device/name").read_text(encoding="utf-8").strip()
+    except OSError:
+        return os.path.basename(js)
+
+
+def _pad_init_axes(js: str, listen_s: float = 1.0) -> list[int] | None:
+    """The joystick API's initial axis values (events flagged 0x80 on open): a pad the receiver has
+    never heard reports every axis at -32767; a live pad at rest reports its sticks at 0."""
+    import select
+    import struct
+
+    fmt, size = "IhBB", struct.calcsize("IhBB")
+    try:
+        fd = os.open(js, os.O_RDONLY | os.O_NONBLOCK)
+    except OSError:
+        return None
+    axes: dict[int, int] = {}
+    try:
+        deadline = time.monotonic() + listen_s
+        while time.monotonic() < deadline:
+            r, _, _ = select.select([fd], [], [], 0.1)
+            if not r:
+                if axes:
+                    break
+                continue
+            try:
+                data = os.read(fd, size * 64)
+            except OSError:
+                break
+            for i in range(0, len(data) - size + 1, size):
+                _, value, typ, num = struct.unpack(fmt, data[i:i + size])
+                if typ & 0x80 and typ & 0x02:
+                    axes[num] = value
+    finally:
+        os.close(fd)
+    return [axes[k] for k in sorted(axes)]
+
+
 def _runs_dir() -> Path:
     """dimOS's run registry, where dimOS, tools/moss-fly.sh and the cockpit
     look for it (XDG_STATE_HOME when set and not empty)."""
@@ -364,6 +411,78 @@ def _state_dir() -> Path:
     return robot_profile.moss_state_dir()
 
 
+# ── robot.env: what the robot IS (driver, pad layout, measured numbers) ──────────────────────
+ROBOT_ENV_NAME = "robot.env"
+
+
+def load_robot_env(text: str) -> dict[str, str]:
+    """KEY=VALUE lines (optional `export `, # comments, quotes stripped). Pure: tests/benches."""
+    out: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key, val = key.strip(), val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]
+        if re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
+            out[key] = val
+    return out
+
+
+def apply_robot_env(env: dict | None = None) -> tuple[Path, dict[str, str]]:
+    """The launchers source <MOSS_STATE_DIR>/robot.env; the flight check reads the same file so its
+    verdicts match what the stack will run with. The shell's own values win (setdefault)."""
+    e = os.environ if env is None else env
+    path = _state_dir() / ROBOT_ENV_NAME
+    text = _read_text(path)
+    pairs = load_robot_env(text) if text is not None else {}
+    for key, val in pairs.items():
+        e.setdefault(key, val)
+    return path, pairs
+
+
+def driver_verdict(expected: str, reported) -> tuple[bool, str]:
+    """MOSS_DRIVER (robot.env) against the firmware's `driver` key. Pure.
+    No expectation: informative. Expectation and a different (or missing) driver: a KO with the fix."""
+    exp = (expected or "").strip().lower()
+    rep = (str(reported).strip().lower() if reported else "")
+    if not exp:
+        return True, (rep or "not reported (a firmware build older than the driver key)") + \
+            "; set MOSS_DRIVER in robot.env to make this a check"
+    if rep == exp:
+        return True, f"{rep} = MOSS_DRIVER"
+    if not rep:
+        return False, f"not reported, robot.env expects {exp}: reflash the {exp} build (bench/README.md)"
+    return False, f"firmware built for {rep}, robot.env expects {exp}: reflash the {exp} build (bench/README.md)"
+
+
+PAD_MUTE_AXIS = -32767   # the kernel's initial value for an axis the pad never reported
+
+
+def pad_verdict(name: str, init_axes, layout: str) -> tuple[bool, str]:
+    """One pad as SDL will take it: alive at neutral, in the layout the stack will use. Pure.
+    init_axes: the joystick API's initial axis values (None = could not read)."""
+    lay = (layout or "android").strip().lower() or "android"
+    n = (name or "").lower()
+    if init_axes is None:
+        return False, f"{name}: cannot read it (permissions? held exclusively?)"
+    if init_axes and all(int(v) == PAD_MUTE_AXIS for v in init_axes):
+        return False, (f"{name}: MUTE - every axis at its never-reported value: the receiver sees no pad "
+                       "(pad off, or not paired with this dongle); the stack will never see it at neutral")
+    xbox = ("x-box" in n or "xbox" in n or "x box" in n)
+    if xbox and lay != "xinput":
+        return False, f"{name}: an Xbox 360 pad to the kernel (the pad on its cable), MOSS_PAD_LAYOUT is {lay}: set MOSS_PAD_LAYOUT=xinput in robot.env"
+    if "shanwan" in n and lay == "xinput":
+        return False, f"{name}: the dongle in Android mode, MOSS_PAD_LAYOUT is xinput: set MOSS_PAD_LAYOUT=android in robot.env"
+    return True, f"{name} alive, layout {lay} (deadman = R1)"
+
+
 # ── helpers ────────────────────────────────────────────────────────────────
 def _env_on(name: str, default: bool) -> bool:
     """A MOSS_* switch, parsed by the stack's own parser."""
@@ -540,8 +659,8 @@ def check_firmware(ctx: dict, quick: bool) -> None:
     mode = last.get("mode")
     verdict(mode == 0, "firmware disarmed",
             "mode 0 (off)" if mode == 0 else f"mode {mode} ({last.get('reason')}) - something else is driving it")
-    drv = last.get("driver")
-    verdict(True, "motor driver", str(drv) if drv else "not reported (a firmware build older than the driver key)")
+    ok, detail = driver_verdict(_raw("MOSS_DRIVER"), last.get("driver"))
+    verdict(ok, "motor driver", detail)
     _battery(last)
     ticks = last.get("ticks")
     good = isinstance(ticks, list) and len(ticks) == 2 and all(isinstance(x, int) for x in ticks)
@@ -626,25 +745,26 @@ def check_wrist(ctx: dict) -> None:
 
 def check_gamepad(ctx: dict) -> None:
     section("gamepad")
-    pads = sorted(glob.glob("/dev/input/js*"))   # any number: the pad on its cable keeps js1 after the dongle's js0
+    pads = _ls("/dev/input/js*")   # any number: the pad on its cable keeps js1 after the dongle's js0
     if pads:
-        names = []
-        for j in pads:
-            try:
-                with open(f"/sys/class/input/{os.path.basename(j)}/device/name", encoding="utf-8") as f:
-                    names.append(f"{os.path.basename(j)}={f.read().strip()}")
-            except OSError:
-                names.append(os.path.basename(j))
-        verdict(True, "gamepad", ", ".join(names) + " (dongle mute: button under the pad, then move a stick; cable = Xbox 360 pad: MOSS_PAD_LAYOUT=xinput)")
+        try:
+            index = max(0, int(_raw("MOSS_PAD_INDEX") or "0"))
+        except ValueError:
+            index = 0
+        js = pads[index] if index < len(pads) else pads[0]
+        name = _pad_name(js)
+        ok, detail = pad_verdict(name, _pad_init_axes(js), _raw("MOSS_PAD_LAYOUT"))
+        others = [f"{os.path.basename(j)}={_pad_name(j)}" for j in pads if j != js]
+        verdict(ok, "gamepad", f"{os.path.basename(js)}: {detail}" + (f"; also plugged: {', '.join(others)}" if others else ""))
         return
     usb = _usb_devices()
     if PAD_SHANWAN in usb:
-        why = f"receiver visible ({PAD_SHANWAN}), no js0: replug or reboot"
+        why = f"receiver visible ({PAD_SHANWAN}), no js device: replug or reboot"
     elif PAD_SWITCH_PRO in usb:
         why = (f"pad enumerated as a Nintendo Pro Controller ({PAD_SWITCH_PRO}) without a driver: "
                "switch the pad to its Android/X-input mode and replug")
     else:
-        why = "no pad (no js0, no known receiver on USB)"
+        why = "no pad (no js device, no known receiver on USB)"
     # A missing pad stops nothing from running: the map builds, the cockpit shows, exploration
     # can be armed; only hand driving is lost. MOSS_REQUIRE_PAD=1 turns this into a refusal.
     required = _env_on("MOSS_REQUIRE_PAD", False)
@@ -779,6 +899,10 @@ def _save(path: str, doc: dict) -> None:
 
 def run(quick: bool = False, no_spin: bool = False) -> None:
     ctx: dict = {}
+    section("robot.env (what the robot is: driver, pad layout, measured numbers)")
+    env_path, pairs = apply_robot_env()
+    verdict(True, "robot.env", (f"{env_path}: " + ", ".join(f"{k}={v}" for k, v in pairs.items())) if pairs
+            else f"{env_path} absent: nothing declared (MOSS_DRIVER, MOSS_PAD_LAYOUT...) - the checks stay informative")
     check_stack(ctx)
     check_ports(ctx)
     check_firmware(ctx, quick)

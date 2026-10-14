@@ -23,6 +23,17 @@
 # 300 ms after the last command whatever happens up here.
 set -u
 cd "$(dirname "$0")/.." || exit 1
+# robot.env: what THIS robot is (MOSS_DRIVER, MOSS_PAD_LAYOUT, measured numbers), next to the
+# recordings; the flight check reads the same file, so its verdicts match what runs here.
+# The shell's own exports win over the file.
+ROBOT_ENV="${MOSS_STATE_DIR:-$HOME/.local/state/moss}/robot.env"
+if [ -f "$ROBOT_ENV" ]; then
+  while IFS= read -r _l || [ -n "$_l" ]; do
+    _l="${_l#export }"; case "$_l" in ''|'#'*) continue;; esac
+    _k="${_l%%=*}"; _v="${_l#*=}"; _v="${_v%\"}"; _v="${_v#\"}"
+    case "$_k" in [A-Z]*) [ -z "${!_k:-}" ] && export "$_k=$_v";; esac
+  done < "$ROBOT_ENV"
+fi
 DIMOS=.venv/bin/dimos
 PY=.venv/bin/python
 BYID_DIR=/dev/serial/by-id
