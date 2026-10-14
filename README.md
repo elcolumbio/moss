@@ -41,6 +41,7 @@ I pick up litter by hand on my walks. MOSS is the robot I want next to me doing 
 
 ## News
 
+- 14 October 2026: [CAD development with Codex](docs/cad-with-codex.md): more battery room, integrated audio, a slimmer hull, a P1S split-hull option and deeper track guides. Images and geometry checks; physical validation is next.
 - 3 October 2026: V0.6 makes the hardware modular, Pi or Jetson, RealSense or Gemini. Waitlist open with Tnkr.
 - 1 October 2026: V0.5, the release candidate for the open source CAD.
 - 26 September 2026: arm and gripper mounted on the prototype.
