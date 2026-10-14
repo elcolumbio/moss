@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from collections.abc import Mapping
 import threading
 import time
 from typing import Any
@@ -66,10 +67,47 @@ DEFAULT_BOOST = 2.0
 RESCAN_PERIOD_S = 2.0         # how often we re-scan SDL for a pad
 
 # SDL axis indices on a standard dual-stick pad (DS4/DS5, Xbox, 8BitDo).
+# The pad's LAYOUT depends on how it shows up: the MOSS pad on its 2.4 GHz dongle in Android mode
+# (2563:0526) is the default; the same pad on its USB cable enumerates as an Xbox 360 pad (045e:028e,
+# kernel xpad), where R1 is button 5, the right stick X is axis 3 and the triggers are axes 2 and 5.
+# MOSS_PAD_LAYOUT=android|xinput picks a set; MOSS_PAD_DEADMAN / MOSS_PAD_AXIS_RIGHT_X / MOSS_PAD_AXIS_R2
+# override one value each; MOSS_PAD_INDEX picks the SDL joystick when several are plugged (the mute
+# dongle is usually index 0). All read once at import.
+PAD_LAYOUTS = {
+    "android": {"deadman": 7, "axis_right_x": 2, "axis_r2": 5},
+    "xinput": {"deadman": 5, "axis_right_x": 3, "axis_r2": 5},
+}
+
+
+def pad_layout(env: Mapping[str, str] | None = None) -> dict[str, int]:
+    """The button / axis numbers in force: a named layout, then one-value overrides. Pure."""
+    e = os.environ if env is None else env
+    name = (e.get("MOSS_PAD_LAYOUT") or "android").strip().lower()
+    out = dict(PAD_LAYOUTS.get(name, PAD_LAYOUTS["android"]))
+    for key, var in (("deadman", "MOSS_PAD_DEADMAN"), ("axis_right_x", "MOSS_PAD_AXIS_RIGHT_X"), ("axis_r2", "MOSS_PAD_AXIS_R2")):
+        raw = (e.get(var) or "").strip()
+        if raw:
+            try:
+                out[key] = int(raw)
+            except ValueError:
+                pass
+    return out
+
+
+def pad_index(env: Mapping[str, str] | None = None) -> int:
+    """MOSS_PAD_INDEX, else 0. Pure."""
+    raw = ((os.environ if env is None else env).get("MOSS_PAD_INDEX") or "").strip()
+    try:
+        return max(0, int(raw)) if raw else 0
+    except ValueError:
+        return 0
+
+
+_LAYOUT = pad_layout()
 AXIS_LEFT_X = 0
 AXIS_LEFT_Y = 1
-AXIS_RIGHT_X = 2   # measured: on the 2563:0526 pad in Android mode, right-stick X sweeps axis 2 over its full travel (axis 3 is its vertical, which leaks a little)
-AXIS_R2 = 5
+AXIS_RIGHT_X = _LAYOUT["axis_right_x"]   # android: measured on the 2563:0526 pad, right-stick X sweeps axis 2 over its full travel (axis 3 is its vertical, which leaks a little)
+AXIS_R2 = _LAYOUT["axis_r2"]
 
 
 @dataclass(frozen=True)
@@ -108,7 +146,7 @@ CLAMP_ANGULAR_RADS = 0.8
 # passes its own envelope, sized to the tracks (moss_adapter.teleop_envelope).
 DEFAULT_LEVER_M = 0.50    # m of rim speed per rad/s of rotation
 DEFAULT_RIM_MS = 0.45     # max rim speed however the sticks are mixed
-DEADMAN_BUTTON = 7        # R1: SDL button 7 on the 2563:0526 pad in Android mode. Held = commands allowed; released = zeros, always
+DEADMAN_BUTTON = _LAYOUT["deadman"]   # R1: SDL button 7 on the 2563:0526 pad in Android mode (5 on the cable, xinput). Held = commands allowed; released = zeros, always
 BRAKE_S = 0.5             # how long the zeros keep flowing after the deadman is
                           # released - then TOTAL SILENCE until it is held again.
                           # dimOS's MovementManager reads ANY tele_cmd_vel message,
@@ -287,7 +325,7 @@ class GamepadTeleop(Module):
                  deadzone: float = DEFAULT_DEADZONE,
                  rate_hz: float = DEFAULT_RATE_HZ,
                  boost_multiplier: float = DEFAULT_BOOST,
-                 joystick_index: int = 0, brake_s: float | None = None,
+                 joystick_index: int | None = None, brake_s: float | None = None,
                  envelope: Any = None,
                  **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -302,7 +340,7 @@ class GamepadTeleop(Module):
                                 boost_multiplier=boost_multiplier,
                                 envelope=self.envelope)
         self.rate_hz = rate_hz
-        self.joystick_index = joystick_index
+        self.joystick_index = pad_index() if joystick_index is None else joystick_index
         # None -> MOSS_BRAKE_S, else BRAKE_S (0.5 s). Resolved HERE, at
         # construction, so the value is fixed and logged once per run - not
         # re-read per tick.

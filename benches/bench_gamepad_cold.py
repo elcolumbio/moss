@@ -78,6 +78,13 @@ check((LIN, ANG) == (0.45, 0.8), f"ceilings: {LIN} m/s, {ANG} rad/s")
 # gp.DEADMAN_BUTTON, so without these a moved constant would still pass.
 check(gp.DEADMAN_BUTTON == 7,
       f"deadman = R1 = SDL button 7 on the MOSS pad (moss_pi's L1 is a different path): {gp.DEADMAN_BUTTON}")
+# the pad on its USB cable is an Xbox 360 pad to the kernel (xpad): R1 = button 5, right stick X = axis 3,
+# triggers at rest = -1 on axes 2 and 5 (measured: js1 initial state axes 2 and 5 at -32767, sticks at 0)
+check(gp.pad_layout({}) == {"deadman": 7, "axis_right_x": 2, "axis_r2": 5}, "default layout = android (7, 2, 5)")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput"}) == {"deadman": 5, "axis_right_x": 3, "axis_r2": 5}, "xinput layout = (5, 3, 5)")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_DEADMAN": "4"}) == {"deadman": 4, "axis_right_x": 3, "axis_r2": 5}, "one-value override wins")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "nope", "MOSS_PAD_AXIS_R2": "x"}) == {"deadman": 7, "axis_right_x": 2, "axis_r2": 5}, "unknown layout / bad number -> android")
+check(gp.pad_index({}) == 0 and gp.pad_index({"MOSS_PAD_INDEX": "1"}) == 1 and gp.pad_index({"MOSS_PAD_INDEX": "-3"}) == 0, "MOSS_PAD_INDEX: 0 by default, clamped at 0")
 check((gp.AXIS_LEFT_X, gp.AXIS_LEFT_Y, gp.AXIS_RIGHT_X, gp.AXIS_R2) == (0, 1, 2, 5),
       "strafe = left X (axis 0), throttle = left Y (axis 1), turn = right X (axis 2), boost = R2 (axis 5)")
 
@@ -158,32 +165,36 @@ check(abs(rim - gp.DEFAULT_RIM_MS) < 1e-9 and abs(vx / wz - 0.45 / 0.5) < 1e-9,
 
 
 # --- E. the MOSS envelope: moss_adapter's scale and ceilings --------------
-print("\nE. the MOSS envelope (default geometry: track 0.266 m, 0.45 m/s at 100 %, turn gain 2)")
+print("\nE. the MOSS envelope (default geometry: track 0.266 m, the measured speed at 100 %, turn gain 2)")
 from moss_dimos.moss_adapter import MossGeometry, teleop_envelope, teleop_speeds  # noqa: E402
 
 G = MossGeometry.from_env()
+V = G.mps_at_limit                    # the measured plateau at 100 % (0.32 m/s since the 90:1 motors)
+LEVER = G.track_m / 2.0               # 0.133 m
 m_lin, m_ang = teleop_speeds(G)
 m_env = teleop_envelope(G)
-check(close(m_lin, 0.45, 1e-9) and close(m_ang, 2.0 * 2.0 * 0.45 / 0.266, 1e-9),
-      f"scale: {m_lin:.3f} m/s and {m_ang:.4f} rad/s at full stick (6.7669 = 2 x the spin rate)")
+check(close(m_lin, V, 1e-9) and close(m_ang, 2.0 * 2.0 * V / G.track_m, 1e-9),
+      f"scale: {m_lin:.3f} m/s and {m_ang:.4f} rad/s at full stick (2 x the spin rate of the tracks)")
 check(set(m_env) == {"linear", "angular", "lever", "rim"},
       f"teleop_envelope keys = TwistEnvelope's fields: {sorted(m_env)}")
 moss_pad = GamepadTeleop(linear_speed=m_lin, angular_speed=m_ang, envelope=m_env)
+RIM = V + LEVER * m_ang               # full forward + full turn sits exactly on the rim
 check(isinstance(moss_pad.envelope, gp.TwistEnvelope)
-      and close(moss_pad.envelope.rim, 1.35, 1e-9) and close(moss_pad.envelope.lever, 0.133, 1e-9),
+      and close(moss_pad.envelope.rim, RIM, 1e-9) and close(moss_pad.envelope.lever, LEVER, 1e-9),
       f"the envelope dict (what a blueprint carries) becomes a TwistEnvelope: "
       f"lever {moss_pad.envelope.lever:.3f} m, rim {moss_pad.envelope.rim:.3f} m/s")
 MCFG = moss_pad.cfg
 got = axes_to_twist(0.0, -1.0, 1.0, -1.0, MCFG)
-check(twist_close(got, (0.45, 0.0, -m_ang), 1e-9),
+check(twist_close(got, (V, 0.0, -m_ang), 1e-9),
       f"full forward + full turn -> ({got[0]:.3f} m/s, {got[2]:.4f} rad/s): NOT scaled, "
-      f"the rim (0.45 + 0.133 x 6.7669 = 1.35) is exactly the envelope")
+      f"the rim ({V:.2f} + {LEVER:.3f} x {m_ang:.4f} = {RIM:.3f}) is exactly the envelope")
 got = axes_to_twist(-1.0, -1.0, 1.0, -1.0, MCFG)
-check(twist_close(got, (0.3375, 0.3375, -0.75 * m_ang), 1e-9),
-      f"... plus full left stick X -> rim 1.80, the whole command x 0.75: "
+k = RIM / (2.0 * V + LEVER * m_ang)   # ... plus a full strafe: the whole command scales down to the rim
+check(twist_close(got, (k * V, k * V, -k * m_ang), 1e-9),
+      f"... plus full left stick X -> rim {2.0 * V + LEVER * m_ang:.2f}, the whole command x {k:.2f}: "
       f"({got[0]:.4f}, {got[1]:.4f}, {got[2]:.4f}); the tracks drop vy, the scale stays")
-check(twist_close(axes_to_twist(0.0, -1.0, 0.0, 1.0, MCFG), (0.45, 0.0, 0.0), 1e-9),
-      "boost on the MOSS scale -> vx still 0.45 m/s (the base's limit is the ceiling)")
+check(twist_close(axes_to_twist(0.0, -1.0, 0.0, 1.0, MCFG), (V, 0.0, 0.0), 1e-9),
+      f"boost on the MOSS scale -> vx still {V:.2f} m/s (the base's limit is the ceiling)")
 
 
 # --- B. hot-plug cycle on a fake pygame -----------------------------------
