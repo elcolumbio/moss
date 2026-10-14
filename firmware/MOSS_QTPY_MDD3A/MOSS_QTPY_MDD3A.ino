@@ -22,11 +22,21 @@ constexpr int ENC_L_A = SDA, ENC_L_B = SCL;   // GPIO 7 / 6 (primary I2C pins re
 constexpr int ENC_R_A = TX,  ENC_R_B = RX;    // GPIO 5 / 16
 // INA219 on the STEMMA QT connector = Wire1 (SDA1 = GPIO 41, SCL1 = GPIO 40)
 constexpr uint8_t INA_ADDRESS = 0x40;
-constexpr bool INVERT_LEFT = true, INVERT_RIGHT = false;   // the left track runs backwards without it; its encoder ticks are inverted with it
+// The left motor is mounted mirrored: its encoder counts down when the track runs forward, so its
+// ticks are always inverted. Its DRIVE inversion depends on the driver: on the MDD3A (two PWM pins)
+// the left track ran backwards without it; on the MDD10A (PWM + DIR) the same wiring runs forward
+// on DIR low, and keeping the inversion made the rover pivot counter-clockwise (measured on the
+// first run with the 10 A driver: left -9031 ticks, right +7552, then straight once removed).
+constexpr bool INVERT_LEFT_TICKS = true, INVERT_RIGHT = false;
+#ifdef MOSS_DRIVER_MDD10A
+constexpr bool INVERT_LEFT_DRIVE = false;
+#else
+constexpr bool INVERT_LEFT_DRIVE = true;
+#endif
 constexpr float SHUNT_OHMS = 0.0f;   // voltage only (see V0.3 README)
 constexpr uint32_t PWM_HZ = 20000;
 constexpr int PWM_BITS = 10;
-constexpr const char* FW = "qtpy-mdd3a-v3";
+constexpr const char* FW = "qtpy-mdd3a-v4";
 
 moss::Control control;
 moss::Ramp rampL, rampR;
@@ -43,7 +53,7 @@ void ARDUINO_ISR_ATTR encoderLeft() {
   portENTER_CRITICAL_ISR(&encoderMux);
   uint8_t next = (gpio_get_level((gpio_num_t)ENC_L_A) << 1) | gpio_get_level((gpio_num_t)ENC_L_B);
   if ((prevL ^ next) == 3) badL = badL + 1;
-  ticksL += INVERT_LEFT ? -quadrature[(prevL << 2) | next] : quadrature[(prevL << 2) | next]; prevL = next;
+  ticksL += INVERT_LEFT_TICKS ? -quadrature[(prevL << 2) | next] : quadrature[(prevL << 2) | next]; prevL = next;
   portEXIT_CRITICAL_ISR(&encoderMux);
 }
 void ARDUINO_ISR_ATTR encoderRight() {
@@ -197,7 +207,7 @@ void loop() {
   now = millis();
   if (control.poll(now)) outputsZero();
   if (pwmOK && (control.mode == moss::DRIVE || control.mode == moss::TEST)) {
-    motorWrite(M1A, M1B, rampL.tick(control.left, now, control.rampRiseMs, control.rampFallMs), INVERT_LEFT);
+    motorWrite(M1A, M1B, rampL.tick(control.left, now, control.rampRiseMs, control.rampFallMs), INVERT_LEFT_DRIVE);
     motorWrite(M2A, M2B, rampR.tick(control.right, now, control.rampRiseMs, control.rampFallMs), INVERT_RIGHT);
   }
   if (uint32_t(now - lastTelemetry) >= 200) {

@@ -1,6 +1,6 @@
 # MOSS motor firmware
 
-**Current: [`MOSS_QTPY_MDD3A/`](MOSS_QTPY_MDD3A/)**, QT Py ESP32-S3 on its screw-terminal carrier, native USB, limit 100 % since the first drive on the floor (10 October 2026), `ramp` command, one build per driver (Cytron MDD3A by default, `-DMOSS_DRIVER_MDD10A` for the MDD10A, see its `bench/README.md`). Host test: `tests/control_v04_test.cpp`.
+**Current: [`MOSS_QTPY_MDD3A/`](MOSS_QTPY_MDD3A/)** (`qtpy-mdd3a-v4`; the MDD10A build, `-DMOSS_DRIVER_MDD10A`, drives the left track without the drive inversion the MDD3A needed and keeps its encoder inversion: measured straight, 1.065 m by tape for 1.066 m by the encoders, 5 s at 100 %), QT Py ESP32-S3 on its screw-terminal carrier, native USB, limit 100 % since the first drive on the floor (10 October 2026), `ramp` command, one build per driver (Cytron MDD3A by default, `-DMOSS_DRIVER_MDD10A` for the MDD10A, see its `bench/README.md`). Host test: `tests/control_v04_test.cpp`.
 
 The rest of this page is the V0.3 bench firmware on the DevKitC, kept as history.
 

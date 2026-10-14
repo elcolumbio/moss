@@ -28,11 +28,14 @@ def main() -> int:
     ap.add_argument("--pct", type=int, default=100)
     ap.add_argument("--seconds", type=float, default=5.0)
     ap.add_argument("--pivot", action="store_true")
+    ap.add_argument("--metres", type=float, default=None,
+                    help="stop once the mean encoder travel reaches this distance (ticks_per_m of the profile); --seconds stays the cap")
     ap.add_argument("--port", default=None)
     ap.add_argument("--go", action="store_true")
     a = ap.parse_args()
     if not a.go:
-        print(f"plan: {'pivot' if a.pivot else 'straight'} at {a.pct} % for {a.seconds:.1f} s; nothing moves without --go")
+        print(f"plan: {'pivot' if a.pivot else 'straight'} at {a.pct} % for {a.seconds:.1f} s"
+              + (f" or {a.metres:.2f} m" if a.metres else "") + "; nothing moves without --go")
         return 0
     os.environ["MOSS_PIVOT_PCT"] = "0"
     os.environ["MOSS_BUS_REF_MV"] = "0"
@@ -55,6 +58,8 @@ def main() -> int:
         twist = [0.0, 0.0, a.pct / 100.0 / (adapter._geometry.track_m / 2.0)] if a.pivot else [a.pct / 100.0, 0.0, 0.0]
         t0 = time.monotonic()
         last = None
+        target = a.metres * adapter._geometry.ticks_per_m if a.metres else None
+        base = None
         while time.monotonic() - t0 < a.seconds:
             adapter.write_velocities(twist)
             time.sleep(KEEPALIVE_S)
@@ -64,6 +69,11 @@ def main() -> int:
                 if last is None or row[1:3] != last[1:3]:
                     samples.append(row)
                     last = row
+                if target is not None:
+                    if base is None:
+                        base = (row[1], row[2])
+                    elif (abs(row[1] - base[0]) + abs(row[2] - base[1])) / 2.0 >= target:
+                        break
         adapter.write_stop()
         t_stop = time.monotonic()
         while time.monotonic() - t_stop < 1.5:
@@ -99,7 +109,10 @@ def main() -> int:
     top = max((max(lr, rr) for _, lr, rr in rates), default=0.0)
     t90 = next((t for t, lr, rr in rates if max(lr, rr) >= 0.9 * top), None)
     tot_l, tot_r = samples[-1][1] - l0, samples[-1][2] - r0
-    print(f"total {tot_l} / {tot_r} ticks in {a.seconds:.1f} s at {a.pct} %; top rate {top:.0f} ticks/s"
+    tpm = adapter._geometry.ticks_per_m or 0
+    if tpm:
+        print(f"distance by the encoders: {(abs(tot_l) + abs(tot_r)) / 2.0 / tpm:.3f} m (mean of both tracks at {tpm:.0f} ticks/m, coast after the stop included)")
+    print(f"total {tot_l} / {tot_r} ticks in {samples[-1][0]:.1f} s at {a.pct} %; top rate {top:.0f} ticks/s"
           + (f", reached 90 % of it at {t90:.1f} s" if t90 is not None else ""))
     return 0
 
