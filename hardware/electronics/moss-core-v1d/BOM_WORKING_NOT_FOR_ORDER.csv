@@ -1,0 +1,103 @@
+Manufacturer part number,Value,Footprint,Quantity per board,Reference designators,Status
+0451001.MRL,1A / 125V fast,Fuse:Littelfuse_0451_Nano2,1,F2,Working selection; PCBWay sourcing and release review pending
+1715721,CYTRON POWER /~8A BUDGET,"TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",1,J11,Working selection; PCBWay sourcing and release review pending
+1715721,FUSED BAT INPUT /3S,"TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal",1,J10,Working selection; PCBWay sourcing and release review pending
+22-05-7035,SERVO / DATA V+ GND,Connector_Molex:Molex_SPOX_5268-03A_1x03_P2.50mm_Horizontal,1,J5,Working selection; PCBWay sourcing and release review pending
+74LV08APWJ,74LV08APWJ,Package_SO:TSSOP-14_4.4x5mm_P0.65mm,1,U11,Working selection; PCBWay sourcing and release review pending
+B540C-13-F,B540C-13-F,Diode_SMD:D_SMC,2,"D30, D31",Working selection; PCBWay sourcing and release review pending
+C0603C104K5RACTU,100nF /50V X7R,Capacitor_SMD:C_0603_1608Metric,4,"C91, C93, C96, C98",Working selection; PCBWay sourcing and release review pending
+C0805C104K5RACTU,100nF / 50V X7R,Capacitor_SMD:C_0805_2012Metric,1,C83,Working selection; PCBWay sourcing and release review pending
+C2220C474J5GACTU,470nF /50V /5% C0G,Capacitor_SMD:C_2220_5750Metric,2,"C90, C95",Working selection; PCBWay sourcing and release review pending
+CSD19536KTT,CSD19536KTT,Package_TO_SOT_SMD:TO-263-2,2,"Q10, Q11",Working selection; PCBWay sourcing and release review pending
+ESP32-S3-WROOM-1U-N8,ESP32-S3-WROOM-1U-N8,RF_Module:ESP32-S3-WROOM-1U,1,U1,Working selection; PCBWay sourcing and release review pending
+GRM1885C1H101JA01D,100pF,Capacitor_SMD:C_0603_1608Metric,4,"C19, C20, C21, C22",Working selection; PCBWay sourcing and release review pending
+GRM1885C1H102JA01D,1n,Capacitor_SMD:C_0603_1608Metric,3,"C101, C103, C105",Working selection; PCBWay sourcing and release review pending
+GRM1885C1H750JA01D,75pF / C0G,Capacitor_SMD:C_0603_1608Metric,1,C87,Working selection; PCBWay sourcing and release review pending
+GRM188R61A105KA61D,1uF,Capacitor_SMD:C_0603_1608Metric,4,"C1, C2, C43, C44",Working selection; PCBWay sourcing and release review pending
+GRM188R71C104KA01D,100n,Capacitor_SMD:C_0603_1608Metric,10,"C100, C102, C104, C106, C107, C108, C109, C111, C112, C113",Working selection; PCBWay sourcing and release review pending
+GRM188R71C104KA01D,100nF,Capacitor_SMD:C_0603_1608Metric,20,"C7, C9, C10, C11, C13, C16, C17, C18, C23, C24, C25, C26, C29, C42, C40, C41, C110, C27, C80, C84",Working selection; PCBWay sourcing and release review pending
+GRM188R71H102KA01D,1nF,Capacitor_SMD:C_0603_1608Metric,1,C12,Working selection; PCBWay sourcing and release review pending
+GRM188R71H103KA01D,10nF,Capacitor_SMD:C_0603_1608Metric,1,C45,Working selection; PCBWay sourcing and release review pending
+GRM188R71H104KA93D,100nF,Capacitor_SMD:C_0603_1608Metric,2,"C30, C31",Working selection; PCBWay sourcing and release review pending
+GRM21BR71A106KA73L,10uF,Capacitor_SMD:C_0805_2012Metric,2,"C5, C6",Working selection; PCBWay sourcing and release review pending
+GRM21BR71A106KE51L,10uF / 10V X7R,Capacitor_SMD:C_0805_2012Metric,1,C81,Working selection; PCBWay sourcing and release review pending
+GRM21BR71A475KA73L,4.7uF,Capacitor_SMD:C_0805_2012Metric,1,C4,Working selection; PCBWay sourcing and release review pending
+GRM31CR71A226KE15L,22uF / 10V X7R,Capacitor_SMD:C_1206_3216Metric,2,"C85, C86",Working selection; PCBWay sourcing and release review pending
+GRM32ER71H106KA12L,10uF / 50V X7R,Capacitor_SMD:C_1210_3225Metric,1,C82,Working selection; PCBWay sourcing and release review pending
+GRM32ER71H106KA12L,10uF /50V X7R,Capacitor_SMD:C_1210_3225Metric,4,"C92, C94, C97, C99",Working selection; PCBWay sourcing and release review pending
+INA226AIDGSR,INA226AIDGSR,Package_SO:MSOP-10_3x3mm_P0.5mm,1,U17,Working selection; PCBWay sourcing and release review pending
+KMR221GLFS,BOOT_N,Button_Switch_SMD:SW_Push_1P1T_NO_CK_KMR2,1,SW2,Working selection; PCBWay sourcing and release review pending
+KMR221GLFS,RESET_N,Button_Switch_SMD:SW_Push_1P1T_NO_CK_KMR2,1,SW1,Working selection; PCBWay sourcing and release review pending
+LM5069MM-1/NOPB,LM5069MM-1/NOPB,Package_SO:MSOP-10_3x3mm_P0.5mm,2,"U25, U26",Working selection; PCBWay sourcing and release review pending
+LTST-C190KGKT,GREEN,LED_SMD:LED_0603_1608Metric,1,D2,Working selection; PCBWay sourcing and release review pending
+MAX98357AETE+T,MAX98357AETE+T,Package_DFN_QFN:MAX98357A_T1633_4_90_0031,1,U23,Working selection; PCBWay sourcing and release review pending
+"MMBT3904,215",MMBT3904,Package_TO_SOT_SMD:SOT-23,1,Q2,Working selection; PCBWay sourcing and release review pending
+"PESD5V0S1BA,115",PESD5V0S1BA,Diode_SMD:D_SOD-323,7,"D5, D6, D7, D8, D9, D10, D11",Working selection; PCBWay sourcing and release review pending
+"PMEG2010ER,115",PMEG2010ER,Diode_SMD:Nexperia_CFP3_SOD-123W,1,D1,Working selection; PCBWay sourcing and release review pending
+RC0402FR-0722RL,22,Resistor_SMD:R_0402_1005Metric,2,"R3, R4",Working selection; PCBWay sourcing and release review pending
+RC0603FR-07100KL,100k,Resistor_SMD:R_0603_1608Metric,13,"R22, R74, R76, R77, R78, R79, R113, R55, R144, R149, R154, R125, R135",Working selection; PCBWay sourcing and release review pending
+RC0603FR-07100RL,100,Resistor_SMD:R_0603_1608Metric,5,"R21, R23, R25, R27, R29",Working selection; PCBWay sourcing and release review pending
+RC0603FR-07105KL,105k,Resistor_SMD:R_0603_1608Metric,1,R105,Working selection; PCBWay sourcing and release review pending
+RC0603FR-0710KL,10k,Resistor_SMD:R_0603_1608Metric,32,"R5, R6, R10, R12, R13, R16, R18, R19, R20, R24, R26, R28, R30, R36, R38, R40, R42, R43, R44, R64, R110, R111, R54, R56, R58, R143, R148, R153, R122, R127, R132, R137",Working selection; PCBWay sourcing and release review pending
+RC0603FR-0710RL,10,Resistor_SMD:R_0603_1608Metric,3,"R61, R62, R63",Working selection; PCBWay sourcing and release review pending
+RC0603FR-071KL,1k,Resistor_SMD:R_0603_1608Metric,10,"R7, R15, R17, R35, R37, R39, R41, R49, R124, R134",Working selection; PCBWay sourcing and release review pending
+RC0603FR-071ML,1M,Resistor_SMD:R_0603_1608Metric,3,"R155, R156, R157",Working selection; PCBWay sourcing and release review pending
+RC0603FR-07220KL,220k,Resistor_SMD:R_0603_1608Metric,4,"R160, R161, R162, R163",Working selection; PCBWay sourcing and release review pending
+RC0603FR-0722KL,22k,Resistor_SMD:R_0603_1608Metric,1,R57,Working selection; PCBWay sourcing and release review pending
+RC0603FR-072K2L,2.2k,Resistor_SMD:R_0603_1608Metric,1,R53,Working selection; PCBWay sourcing and release review pending
+RC0603FR-072M32L,2.32M,Resistor_SMD:R_0603_1608Metric,1,R142,Working selection; PCBWay sourcing and release review pending
+RC0603FR-072ML,2M,Resistor_SMD:R_0603_1608Metric,2,"R147, R152",Working selection; PCBWay sourcing and release review pending
+RC0603FR-0732K4L,32.4k,Resistor_SMD:R_0603_1608Metric,1,R133,Working selection; PCBWay sourcing and release review pending
+RC0603FR-07330RL,330,Resistor_SMD:R_0603_1608Metric,1,R14,Working selection; PCBWay sourcing and release review pending
+RC0603FR-0745K3L,45.3k,Resistor_SMD:R_0603_1608Metric,2,"R121, R131",Working selection; PCBWay sourcing and release review pending
+RC0603FR-0747KL,47k,Resistor_SMD:R_0603_1608Metric,12,"R11, R31, R32, R33, R34, R93, R73, R75, R112, R90, R91, R92",Working selection; PCBWay sourcing and release review pending
+RC0603FR-0747RL,47,Resistor_SMD:R_0603_1608Metric,4,"R48, R50, R51, R52",Working selection; PCBWay sourcing and release review pending
+RC0603FR-074K7L,4.7k,Resistor_SMD:R_0603_1608Metric,4,"R8, R9, R128, R138",Working selection; PCBWay sourcing and release review pending
+RC0603FR-07511KL,511k,Resistor_SMD:R_0603_1608Metric,1,R104,Working selection; PCBWay sourcing and release review pending
+RC0603FR-075K1L,5.1k,Resistor_SMD:R_0603_1608Metric,2,"R1, R2",Working selection; PCBWay sourcing and release review pending
+RC0603FR-0760K4L,60.4k,Resistor_SMD:R_0603_1608Metric,1,R72,Working selection; PCBWay sourcing and release review pending
+RC0603FR-078K66L,8.66k,Resistor_SMD:R_0603_1608Metric,1,R123,Working selection; PCBWay sourcing and release review pending
+RC0603JR-070RL,0,Resistor_SMD:R_0603_1608Metric,2,"R126, R136",Working selection; PCBWay sourcing and release review pending
+RT0603BRD07100KL,100k,Resistor_SMD:R_0603_1608Metric,1,R71,Working selection; PCBWay sourcing and release review pending
+RT0603BRD07100KL,100k / 0.1%,Resistor_SMD:R_0603_1608Metric,1,R102,Working selection; PCBWay sourcing and release review pending
+RT0603BRD0710KL,10k,Resistor_SMD:R_0603_1608Metric,3,"R141, R146, R151",Working selection; PCBWay sourcing and release review pending
+RT0603BRD0713K3L,13.3k / 0.1%,Resistor_SMD:R_0603_1608Metric,1,R103,Working selection; PCBWay sourcing and release review pending
+RT0603BRD07232KL,232k,Resistor_SMD:R_0603_1608Metric,2,"R145, R150",Working selection; PCBWay sourcing and release review pending
+RT0603BRD07244KL,244k,Resistor_SMD:R_0603_1608Metric,1,R140,Working selection; PCBWay sourcing and release review pending
+RT0603BRD07464KL,464k,Resistor_SMD:R_0603_1608Metric,1,R70,Working selection; PCBWay sourcing and release review pending
+S2B-PH-K-S(LF)(SN),SPEAKER / 4 ohm 3 W,Connector_JST:JST_PH_S2B-PH-K_1x02_P2.00mm_Horizontal,1,J7,Working selection; PCBWay sourcing and release review pending
+SM02B-GHS-TB(LF)(SN),DRY NC INTERLOCK,Connector_JST:JST_GH_SM02B-GHS-TB_1x02-1MP_P1.25mm_Horizontal,1,J8,Working selection; PCBWay sourcing and release review pending
+SM03B-GHS-TB(LF)(SN),POWER PERMIT LOGIC,Connector_JST:JST_GH_SM03B-GHS-TB_1x03-1MP_P1.25mm_Horizontal,1,J9,Working selection; PCBWay sourcing and release review pending
+SM04B-GHS-TB(LF)(SN),ENCODER LEFT,Connector_JST:JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal,1,J3,Working selection; PCBWay sourcing and release review pending
+SM04B-GHS-TB(LF)(SN),ENCODER RIGHT,Connector_JST:JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal,1,J4,Working selection; PCBWay sourcing and release review pending
+SM04B-GHS-TB(LF)(SN),KELVIN 3S BATTERY,Connector_JST:JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal,1,J6,Working selection; PCBWay sourcing and release review pending
+SM05B-GHS-TB(LF)(SN),CYTRON MDD10A SIGNAL,Connector_JST:JST_GH_SM05B-GHS-TB_1x05-1MP_P1.25mm_Horizontal,1,J2,Working selection; PCBWay sourcing and release review pending
+SMBJ13A-E3/52,SMBJ13A-E3/52,Diode_SMD:D_SMB,1,D32,Working selection; PCBWay sourcing and release review pending
+SMF15A,SMF15A,Diode_SMD:D_SOD-123F,2,"D3, D4",Working selection; PCBWay sourcing and release review pending
+SN74HCS21PWR,SN74HCS21PWR,MOSS_Custom:TSSOP-14_4.4x5mm_P0.65mm_U33_Pin1Shift,1,U33,Working selection; PCBWay sourcing and release review pending
+SN74HCS21PWR,SN74HCS21PWR,Package_SO:TSSOP-14_4.4x5mm_P0.65mm,1,U6,Working selection; PCBWay sourcing and release review pending
+SN74HCS74PWR,SN74HCS74PWR,Package_SO:TSSOP-14_4.4x5mm_P0.65mm,1,U30,Working selection; PCBWay sourcing and release review pending
+SN74LVC125APWR,SN74LVC125APWR,Package_SO:TSSOP-14_4.4x5mm_P0.65mm,1,U16,Working selection; PCBWay sourcing and release review pending
+SN74LVC14APWR,SN74LVC14APWR,Package_SO:TSSOP-14_4.4x5mm_P0.65mm,1,U12,Working selection; PCBWay sourcing and release review pending
+SN74LVC1G126DCKR,SN74LVC1G126DCKR,Package_TO_SOT_SMD:SOT-353_SC-70-5,1,U15,Working selection; PCBWay sourcing and release review pending
+SN74LVC1G17DCKR,SN74LVC1G17DCKR,Package_TO_SOT_SMD:SOT-353_SC-70-5,1,U18,Working selection; PCBWay sourcing and release review pending
+SN74LVC2G08DCUR,SN74LVC2G08DCUR,Package_SO:VSSOP-8_2.3x2mm_P0.5mm,4,"U10, U13, U34, U32",Working selection; PCBWay sourcing and release review pending
+SN74LVC2G126DCUR,SN74LVC2G126DCUR,Package_SO:VSSOP-8_2.3x2mm_P0.5mm,1,U14,Working selection; PCBWay sourcing and release review pending
+SN74LVC2G14DBVR,SN74LVC2G14DBVR,Package_TO_SOT_SMD:SOT-23-6,1,U31,Working selection; PCBWay sourcing and release review pending
+SN74LVC2G17DBVR,SN74LVC2G17DBVR,Package_TO_SOT_SMD:SOT-23-6,2,"U35, U36",Working selection; PCBWay sourcing and release review pending
+SN74LVC74APWR,SN74LVC74APWR,Package_SO:TSSOP-14_4.4x5mm_P0.65mm,1,U9,Working selection; PCBWay sourcing and release review pending
+SRP6060FA-100M,10uH / 7.6A Isat typ,Inductor_SMD:L_Bourns_SRP6060FA,1,L2,Working selection; PCBWay sourcing and release review pending
+TCA9536DGKR,TCA9536DGKR,Package_SO:VSSOP-8_3x3mm_P0.65mm,1,U37,Working selection; PCBWay sourcing and release review pending
+TLV62569DBVR,TLV62569DBVR,Package_TO_SOT_SMD:SOT-23-5,1,U4,Working selection; PCBWay sourcing and release review pending
+TLV803EA30DBZR,TLV803EA30DBZR,Package_TO_SOT_SMD:SOT-23,1,U20,Working selection; PCBWay sourcing and release review pending
+TPD1E10B06DYAR,TPD1E10B06DYAR,Diode_SMD:D_SOD-523,3,"D20, D21, D22",Working selection; PCBWay sourcing and release review pending
+TPD2E2U06DCKR,TPD2E2U06DCKR,Package_TO_SOT_SMD:SOT-323_SC-70,1,U2,Working selection; PCBWay sourcing and release review pending
+TPS22918DBVR,TPS22918DBVR,Package_TO_SOT_SMD:SOT-23-6,1,U22,Working selection; PCBWay sourcing and release review pending
+TPS2553DBVR,TPS2553DBVR,Package_TO_SOT_SMD:SOT-23-6,1,U3,Working selection; PCBWay sourcing and release review pending
+TPS3431SDRBR,TPS3431SDRBR,Package_SON:VSON-8-1EP_3x3mm_P0.65mm_EP1.65x2.4mm,1,U5,Working selection; PCBWay sourcing and release review pending
+TPS3808G01DBVR,TPS3808G01DBVR,Package_TO_SOT_SMD:SOT-23-6,3,"U27, U28, U29",Working selection; PCBWay sourcing and release review pending
+TPS54302DDCR,TPS54302DDCR,Package_TO_SOT_SMD:SOT-23-6,1,U24,Working selection; PCBWay sourcing and release review pending
+USB4105-GF-A,USB2 device / 500mA max,Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal,1,J1,Working selection; PCBWay sourcing and release review pending
+WSL25126L800FEA,6.8m /1% /1W,Resistor_SMD:R_2512_6332Metric,1,R120,Working selection; PCBWay sourcing and release review pending
+WSL2512R0220FEA,22m /1% /1W,Resistor_SMD:R_2512_6332Metric,1,R130,Working selection; PCBWay sourcing and release review pending
+XAL4020-222MEC,2.2uH,Inductor_SMD:L_Coilcraft_XAL4020-XXX,1,L1,Working selection; PCBWay sourcing and release review pending

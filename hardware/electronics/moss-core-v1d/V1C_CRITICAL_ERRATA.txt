@@ -1,0 +1,24 @@
+MOSS Core V1C — critical physical-pin mapping erratum
+Date: 2026-10-15
+Status: DO NOT FABRICATE THE V1C PACKAGE.
+
+The V1C physical-pin contract incorrectly assigns channel 2 of SN74LVC2G08DCUR
+in U10 and U11. Its second AND gate is physically inputs 5 and 6, output 3.
+The V1C contract instead uses inputs 3 and 5, output 6. Correct logical equations
+and a clean ERC/DRC cannot detect an incorrect custom-symbol pin contract.
+
+Consequences include an invalid actuator-permission path and invalid second
+motor PWM mask. The previously published V1C package is not a functional or
+fabrication-ready prototype. Do not treat a previous ERC/DRC pass as validation.
+
+This was independently identified against TI SCES198N, section 5, page 3:
+https://www.ti.com/lit/ds/symlink/sn74lvc2g08.pdf
+
+V1D corrects U10 and replaces U11 with a four-channel mask that also inhibits
+DIR signals when motor power is absent. The new servo-stage U13 is checked
+against the same physical pin table. Recorded independent physical-pin review reports accompany V1D.
+
+The historical V1C archive is preserved unchanged for traceability. This
+erratum accompanies the public V1D routed DRAFT. V1D routing is complete
+with the recorded native DRC/netlist checks passing. Geometric review,
+manufacturing qualification and hardware validation remain pending.

@@ -1,0 +1,30 @@
+{
+  "status": "VISUAL_PREVIEW_NOT_MECHANICAL_OR_HARDWARE_VALIDATION",
+  "renderer": "KiCad 10.0.6 pcb render",
+  "pcb_sha256": "23c9129e93a91a1dccac344cf97216f52c08104c1108e3fb51858183b11a0fb6",
+  "image_sha256": "c06d5f97a360e8da4957b4bfbc3ecdc39148c3920463e87d3c5b479599653a77",
+  "settings": {
+    "side": "top",
+    "quality": "high",
+    "floor": true,
+    "perspective": true,
+    "rotate_degrees": [
+      330,
+      0,
+      15
+    ],
+    "zoom": 0.62,
+    "requested_width": 1800,
+    "requested_height": 1800
+  },
+  "missing_models": [
+    "J5 (Molex SPOX servo connector)",
+    "U23 (MAX98357A amplifier)",
+    "F2 (audio fuse)"
+  ],
+  "simplified_envelopes": [
+    "U1 (ESP32-S3 module)",
+    "U5 (TPS3431 watchdog)"
+  ],
+  "design_modified": false
+}

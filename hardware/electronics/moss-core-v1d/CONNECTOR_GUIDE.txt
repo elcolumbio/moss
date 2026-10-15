@@ -1,0 +1,63 @@
+MOSS Core V1D - connector guide
+Working design; not a manufacturing or powered-test release.
+Pin numbers follow the native PCB pads, not wire colors or a cable photograph.
+
+J1 - USB-C DEVICE
+Connect to the host computer or its external USB hub. Core is a USB peripheral.
+It does not host cameras or provide the host computer's power supply.
+
+J10 - FUSED 3S BATTERY INPUT
+1: battery positive, after the external fuse. 2: battery negative / GND.
+This feeds the on-board actuator switches and the separately fused audio buck.
+Battery/BMS regenerative-current behavior still requires qualification.
+
+J11 - CYTRON POWER OUTPUT
+1: switched motor positive. 2: power GND.
+This supplies the external Cytron MDD10A. It is separate from J2 logic.
+The branch has an approximately 8.1 A nominal TOTAL budget, not 10 A per motor.
+
+J2 - CYTRON CONTROL SIGNALS
+1: PWM1. 2: DIR1. 3: PWM2. 4: DIR2. 5: GND.
+No motor power goes through this connector. Cable order is Core-specific.
+
+J3 / J4 - LEFT / RIGHT MOTOR ENCODERS
+1: GND. 2: switched encoder 3V3. 3: channel A. 4: channel B.
+The physical motor cable pin order must be matched to these PCB pin numbers.
+
+J5 - POWERED SERIAL SERVO CHAIN
+1: serial DATA. 2: switched battery positive. 3: GND.
+One existing chain is retained. Proposed current limit is approximately
+2.5 A nominal; this is not a guarantee that every arm joint can stall together.
+The selected 2.5 mm connector still requires a physical cable mating check.
+
+J7 - SPEAKER
+1: speaker +. 2: speaker -. Intended speaker: 4 ohm, 3 W, two-pin 2 mm pitch.
+Both leads are driven by the amplifier: neither is GND. Output power limiting
+still requires firmware implementation and measurement into a dummy load.
+
+J8 - NORMALLY CLOSED STOP CONTACT
+1: NC_SOURCE. 2: NC_RETURN.
+The external normally closed contact joins these pins during permitted operation.
+Opening the contact or its wire inhibits the actuator-power hardware.
+This is a low-voltage dry-contact loop, not a battery-current connection.
+The host computer retains its separate supply when actuator power is removed.
+This prototype is not a certified safety controller.
+
+J9 - OPTIONAL EXTERNAL LOGIC INTERFACE
+1: GND. 2: PERMIT output, 3V3 logic. 3: active-low external FAULT input.
+Pin 2 reports the final actuator permit through R21; it is not an enable input
+and must not be driven by another output. Pin 3 can request an inhibit by
+pulling it low; R18 pulls the filtered fault signal high when it is unused.
+J9 is the retained external interface. The V1D power switches are on the PCB,
+so a separate cut-off board on J9 is not required for the integrated function.
+Do not bridge J9 pins or connect battery voltage here.
+
+J6 - KELVIN MEASUREMENT INPUT
+1: K+. 2: K-. 3: GND. 4: reserved / not connected.
+This is a measurement connection, not an alternative battery-power input.
+The external measurement wiring must follow the current-sense schematic.
+
+Physical checks still required
+Confirm each mating housing, pin order, polarity, wire rating and installed
+clearance before the first powered prototype. See the schematic and firmware
+porting contract for the complete startup and fault-reset requirements.

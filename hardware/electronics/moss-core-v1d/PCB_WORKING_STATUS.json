@@ -1,0 +1,46 @@
+{
+  "status": "ROUTED_LOCAL_DRAFT_GEOMETRY_REVIEW_PENDING",
+  "components": 266,
+  "outline_mm": [
+    80,
+    85
+  ],
+  "layers": 4,
+  "corner_holes_mm": 2.7,
+  "routing_complete": true,
+  "latest_drc_report": "DRC_FINAL_PARITY.json",
+  "latest_drc_violations": 0,
+  "latest_unconnected_items": 0,
+  "latest_schematic_parity_issues": 0,
+  "board_sha256": "23c9129e93a91a1dccac344cf97216f52c08104c1108e3fb51858183b11a0fb6",
+  "project_sha256": "e0bf171eb7a40917f0efea32704b1f5534fcede26f57cb1b5e74b14cf3f99b04",
+  "rules_sha256": "cf52ceeda98731ecd3f4f84c3c54c96f10e8e94fbf1bbdac9e86ce7ef48bbde3",
+  "schematic_sha256": "7ac16c745e2e4d2362b77a876afdeb85af609f739a214aadb4ade9f83a1355ed",
+  "contract_sha256": {
+    "circuit.json": "659e4f110fcd73fb98022bb44c42f426f9994e8029f879df2c693aba63077ae9",
+    "native_netlist.xml": "81d494d0bb8717ea3cbaf81b74ccaf055545d2a5169076f3182216f96ed96ce4",
+    "MOSS.kicad_sym": "3dee9f79c575eaa07f221d8fc8a20eec0033716b5db8571da1f525cf25a098c9"
+  },
+  "drc_binding_sha256": "c2c0ca5dff242de9c4af0deae0a54a48f9a2592a96e9125108b1c11a5c01b40d",
+  "final_audit_sha256": {
+    "FINAL_NATIVE_REVIEW.json": "fff4addb6f8305d3f2fff0926593dd5866779084a116119ab82a2526b081b192",
+    "FINAL_ROUTED_GEOMETRY.json": "51174549021c6c832643eb23811706860b66a99f13123319160efbff8a052f4f",
+    "PIN_IMPORT_RAW.json": "e5d631174634b14a30148331ddaedd0863b965461027636b44a24aa24b16772e"
+  },
+  "static_geometry_review_pending": true,
+  "preserved_reviewed_copper_items": 531,
+  "tracks": 3232,
+  "vias": 643,
+  "inner_layer_use": {
+    "In1.Cu": "GND reference, no signal tracks",
+    "In2.Cu": "3V3 and routed signals with remaining GND fill; see reference review"
+  },
+  "PCBWay_stackup_confirmed": false,
+  "current_carrying_capacity_verified": false,
+  "rover_fit_verified": false,
+  "fabrication_ready": false,
+  "qualification": "Static routing/netlist/geometry evidence only. Review flags, power, thermal, signal integrity, physical connectors, firmware and fabrication qualification remain open.",
+  "audited_source": "/private/tmp/moss-final-routed-review-v2/MOSS_Core_V1D_DRAFT.kicad_pcb",
+  "adopted_at_utc": "2026-10-15T15:22:37.739411+00:00",
+  "protected_baseline_backup": "/Users/macbookair/Documents/Codex/2026-10-01/yo/work/moss_core_v1d_20261015/candidate_checkpoints/protected_main_before_adoption"
+}
