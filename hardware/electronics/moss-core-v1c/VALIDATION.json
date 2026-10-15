@@ -580,5 +580,8 @@
     "MOSS_Core_V1C.kicad_sch": "a79132372a7874c866d742643a52ef6c87ef0d133912c6678e77ea2ca4b99909"
   },
   "final_export_identity_matches_checked_working_project": true,
-  "local_3D_models_resolved": 27
+  "local_3D_models_resolved": 27,
+  "publication_language": "en",
+  "language_review": "LANGUAGE_REVIEW.json",
+  "publication_note": "English documentation correction only. Electrical design and fabrication outputs unchanged."
 }

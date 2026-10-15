@@ -1,0 +1,141 @@
+MOSS CORE V1C — AUDITED PROTOTYPE
+15 October 2026 — KiCad 10.0.6
+English publication corrected on 15 October 2026; electrical design unchanged.
+
+This revision replaces V1B. Do not order V1B: a clean DRC did not validate USB
+paths, decoupling returns or screw/cable clearances. AUDIT_V1B_V1C.html describes
+the findings and their status. The audit is limited to files, consulted datasheets
+and the R79 mechanical model; it does not guarantee the absence of every defect.
+
+Core replaces the QT Py, its BFF, the INA board and servo signal adapter. No BFF
+plugs into this PCB. The Cytron, audio amplifier, computer power supply and power
+wiring remain external. The ESP32-S3 module is soldered directly onto Core.
+
+REDESIGNED BOARD
+60 × 65 × 1.6 mm PCB, R2 corners, four Ø2.7 non-plated holes for M2.5 screws.
+Centres: (4,4), (56,4), (4,61), (56,61) mm; pitch 52 × 57 mm. Each screw has a
+Ø8 reserve free of copper and components, including internal layers. Printed
+supports must follow this interface. Old BFF mounts no longer dictate the outline.
+
+150 components assembled on top; eight bottom test points and four mounting
+holes are excluded from BOM/placement. Passives were enlarged to 0603 where
+possible; only the two USB termination resistors remain 0402. Connector references
+and RESET/BOOT are marked on top; complete connector functions are on the bottom
+and in CONNECTOR_PINOUT.csv.
+
+Signals are routed on F.Cu and B.Cu. In1.Cu and In2.Cu are GND-only planes with no
+signal tracks. Direct capacitor-to-GND-via returns measure at most 1.1 mm in the
+routing data. USB traces remain on F.Cu without signal vias, with terminations
+near the module. The parallel trunk is symmetric; the reversible connector's
+four-to-two pin fan-in stays local. Total branch copper lengths must not be
+confused with propagation delay for each cable orientation.
+
+POWER AND PROTECTION
+USB-only input: immediate reverse-blocking diode, TPS2553 limiter, TLV62569 buck
+and TLV803E supervisor. The 464k/100k divider at 0.1% is required: 3.384 V nominal,
+static bounds 3.311–3.457 V under the assumptions in LOGIC_VALIDATION.json.
+Static margin above the maximum reset-release threshold is about 122 mV; this
+does not validate fast voltage dips.
+Calculated hardware input-current limit: 387–491 mA. Design budget: 200 mA target,
+350 mA continuous on the logic rail, radio disabled. The converter's 2 A rating is
+not current available from USB. Firmware must respect pre-enumeration and suspend
+current; the limiter alone does not implement that policy. Encoders and pull-ups
+remain unpowered until USB configuration and must switch off in suspend.
+Consumption, inrush, temperature and transient tests remain necessary.
+
+The board supplies signals to Cytron and the servo bus; it does not carry their
+power current. INA226 measures total pack current through an external 2 mohm
+Kelvin shunt, to be selected with its dissipation and harness. At 15 A: 30 mV /
+0.45 W; at 30 A: 60 mV / 1.8 W. Above approximately 40.96 A, the shunt-voltage
+measurement range is exceeded with 2 mohm. Protect thin sense wires at the source.
+No power shunt or battery fuse is included in the PCB assembly BOM.
+
+INTERFACE REQUIREMENTS
+J1: USB-C peripheral, Core data and power.
+J2: PWM1 / DIR1 / PWM2 / DIR2 / GND to Cytron MDD10A. This order is Core-specific;
+wire the harness to the correct labels on the Cytron.
+J3/J4: GND / ENC_3V3 / A / B for left/right encoders. Power encoders from Core;
+do not connect a separate 5 V supply to this harness. Buffers invert both phases,
+which preserves their phase relationship.
+J5: GND / servo TTL DATA. 3.3 V interface following the installed Waveshare (A)
+adapter; arm power is external. No 12 V here.
+J6: Kelvin+ / Kelvin− / GND / spare for a 3S pack. Measurement input, not board power.
+J7: GND / BCLK / LRCLK / DIN / ENABLE / amplifier 5 V presence / spare.
+MAX98357A keeps its own power supply. The 5 V rail no longer reaches a GPIO
+through a resistor divider.
+J8: current-limited 3.3 V source / normally-closed dry-contact return.
+J9: GND / logic permission / active-low fault. Its pull-up does not detect an
+unplugged optional fault input. Permission follows master actuator arming;
+firmware must obtain it before requesting motor movement if it drives a common
+cutoff. This connector is not, by itself, a power stop.
+
+Hardware masking blocks PWM and servo transmission on a fault. The MCU reads
+both latches. A hardware fault must require explicit rearming; do not reuse the
+existing client's ERR not_armed response, which triggers automatic rearming.
+DC cutoff contacts, BMS, fuses and braking behavior remain part of a separately
+reviewed power harness.
+
+SOFTWARE STILL TO PORT
+Current QT Py firmware cannot be flashed unchanged: pin assignments, supervision,
+INA226 and USB differ. Files under firmware/ define a contract, not executable
+firmware.
+Selected profile: one CDC ACM interface multiplexing motors/servos plus UAC audio
+to I2S. A host broker exposes two pseudo-TTYs to existing clients. Two standard
+CDCs plus UAC would exceed the ESP32-S3 endpoint budget. ALSA/TTS remains a
+functional objective, but this profile and broker must be implemented and tested.
+I2S presets alone do not replace the rover's audio.
+GPIO44 and GPIO1 read the hardware latches. GPIO42 controls encoder power;
+GPIO2 reads the USB input fault. USB ROM and BOOT/RESET remain the programming
+method; TX0 is available at a test point, but RX0 is not.
+
+FABRICATION
+Four layers, 35 um external copper, 15.2 um internal planes; target stackup
+JLC04161H-3313, nominal F.Cu/In1.Cu dielectric 99.4 um, Er 4.1. The stackup
+recorded in the project is nominal, not a manufacturer's commitment.
+Differential USB target 90 ohm +/-10%, trunk W/S=0.15/0.15 mm. The independent
+masked model estimates about 88–90 ohm; combined variations can exceed the range.
+Request impedance control and actual tolerances from the manufacturer before
+ordering. Do not silently substitute a different stackup.
+General rules: minimum trace/clearance 0.15 mm, copper-to-edge 0.30 mm, ordinary
+via diameter/drill 0.60/0.30 mm. The ESP32 footprint's 0.20 mm thermal-pad via
+drills are an official-package exception; confirm paste/tenting strategy with
+the assembler. No blind microvias.
+A local rule allows 0.15 mm copper-to-hole clearance only between J1 elements,
+to respect the official GCT USB4105 locating-pin geometry. The general rule
+remains 0.25 mm. Screw copper constraints are not relaxed.
+Gerbers, separate PTH/NPTH drills, grouped BOM, positions and assembly PDFs are
+supplied for review/prototyping. Positions use absolute KiCad coordinates in mm,
+TOP side; verify rotations with the assembler. No production quote, supplier
+stock or total cost has been confirmed.
+
+MECHANICS
+mechanical/ supplies the dimensioned interface, DXF and revised placement proposal.
+PCB origin in native R79 coordinates: (45,−80,74) mm. Four spacers suspended under
+the arm platform are proposed. Attachments, inserts/nuts, screw lengths and access
+remain to design in native CAD; no hull changes were applied. The old BFF location
+was abandoned because plugs collided with the hull.
+The board overhangs the battery placeholder by 16 mm, with nominal 5.5 mm clearance
+under PCB, or 2.5 mm if 3 mm is reserved for a head/nut. Nine plug envelopes and
+their upward routing corridors pass surface checks with an extra 0.5 mm margin.
+These are service-space assumptions, not measurements of the real harness.
+Point-containment and triangle tests do not replace native-solid calculations;
+the cover mesh has two non-manifold edges. Verify the real battery, removal,
+plugs, cover, screw access and vibration before volume manufacture.
+The STEP/STL carrier in mechanical/bench_only/ is for bench use only. It would
+interfere with the battery in the proposed position: do not use it as an installed
+rover support. Read mechanical/FINAL_MECHANICAL_INTEGRATION_REPORT.txt.
+Simplified ESP32 and watchdog 3D envelopes are identified in models/ENVELOPE_MODELS.json;
+other available models come from the KiCad library.
+
+PROVIDED CHECKS
+ERC: 0 violations. DRC: 0 violations, 0 unconnected items, 0 schematic/PCB parity
+issues. Native reports record rules and checks disabled by default; no wiring-error
+exclusions were added.
+486 pins (472 connected, 14 NC) compared with native XML; 16,384 logic combinations,
+four fault/recovery sequences and one pin-mutation sensitivity test. The simulation
+follows physical schematic nets. It does not simulate delays, metastability,
+analogue power ramps or SBC software.
+Mechanical screening, impedance calculation and EDA rules are separate evidence.
+No real-board tests, EMC/ESD qualification, thermal testing or production validation
+are claimed. No purchase or firmware flashing was performed. The design package
+has been published on GitHub as an untested prototype.
