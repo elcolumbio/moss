@@ -1,3 +1,8 @@
+SUPERSEDED — DO NOT FABRICATE V1C
+U10/U11 have an incorrect physical-pin mapping. See
+../moss-core-v1d/V1C_CRITICAL_ERRATA.txt and the V1D review package.
+The original notes below are retained for historical context only.
+
 MOSS CORE V1C — AUDITED PROTOTYPE
 15 October 2026 — KiCad 10.0.6
 English publication corrected on 15 October 2026; electrical design unchanged.
