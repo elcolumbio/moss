@@ -5,3 +5,9 @@ Designed in Fusion 360. The STL (one file per part) and STEP files land here at 
 Until then: the [parts list](../3DPrinting.md), the [BOM](../BOM.md) and the photos in `media/` are the reference.
 
 `bench/` holds the raw traces of the bench tests, one folder per date. The 20 September INA219 trace is not a motor-current measurement.
+
+## Electronics prototypes
+
+[MOSS Core V1D](electronics/moss-core-v1d/) is the current routed design review: editable KiCad files, schematics, BOM, connector guide and static review evidence. **Draft only: not approved for fabrication or assembly.** Rover fit and hardware validation remain pending.
+
+[V1C](electronics/moss-core-v1c/) is retained for traceability and **must not be fabricated** because of a physical-pin mapping error; see the [critical erratum](electronics/moss-core-v1d/V1C_CRITICAL_ERRATA.txt).
