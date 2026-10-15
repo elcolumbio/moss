@@ -1,0 +1,584 @@
+{
+  "revision": "V1C audited prototype 2026-10-15",
+  "supersedes": "V1B is withdrawn as a fabrication candidate",
+  "ERC_violations": 0,
+  "DRC_violations": 0,
+  "unconnected_items": 0,
+  "schematic_pcb_parity_issues": 0,
+  "assembly_components": 150,
+  "BOM_CPL_match": true,
+  "order_lines": 59,
+  "board": {
+    "board_dimensions_mm": [
+      60,
+      65,
+      1.6
+    ],
+    "corner_radius_mm": 2,
+    "mounts": {
+      "H3": {
+        "center_mm": [
+          56.0,
+          4.0
+        ],
+        "drill_mm": [
+          2.7,
+          2.7
+        ]
+      },
+      "H2": {
+        "center_mm": [
+          4.0,
+          61.0
+        ],
+        "drill_mm": [
+          2.7,
+          2.7
+        ]
+      },
+      "H4": {
+        "center_mm": [
+          56.0,
+          61.0
+        ],
+        "drill_mm": [
+          2.7,
+          2.7
+        ]
+      },
+      "H1": {
+        "center_mm": [
+          4.0,
+          4.0
+        ],
+        "drill_mm": [
+          2.7,
+          2.7
+        ]
+      }
+    },
+    "keepout_diameter_mm": 8,
+    "all_copper_screw_keepouts": 4,
+    "footprint_count": 162,
+    "assembled_count": 150,
+    "all_components_top": true,
+    "track_count": 1621,
+    "via_count": 276,
+    "minimum_track_width_mm": 0.15,
+    "minimum_via_drill_mm": 0.3,
+    "planes": [
+      {
+        "layer": "In1.Cu",
+        "net": "GND",
+        "filled": true
+      },
+      {
+        "layer": "In2.Cu",
+        "net": "GND",
+        "filled": true
+      }
+    ],
+    "signal_tracks_on_internal_layers": 0,
+    "USB": {
+      "USB_P": {
+        "total_tree_copper_length_mm": 16.29192,
+        "signal_vias": 0,
+        "layers": [
+          "F.Cu"
+        ]
+      },
+      "USB_N": {
+        "total_tree_copper_length_mm": 16.11942,
+        "signal_vias": 0,
+        "layers": [
+          "F.Cu"
+        ]
+      },
+      "ESP_USB_P": {
+        "total_tree_copper_length_mm": 1.84,
+        "signal_vias": 0,
+        "layers": [
+          "F.Cu"
+        ]
+      },
+      "ESP_USB_N": {
+        "total_tree_copper_length_mm": 1.84,
+        "signal_vias": 0,
+        "layers": [
+          "F.Cu"
+        ]
+      },
+      "measurement_scope": "Total copper tree lengths include reversible-connector branches; these are not per-orientation propagation delays. Parallel core is symmetric. W/S 0.15/0.15 mm; quasi-static estimate is not manufacturer impedance validation."
+    },
+    "decoupling_ground_via_max_center_distance_mm": 1.1,
+    "decoupling_ground_records": [
+      {
+        "ref": "C26",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          22.5338,
+          58.9659
+        ]
+      },
+      {
+        "ref": "C40",
+        "pin": "2",
+        "length_mm": 0.9,
+        "via": [
+          52.9,
+          45.425
+        ]
+      },
+      {
+        "ref": "C12",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          59.275,
+          47.5
+        ]
+      },
+      {
+        "ref": "C4",
+        "pin": "2",
+        "length_mm": 1.1,
+        "via": [
+          51.6,
+          50.45
+        ]
+      },
+      {
+        "ref": "C2",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          39.5,
+          34.525
+        ]
+      },
+      {
+        "ref": "C29",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          10.2838,
+          48.2159
+        ]
+      },
+      {
+        "ref": "C23",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          8.25,
+          31.375
+        ]
+      },
+      {
+        "ref": "C42",
+        "pin": "2",
+        "length_mm": 0.825,
+        "via": [
+          45.5,
+          42.9
+        ]
+      },
+      {
+        "ref": "C9",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          21.75,
+          9.625
+        ]
+      },
+      {
+        "ref": "C16",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          27.375,
+          10.25
+        ]
+      },
+      {
+        "ref": "C17",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          25.875,
+          19.75
+        ]
+      },
+      {
+        "ref": "C20",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          1.125,
+          22.25
+        ]
+      },
+      {
+        "ref": "C5",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          43.4159,
+          51.2588
+        ]
+      },
+      {
+        "ref": "C27",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          44.25,
+          13.775
+        ]
+      },
+      {
+        "ref": "C7",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          42.775,
+          43.14
+        ]
+      },
+      {
+        "ref": "C1",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          51.25,
+          22.625
+        ]
+      },
+      {
+        "ref": "C31",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          13.5338,
+          53.7159
+        ]
+      },
+      {
+        "ref": "C24",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          28.0,
+          55.725
+        ]
+      },
+      {
+        "ref": "C45",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          13.625,
+          19.25
+        ]
+      },
+      {
+        "ref": "C44",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          13.625,
+          24.75
+        ]
+      },
+      {
+        "ref": "C18",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          13.875,
+          11.75
+        ]
+      },
+      {
+        "ref": "C13",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          48.775,
+          57.5
+        ]
+      },
+      {
+        "ref": "C41",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          35.9838,
+          48.2159
+        ]
+      },
+      {
+        "ref": "C43",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          15.0,
+          20.875
+        ]
+      },
+      {
+        "ref": "C25",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          20.0,
+          54.725
+        ]
+      },
+      {
+        "ref": "C6",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          42.95,
+          45.3
+        ]
+      },
+      {
+        "ref": "C10",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          40.0,
+          63.025
+        ]
+      },
+      {
+        "ref": "C22",
+        "pin": "2",
+        "length_mm": 0.85,
+        "via": [
+          1.125,
+          34.25
+        ]
+      },
+      {
+        "ref": "C21",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          8.25,
+          38.225
+        ]
+      },
+      {
+        "ref": "C19",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          8.25,
+          26.225
+        ]
+      },
+      {
+        "ref": "C11",
+        "pin": "2",
+        "length_mm": 1.0,
+        "via": [
+          37.9838,
+          11.7159
+        ]
+      }
+    ],
+    "self_contained_model_paths_checked": 27,
+    "limits": "No physical testing, closed-solid rover interference proof, EMC, thermal test, firmware qualification or manufacturing approval."
+  },
+  "logic_validation": {
+    "status": "PASS",
+    "warnings": [],
+    "physical_pin_assignments_compared": 486,
+    "requirements": [
+      "Physical latch feedback and native USB pin map",
+      "New power IC physical pinmaps, reset supervision and switched encoder pullups",
+      "No resistive AMP_5V-to-MCU path",
+      "3V3 servo TX, OE default off, I2S reset pulldowns and SD_MODE series protection",
+      "Watchdog ENOUT wiring and asynchronous fault-clear topology"
+    ],
+    "logic": {
+      "exhaustive_combinations": 16384,
+      "fault_recovery_sequences": 4,
+      "physical_pin_mutation_sensitivity_checks": 1,
+      "scope": "Actual native pin/net graph and datasheet logic at valid, stable power; no timing, metastability, analogue power ramps or firmware execution."
+    },
+    "calculations": {
+      "buck": {
+        "nominal_V": 3.384,
+        "static_min_V": 3.3108688111888114,
+        "static_max_V": 3.457365045045045,
+        "assumptions": "VFB 0.588..0.612 V; independent resistor tolerance extremes; excludes ripple, line/load transients and temperature effects not included in electrical table."
+      },
+      "supervisor": {
+        "assert_threshold_min_V": 3.0184,
+        "release_threshold_max_V": 3.1887239999999997,
+        "release_headroom_from_static_buck_min_mV": 122.1448111888117,
+        "release_delay_ms": [
+          130,
+          200,
+          270
+        ],
+        "assert_delay_max_us_test_condition": 50,
+        "warning": "Does not guarantee reset before 3.0V on a fast collapse. Test the real rail ramp."
+      },
+      "USB_current_limit_mA": [
+        387.2515860133054,
+        491.222463889218
+      ],
+      "watchdog_pullup_uA_at_3V3": 70.2127659574468,
+      "encoder_passive_high_nominal_V": 3.0,
+      "USB_endpoint_budget": {
+        "CDC": 3,
+        "UAC_playback_feedback": 2,
+        "noncontrol_total": 5,
+        "noncontrol_limit": 6,
+        "IN_including_EP0": 4,
+        "IN_limit": 5
+      },
+      "INA226_external_2mohm": {
+        "15A_mV_W": [
+          30,
+          0.45
+        ],
+        "30A_mV_W": [
+          60,
+          1.8
+        ],
+        "Current_LSB_A": 0.002,
+        "CAL": 1280,
+        "Power_LSB_W": 0.05
+      }
+    },
+    "source_sha256": {
+      "outputs/MOSS_Core_V1C_20261015/circuit.json": "59eccf55a9b11acb38f95911138c5d1bfa0d8910d6fdb24a23f9697fd0c15ca6",
+      "outputs/MOSS_Core_V1C_20261015/netlist_schematic_review.xml": "65e4e9955b844971f2884e99b1ce2e55f9fc7f86d4c79dc87252bf4dc1ad635c"
+    },
+    "datasheet_model_sources": {
+      "HCS21": "https://www.ti.com/lit/ds/symlink/sn74hcs21.pdf",
+      "LVC1G17": "https://www.ti.com/lit/ds/symlink/sn74lvc1g17.pdf",
+      "LVC74": "https://www.ti.com/lit/ds/symlink/sn74lvc74a.pdf",
+      "LVC2G08": "https://www.ti.com/lit/ds/symlink/sn74lvc2g08.pdf",
+      "LVC1G08": "https://www.ti.com/lit/ds/symlink/sn74lvc1g08.pdf",
+      "LVC1G126": "https://www.ti.com/lit/ds/symlink/sn74lvc1g126.pdf",
+      "TPS3431": "https://www.ti.com/lit/ds/symlink/tps3431.pdf",
+      "TLV62569": "https://www.ti.com/lit/ds/symlink/tlv62569.pdf",
+      "TLV803E": "https://www.ti.com/lit/ds/symlink/tlv803e.pdf",
+      "TPS2553": "https://www.ti.com/lit/ds/symlink/tps2553.pdf",
+      "TPS22918": "https://www.ti.com/lit/ds/symlink/tps22918.pdf"
+    },
+    "unvalidated": [
+      "Physical behaviour under brownout and partial power",
+      "USB enumeration/suspend/current compliance",
+      "MCU firmware and host broker",
+      "Servo timing and cable load",
+      "Manufacturing, EMC/ESD and thermal performance"
+    ]
+  },
+  "schematic_validation": {
+    "project": "MOSS Core V1C",
+    "parts": 162,
+    "connected_pin_assignments_compared": 472,
+    "no_connect_pins_checked": 14,
+    "connected_pin_mismatches": [],
+    "no_connect_mismatches": [],
+    "erc_violations": 0,
+    "erc_ignored_checks": [
+      {
+        "description": "Global label only appears once in the schematic",
+        "key": "single_global_label"
+      },
+      {
+        "description": "Four connection points are joined together",
+        "key": "four_way_junction"
+      },
+      {
+        "description": "SPICE model issue",
+        "key": "simulation_model_issue"
+      },
+      {
+        "description": "Assigned footprint doesn't match footprint filters",
+        "key": "footprint_filter"
+      }
+    ],
+    "extra_erc_exclusions_added_by_generator": false,
+    "library_validation": "Empty global tables; exact project-local MOSS library resolved",
+    "schematic_sha256": {
+      "01_USB_Power.kicad_sch": "9f201886137ca4cdb1e13916210c4ca38465a7ab7afd5967d6f1d377e827b713",
+      "04_Drive_Encoders.kicad_sch": "460a70370a1127d7dcf0d9e77b45e09a2b84ae3d405262bd6b5b38a19575bb85",
+      "05_Servo.kicad_sch": "5cc31d71cee329c42503d7d3806b139c5568e6434cff9cc56efba1e81e919f64",
+      "03_Hardware_Interlock.kicad_sch": "6ee9b8f470de30aa662cf141ddbe0d5497dec66ba247c2306196f02953ea9b18",
+      "07_Current_Sense.kicad_sch": "a2333f5b9dac8e4f0e0d226a85b94c25dec94b436586573cbe71d9efbae339b1",
+      "06_Audio.kicad_sch": "41c500f9eecbeec69ced529ca7909184f82e3999658b9d75645fd484b7f46c30",
+      "02_Controller.kicad_sch": "01b4afa0cb70a8a28207dd4fb02fcca844a30c19d38b431f1c8e49206cc1a7fc",
+      "MOSS_Core_V1C.kicad_sch": "a79132372a7874c866d742643a52ef6c87ef0d133912c6678e77ea2ca4b99909"
+    },
+    "generator_sha256": "ce7e73e5ca98482a644862ade4a9d3cdf6ec08324e4cdfccbd5cf51f4f6e5ff8",
+    "visual_review": "All eight PDF pages inspected; local rail collisions and rotated passive labels corrected; motor output and mask blocks separated; simple sheets compacted to A3; audio border kept above title block. Native schematics, not raster diagrams.",
+    "revision_values": {
+      "R70": {
+        "value": "464k",
+        "MPN": "RT0603BRD07464KL"
+      },
+      "R71": {
+        "value": "100k",
+        "MPN": "RT0603BRD07100KL"
+      }
+    },
+    "scope": "Static pin-net and ERC validation only. Does not prove analogue design, firmware, PCB or physical operation."
+  },
+  "DRC_ignored_checks": [
+    {
+      "description": "Footprint has no courtyard defined",
+      "key": "missing_courtyard"
+    },
+    {
+      "description": "Track endpoint not centered on via",
+      "key": "track_not_centered_on_via"
+    },
+    {
+      "description": "Tuning profile track geometries",
+      "key": "tuning_profile_track_geometries"
+    },
+    {
+      "description": "Footprint doesn't match symbol's footprint filters",
+      "key": "footprint_filters_mismatch"
+    },
+    {
+      "description": "Footprint component type doesn't match footprint pads",
+      "key": "footprint_type_mismatch"
+    }
+  ],
+  "manufacturing_status": "Prototype design for review; not production approved. Controlled impedance, electrical tests, host firmware and hull integration remain to validate.",
+  "mechanical_status": "Proposed suspended mounting under arm platform; native rover CAD and its attachments have NOT been modified",
+  "bench_carrier_status": "Bench-only carrier. Excluded from the proposed rover integration because its underside would collide with the battery placeholder.",
+  "portable_package_DRC": {
+    "violations": 0,
+    "unconnected_items": 0,
+    "schematic_parity": 0
+  },
+  "final_design_sha256": {
+    "MOSS_Core_V1C.kicad_pcb": "7f8bea271fe73fb781dc34ad7b6507380e59a6f29eeec05d8f588f6bedc5b244",
+    "MOSS_Core_V1C.kicad_pro": "91ad0ba727457bd12038f267343eb08e33716c44c76c315b9a715583e948b5e6",
+    "MOSS_Core_V1C.kicad_dru": "24d5714c192048681f6bb66839684cd4042558bf9704974d9b65c58213ef0796",
+    "01_USB_Power.kicad_sch": "9f201886137ca4cdb1e13916210c4ca38465a7ab7afd5967d6f1d377e827b713",
+    "04_Drive_Encoders.kicad_sch": "460a70370a1127d7dcf0d9e77b45e09a2b84ae3d405262bd6b5b38a19575bb85",
+    "05_Servo.kicad_sch": "5cc31d71cee329c42503d7d3806b139c5568e6434cff9cc56efba1e81e919f64",
+    "03_Hardware_Interlock.kicad_sch": "6ee9b8f470de30aa662cf141ddbe0d5497dec66ba247c2306196f02953ea9b18",
+    "07_Current_Sense.kicad_sch": "a2333f5b9dac8e4f0e0d226a85b94c25dec94b436586573cbe71d9efbae339b1",
+    "06_Audio.kicad_sch": "41c500f9eecbeec69ced529ca7909184f82e3999658b9d75645fd484b7f46c30",
+    "02_Controller.kicad_sch": "01b4afa0cb70a8a28207dd4fb02fcca844a30c19d38b431f1c8e49206cc1a7fc",
+    "MOSS_Core_V1C.kicad_sch": "a79132372a7874c866d742643a52ef6c87ef0d133912c6678e77ea2ca4b99909"
+  },
+  "final_export_identity_matches_checked_working_project": true,
+  "local_3D_models_resolved": 27
+}
