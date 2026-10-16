@@ -1113,11 +1113,19 @@
           "quantity": 2
         },
         {
+          "reference": "Emergency stop LA16-11ZS/A, 16 mm",
+          "quantity": 1
+        },
+        {
+          "reference": "KCD11 two-pin rocker switch and splash cover",
+          "quantity": 1
+        },
+        {
           "reference": "12-cell battery pack, 3S4P, with BMS, 110 \u00d7 67 \u00d7 35 mm",
           "quantity": 1
         },
         {
-          "reference": "Power harness wire, fuse, switches and USB cables",
+          "reference": "Power harness wire, fuse and USB cables",
           "quantity": 1
         },
         {
@@ -1151,6 +1159,7 @@
       ],
       "actions": [
         "Clip the two fans into their mounts.",
+        "Fit the emergency stop and rocker switch in their hull openings.",
         "Assemble the XT30 base, insulating separator and lid with four low-head M2.5 \u00d7 10 screws."
       ],
       "video": "videos/07-xt30-power-distribution.mp4"

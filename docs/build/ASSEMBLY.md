@@ -312,8 +312,10 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 | [XT30_distribution_lid](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/XT30_distribution_lid.stl) · PETG | 1 |
 | [XT30_insulating_separator](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/XT30_insulating_separator.stl) · PETG | 1 |
 | 3010 fan, 12 V | 2 |
+| Emergency stop LA16-11ZS/A, 16 mm | 1 |
+| KCD11 two-pin rocker switch and splash cover | 1 |
 | 12-cell battery pack, 3S4P, with BMS, 110 × 67 × 35 mm | 1 |
-| Power harness wire, fuse, switches and USB cables | 1 |
+| Power harness wire, fuse and USB cables | 1 |
 | DC male barrel plug, 5.5 × 2.5 mm, 9.5 mm barrel, centre positive — Jetson power | 1 |
 | DC male barrel plug matching the input of the Pi 5 V power supply | 1 |
 | DC male barrel plug, 5.5 × 2.1 mm — Waveshare Bus Servo Adapter A power | 1 |
@@ -322,7 +324,8 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 | M2.5 × 10 low-head screw, head diameter 5 mm maximum | 4 |
 
 1. Clip the two fans into their mounts.
-2. Assemble the XT30 base, insulating separator and lid with four low-head M2.5 × 10 screws.
+2. Fit the emergency stop and rocker switch in their hull openings.
+3. Assemble the XT30 base, insulating separator and lid with four low-head M2.5 × 10 screws.
 
 [Watch the exploded assembly](videos/07-xt30-power-distribution.mp4)
 
