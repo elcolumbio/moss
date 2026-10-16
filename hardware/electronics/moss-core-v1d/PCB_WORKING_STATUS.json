@@ -42,5 +42,5 @@
   "qualification": "Static routing/netlist/geometry evidence only. Review flags, power, thermal, signal integrity, physical connectors, firmware and fabrication qualification remain open.",
   "audited_source": "/private/tmp/moss-final-routed-review-v2/MOSS_Core_V1D_DRAFT.kicad_pcb",
   "adopted_at_utc": "2026-10-15T15:22:37.739411+00:00",
-  "protected_baseline_backup": "/Users/macbookair/Documents/Codex/2026-10-01/yo/work/moss_core_v1d_20261015/candidate_checkpoints/protected_main_before_adoption"
+  "protected_baseline_backup": "kept privately, outside this repository"
 }
