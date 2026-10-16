@@ -1335,7 +1335,8 @@
         }
       ],
       "actions": [
-        "Use the widened NC90 jaws and rails, keeping the two racks in phase.",
+        "Fix the NC90 base to the wrist-roll horn with four M3 \u00d7 6 screws from the gripper kit. Check that the screws engage securely and the horn turns freely.",
+        "Fit the gripper servo, its horn and pinion. Slide the widened jaws into the rails with both racks aligned on the pinion, then fit the side shields and cable guide with the remaining kit hardware.",
         "Fit the current camera mount. Retain the original gripper screw types.",
         "Fix the R30 camera bracket to the gripper with two M3 \u00d7 10 screws and two M3 nuts, without washers. Fix the matching camera PCB with four M2 \u00d7 6 screws."
       ],

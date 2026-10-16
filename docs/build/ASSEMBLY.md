@@ -370,9 +370,10 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 | M3 × 10 socket-head screw, for wrist camera bracket | 2 |
 | M3 hex nut, for wrist camera bracket | 2 |
 
-1. Use the widened NC90 jaws and rails, keeping the two racks in phase.
-2. Fit the current camera mount. Retain the original gripper screw types.
-3. Fix the R30 camera bracket to the gripper with two M3 × 10 screws and two M3 nuts, without washers. Fix the matching camera PCB with four M2 × 6 screws.
+1. Fix the NC90 base to the wrist-roll horn with four M3 × 6 screws from the gripper kit. Check that the screws engage securely and the horn turns freely.
+2. Fit the gripper servo, its horn and pinion. Slide the widened jaws into the rails with both racks aligned on the pinion, then fit the side shields and cable guide with the remaining kit hardware.
+3. Fit the current camera mount. Retain the original gripper screw types.
+4. Fix the R30 camera bracket to the gripper with two M3 × 10 screws and two M3 nuts, without washers. Fix the matching camera PCB with four M2 × 6 screws.
 
 ## 20. Close the hull and fit the bin
 
