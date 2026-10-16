@@ -4,7 +4,19 @@ Prepare the parts and fasteners for one step, then watch its short clip. Quantit
 
 Seven coordinated clips cover part identification, five exploded assemblies and road-wheel fastening. Use the [reference list](PART_REFERENCES.md) to match every spacer and shaft collar.
 
-## 01. Choose the hull and fit the inserts
+Build MOSS in this order:
+
+| Stage | Steps |
+|---|---|
+| Hull and wheel assemblies | 01–04 |
+| Tracks and running gear | 05–11 |
+| Hull electronics and sensors | 12–17 |
+| Arm and gripper | 18–19 |
+| Cover and bin | 20 |
+
+## Hull and wheel assemblies
+
+### 01. Choose the hull and fit the inserts
 
 | Prepare | Quantity |
 |---|---:|
@@ -24,7 +36,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 2. Use a soldering iron to fit the inserts: place each insert over its hole, heat it with the iron tip, then gently press it straight into the plastic. Fit four inserts for the cover, four for the arm plate and two for the LiDAR base in the hull.
 3. Use the same soldering-iron method to fit the remaining insert in the LiDAR base for the carriage lock. Keep the threads clear and let all inserts cool before fitting screws.
 
-## 02. Build the six road wheels
+### 02. Build the six road wheels
 
 | Prepare | Quantity |
 |---|---:|
@@ -56,7 +68,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 
 [Watch the fastening example](videos/06-road-wheel-screws.mp4)
 
-## 03. Build the two drive wheels
+### 03. Build the two drive wheels
 
 | Prepare | Quantity |
 |---|---:|
@@ -71,7 +83,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 1. Match the locating feature on each pair of halves.
 2. Close each wheel with three M3 × 20 screws and three M3 nuts. Keep the HEX12 seat clear.
 
-## 04. Build the two idler wheels
+### 04. Build the two idler wheels
 
 | Prepare | Quantity |
 |---|---:|
@@ -88,7 +100,9 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 1. For each idler, seat two 608 bearings with SP10 (centre spacer) between them.
 2. Close the two halves with three M3 × 25 screws and three M3 nuts. Repeat for the other side.
 
-## 05. Fit the motors and inner bearing retainers
+## Tracks and running gear
+
+### 05. Fit the motors and inner bearing retainers
 
 | Prepare | Quantity |
 |---|---:|
@@ -107,7 +121,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 2. Put four M4 nuts into each motor-support nut pocket and secure each support to the hull with four M4 × 20 screws.
 3. Fit the inner bearing retainers with three M3 × 8 screws per side.
 
-## 06. Fit the inner track frames
+### 06. Fit the inner track frames
 
 | Prepare | Quantity |
 |---|---:|
@@ -119,7 +133,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 1. Fit each inner frame directly against the hull.
 2. Use three M4 × 15 screws and three M4 nuts per side.
 
-## 07. Fit road-wheel axles and spacer pairs
+### 07. Fit road-wheel axles and spacer pairs
 
 | Prepare | Quantity |
 |---|---:|
@@ -143,7 +157,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 
 [Watch the exploded assembly](videos/02-road-wheel-spacers.mp4)
 
-## 08. Fit the drive axles and outer bearing covers
+### 08. Fit the drive axles and outer bearing covers
 
 | Prepare | Quantity |
 |---|---:|
@@ -166,7 +180,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 
 [Watch the exploded assembly](videos/03-drive-wheel-spacers.mp4)
 
-## 09. Fit the idler slides and tensioners
+### 09. Fit the idler slides and tensioners
 
 | Prepare | Quantity |
 |---|---:|
@@ -199,7 +213,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 
 [Watch the exploded assembly](videos/04-idler-tensioner-spacers.mp4)
 
-## 10. Close the track frames
+### 10. Close the track frames
 
 | Prepare | Quantity |
 |---|---:|
@@ -218,7 +232,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 
 [Watch the exploded assembly](videos/05-track-side-reassembly.mp4)
 
-## 11. Fit the tracks
+### 11. Fit the tracks
 
 | Prepare | Quantity |
 |---|---:|
@@ -228,7 +242,9 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 1. Use the 70-tooth track print masters supplied in this package.
 2. Seat the central guides in the wheel grooves. Adjust both ends evenly and turn each track by hand.
 
-## 12. Fit the driver and controller
+## Hull electronics and sensors
+
+### 12. Fit the driver and controller
 
 | Prepare | Quantity |
 |---|---:|
@@ -243,7 +259,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 1. Secure the MDD10A with four M3 × 6 screws.
 2. Use four M2 × 6 screws and 0.3 mm washers for the BFF, and two of each for the INA219.
 
-## 13. Fit the speaker and amplifier
+### 13. Fit the speaker and amplifier
 
 | Prepare | Quantity |
 |---|---:|
@@ -257,7 +273,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 1. Fix the speaker with two M3 × 6 screws above its grille.
 2. Seat the amplifier on its two mounting posts and two support pillars. Use two M2 × 6 screws with 0.5 mm washers.
 
-## 14. Fit the computer carrier and servo adapter
+### 14. Fit the computer carrier and servo adapter
 
 | Prepare | Quantity |
 |---|---:|
@@ -277,7 +293,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 3. For Jetson, secure the two retaining tabs with two M3 × 8 screws, without washers.
 4. For Pi/HAT, use the screws and spacers supplied with the HAT; prepare this assembly before fitting the carrier in the hull.
 
-## 15. Fit the camera option
+### 15. Fit the camera option
 
 | Prepare | Quantity |
 |---|---:|
@@ -291,7 +307,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 1. For RealSense, slide the support insert down from the top, then use its two M4 × 10 screws.
 2. For Gemini, use the flush insert and the window bezel instead. Secure the camera with two M3 × 8 screws; keep the USB opening clear.
 
-## 16. Fit the LiDAR carriage
+### 16. Fit the LiDAR carriage
 
 | Prepare | Quantity |
 |---|---:|
@@ -304,7 +320,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 1. With the carriage removed, secure the LiDAR base to the hull with two M3 × 10 screws.
 2. Secure the C1 to the carriage with four M2.5 × 6 screws, slide it onto the base and lock it with the M3 × 20 screw, without a washer, into the M3 insert.
 
-## 17. Fit power distribution and cooling
+### 17. Fit power distribution and cooling
 
 | Prepare | Quantity |
 |---|---:|
@@ -329,7 +345,9 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 
 [Watch the exploded assembly](videos/07-xt30-power-distribution.mp4)
 
-## 18. Fit the arm plate and build the arm
+## Arm and gripper
+
+### 18. Fit the arm plate and build the arm
 
 | Prepare | Quantity |
 |---|---:|
@@ -353,7 +371,7 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 2. Use the original servo screw packs for the SO101 joints. Keep the camera and servo cables in the printed guides.
 3. For the wrist-camera cable, heat the printed clips to 70 °C, then close them around the cable.
 
-## 19. Build the gripper and wrist camera
+### 19. Build the gripper and wrist camera
 
 | Prepare | Quantity |
 |---|---:|
@@ -378,7 +396,9 @@ Seven coordinated clips cover part identification, five exploded assemblies and 
 3. Fit the current camera mount. Retain the original gripper screw types.
 4. Fix the R30 camera bracket to the gripper with two M3 × 10 screws and two M3 nuts, without washers. Fix the matching camera PCB with four M2 × 6 screws.
 
-## 20. Close the hull and fit the bin
+## Cover and bin
+
+### 20. Close the hull and fit the bin
 
 | Prepare | Quantity |
 |---|---:|
