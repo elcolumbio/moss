@@ -1,0 +1,241 @@
+[
+  {
+    "id": "01",
+    "title": "Hull options",
+    "part_ids": [
+      "Hull_R92",
+      "Hull_R92_Split_Rear_Motor_Computer",
+      "Hull_R92_Split_Front_Battery_Camera"
+    ]
+  },
+  {
+    "id": "02",
+    "title": "Outer track frames",
+    "part_ids": [
+      "Left_Outer_Track_Frame_R32",
+      "Right_Outer_Track_Frame_R32",
+      "Left_inner_tensioner_cover_R12_C2",
+      "Right_inner_tensioner_cover_R12_C2"
+    ]
+  },
+  {
+    "id": "03",
+    "title": "Inner frames & spacers",
+    "part_ids": [
+      "Left_inner_track_frame_R12_C2",
+      "Right_inner_track_frame_R12_C2",
+      "Left_Spacer_cross_member_-40",
+      "Left_Spacer_cross_member_40",
+      "Right_Spacer_cross_member_-40",
+      "Right_Spacer_cross_member_40",
+      "Left_Spacer_road_wheel_-70_inner_ID01_R24",
+      "Left_Spacer_road_wheel_0_inner_ID01_R24",
+      "Left_Spacer_road_wheel_70_inner_ID01_R24",
+      "Right_Spacer_road_wheel_-70_inner_ID01_R24",
+      "Right_Spacer_road_wheel_0_inner_ID01_R24",
+      "Right_Spacer_road_wheel_70_inner_ID01_R24",
+      "Left_Spacer_tensioner_inner_ID05_R24",
+      "Right_Spacer_tensioner_inner_ID05_R24",
+      "Left_Spacer_drive_inner_ID03_R24",
+      "Right_Spacer_drive_inner_ID03_R24"
+    ]
+  },
+  {
+    "id": "04",
+    "title": "Motor bay & LiDAR mounts",
+    "part_ids": [
+      "02_Motor_access_hatch_10_screws",
+      "Motor_Mount_Left_R90",
+      "Motor_Mount_Right_R90",
+      "05_Left_bearing_retainer",
+      "06_Right_bearing_retainer",
+      "Lidar_Base_R84",
+      "Lidar_dovetail_carriage_R21"
+    ]
+  },
+  {
+    "id": "05",
+    "title": "Outer spacers & covers",
+    "part_ids": [
+      "Left_Spacer_road_wheel_-70_outer_ID02_R24",
+      "Left_Spacer_road_wheel_0_outer_ID02_R24",
+      "Left_Spacer_road_wheel_70_outer_ID02_R24",
+      "Right_Spacer_road_wheel_-70_outer_ID02_R24",
+      "Right_Spacer_road_wheel_0_outer_ID02_R24",
+      "Right_Spacer_road_wheel_70_outer_ID02_R24",
+      "Left_Spacer_tensioner_outer_ID06_R24",
+      "Right_Spacer_tensioner_outer_ID06_R24",
+      "Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24",
+      "Right_Spacer_drive_outer_HEX12_L12.6_ID04_R24",
+      "Left_Cover_tensioner_outer",
+      "Right_Cover_tensioner_outer"
+    ]
+  },
+  {
+    "id": "06",
+    "title": "Drive & idler wheels",
+    "part_ids": [
+      "Left_22T_idler_wheel_inner_half_R13",
+      "Left_22T_idler_wheel_outer_half_R13",
+      "Right_22T_idler_wheel_inner_half_R13",
+      "Right_22T_idler_wheel_outer_half_R13",
+      "Left_HEX12_drive_wheel_inner_half_R13",
+      "Left_HEX12_drive_wheel_outer_half_R13",
+      "Right_HEX12_drive_wheel_inner_half_R13",
+      "Right_HEX12_drive_wheel_outer_half_R13"
+    ]
+  },
+  {
+    "id": "07",
+    "title": "Road wheels",
+    "part_ids": [
+      "Left_625_road_wheel_-70_inner_half_R13",
+      "Left_625_road_wheel_-70_outer_half_R13",
+      "Left_625_road_wheel_70_inner_half_R13",
+      "Left_625_road_wheel_70_outer_half_R13",
+      "Right_625_road_wheel_-70_inner_half_R13",
+      "Right_625_road_wheel_-70_outer_half_R13",
+      "Right_625_road_wheel_70_inner_half_R13",
+      "Right_625_road_wheel_70_outer_half_R13",
+      "Left_625_road_wheel_0_inner_half_R13",
+      "Left_625_road_wheel_0_outer_half_R13",
+      "Right_625_road_wheel_0_inner_half_R13",
+      "Right_625_road_wheel_0_outer_half_R13"
+    ]
+  },
+  {
+    "id": "08",
+    "title": "Power distribution housing",
+    "part_ids": [
+      "XT30_distribution_base",
+      "XT30_distribution_lid",
+      "XT30_insulating_separator"
+    ]
+  },
+  {
+    "id": "09",
+    "title": "Slides, retainers & spacers",
+    "part_ids": [
+      "Left_Slider_outer",
+      "Left_Cover_motor_bearing",
+      "Right_Slider_outer",
+      "Right_Cover_motor_bearing",
+      "Left_inner_tensioner_slider",
+      "Right_inner_tensioner_slider",
+      "Left_Spacer_tensioner_retainer_inner_ID07_R24",
+      "Left_Spacer_tensioner_retainer_outer_ID08_R24",
+      "Left_Spacer_tensioner_center",
+      "Right_Spacer_tensioner_retainer_inner_ID07_R24",
+      "Right_Spacer_tensioner_retainer_outer_ID08_R24",
+      "Right_Spacer_tensioner_center",
+      "Left_Spacer_road_wheel_-70_center",
+      "Left_Spacer_road_wheel_0_center",
+      "Left_Spacer_road_wheel_70_center",
+      "Right_Spacer_road_wheel_-70_center",
+      "Right_Spacer_road_wheel_0_center",
+      "Right_Spacer_road_wheel_70_center",
+      "Left_Drive_bearing_to_collar_spacer_R12_C1",
+      "Right_Drive_bearing_to_collar_spacer_R12_C1"
+    ]
+  },
+  {
+    "id": "10",
+    "title": "Upper cover",
+    "part_ids": [
+      "Upper_cover_R9",
+      "Upper_Cover_R10_Rear",
+      "Upper_Cover_R10_Lidar_Extension"
+    ]
+  },
+  {
+    "id": "11",
+    "title": "Bin",
+    "part_ids": [
+      "14_Bin_20x10x2_magnet_pockets"
+    ]
+  },
+  {
+    "id": "12",
+    "title": "Arm plate",
+    "part_ids": [
+      "Arm_Mounting_Platform_R22"
+    ]
+  },
+  {
+    "id": "13",
+    "title": "Arm base & shoulder",
+    "part_ids": [
+      "SO101_Base",
+      "SO101_Shoulder_rotation",
+      "SO101_Base_motor_holder",
+      "SO101_Shoulder_bracket_cable_clip"
+    ]
+  },
+  {
+    "id": "14",
+    "title": "Arm links",
+    "part_ids": [
+      "SO101_Upper_arm_cable_clip",
+      "SO101_Forearm_cable_clip",
+      "SO101_Wrist_cable_clip",
+      "SO101_Wrist_bracket"
+    ]
+  },
+  {
+    "id": "15",
+    "title": "Gripper & wrist camera",
+    "part_ids": [
+      "NC90_Right_side_shield",
+      "NC90_Pinion",
+      "NC90_Cable_guide",
+      "NC90_Right_jaw_extended_rack",
+      "Gripper_Camera_Mount_R30",
+      "NC90_Left_side_shield",
+      "NC90_Base_extended_rails",
+      "NC90_Left_jaw_extended_rack"
+    ]
+  },
+  {
+    "id": "16",
+    "title": "Left track",
+    "part_ids": [
+      "Left_Track_R78_70_Teeth"
+    ]
+  },
+  {
+    "id": "17",
+    "title": "Right track",
+    "part_ids": [
+      "Right_Track_R78_70_Teeth"
+    ]
+  },
+  {
+    "id": "19",
+    "title": "Jetson carrier",
+    "part_ids": [
+      "Jetson_Adapter_R87"
+    ]
+  },
+  {
+    "id": "20",
+    "title": "Pi carrier",
+    "part_ids": [
+      "Pi_Adapter_R87"
+    ]
+  },
+  {
+    "id": "21",
+    "title": "Gemini inserts",
+    "part_ids": [
+      "Gemini_Window_Adapter_R89",
+      "Gemini_Flush_Insert_R72"
+    ]
+  },
+  {
+    "id": "22",
+    "title": "RealSense insert",
+    "part_ids": [
+      "RealSense_Insert_R72"
+    ]
+  }
+]

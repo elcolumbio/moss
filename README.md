@@ -2,31 +2,30 @@
 
 Cleaner streets, one maker at a time.
 
+> **MOSS kits are coming soon on [TNKR](https://tnkr.ai/).**
+> Skip printing and sourcing the parts yourself. **[Join the waitlist →](https://ak4khuvxkya.typeform.com/to/qaKmXNME)** to be notified when kits are available.
+
+**[Build guide](https://www.showrobotics.ai/moss/build/) · [Print parts](https://www.showrobotics.ai/moss/build/#print) · [Bill of materials](BOM.md) · [Download CAD & STL](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_R92_Mechanical_20261016.zip) · [Software setup](Software.md)**
+
 MOSS is a small litter-picking rover you print and build yourself: a tracked base, a bin on top, an arm derived from the SO-101 with a parallel gripper. It is open hardware, built in public, and meant to be built by many hands.
 
 ![MOSS picking up a can: approach, grasp, lift, drop in the bin](media/images/moss_v05_pickup.gif)
 
-**Where it stands.** The first prototype rolls and carries its arm. Nothing has picked up litter on its own yet. The CAD is being finished on the real robot, and the files come out after one test: a full battery emptied over 3 km on the beach, tracks still on, no bolt lost. No date; it is posted when it is real.
+**Where it stands.** The physical rover drives and demonstrates pick-and-drop motions. Autonomous litter picking and the full field test are not yet demonstrated. The V0.6 / R92 CAD, STL files, BOM and assembly guide are now available.
 
-## Two ways to get one
+## Build options
 
-- **Build it yourself.** [Bill of materials](BOM.md) → [3D printing](3DPrinting.md) → [Assembly](Assembly.md) → [Software](Software.md). The STL and STEP files land in [`hardware/`](hardware/) when the design is frozen.
-- **Get the kit.** Kits and an interactive build guide are coming with [Tnkr](https://x.com/tnkrdotai). [Join the waitlist](https://ak4khuvxkya.typeform.com/to/qaKmXNME) to hear when the files and the kits are ready.
+**Base assembly: about $460 in parts** — chassis, tracks, arm, gripper, power and filament.
 
-## What it costs
+Add **one** configuration: **Jetson + RealSense**, **or Pi + Hailo + Gemini**, **or Pi + Mighty**.
 
-List prices for one rover, parts only.
-
-| Configuration | Parts |
+| Choose one configuration | Additional cost above the base (USD) |
 |---|---:|
-| Base assembly: chassis, tracks, arm, gripper, power, filament | about $460 |
-| + Jetson Orin Nano Super, RealSense D455, wrist camera, 2D lidar | about $1,390 |
-| + Raspberry Pi 5, Hailo AI HAT, Orbbec Gemini 2, wrist camera, 2D lidar | about $1,200 |
-| + Raspberry Pi 5, Mighty camera, wrist camera, 2D lidar | about $860 |
+| Jetson Orin Nano Super, RealSense D455, wrist camera, 2D lidar | about $930 |
+| Raspberry Pi 5, Hailo AI HAT, Orbbec Gemini 2, wrist camera, 2D lidar | about $740 |
+| Raspberry Pi 5, Mighty camera, wrist camera, 2D lidar | about $400 |
 
-The Jetson configuration is the one on the bench. Every line is in the [BOM](BOM.md).
-
-![Your hardware, your MOSS: Pi or Jetson, RealSense or Gemini](media/images/moss_v06_modular.jpg)
+These option prices exclude the $460 base assembly. The [BOM](BOM.md) lists the components and hardware for each option.
 
 ## What it is made of
 
@@ -40,6 +39,8 @@ The Jetson configuration is the one on the bench. Every line is in the [BOM](BOM
 I pick up litter by hand on my walks. MOSS is the robot I want next to me doing the same. One less can on the ground.
 
 ## News
+
+- 16 October 2026: **V0.6 / R92 is available.** [Build guide](https://www.showrobotics.ai/moss/build/), [CAD & STL package](https://github.com/metrox-eth/moss/releases/tag/v0.6-r92) and [BOM](BOM.md). One-piece and two-piece hull/cover options, modular computer and camera carriers, and short assembly videos.
 
 - 15 October 2026: [MOSS Core V1D routed PCB draft](hardware/electronics/moss-core-v1d/): integrated audio and switched motor/servo power, published for review. Untested and not approved for fabrication. [V1C critical erratum](hardware/electronics/moss-core-v1d/V1C_CRITICAL_ERRATA.txt): do not fabricate V1C.
 - 14 October 2026: [CAD development with Codex](docs/cad-with-codex.md): more battery room, integrated audio, a slimmer hull, a P1S split-hull option and deeper track guides. Images and geometry checks; physical validation is next.

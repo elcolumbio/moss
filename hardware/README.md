@@ -1,10 +1,10 @@
 # Hardware
 
-Designed in Fusion 360. The STL (one file per part) and STEP files land here at the design freeze, with the fastener list and the sources they derive from (SO-101 arm, NormaCore parallel-jaw gripper, widened to 90 mm) with exact revisions and local changes. The freeze happens after one test on the real robot: a full battery emptied over 3 km on the beach, tracks still on, no bolt lost.
+The current mechanical package is [V0.6 / R92](https://github.com/metrox-eth/moss/releases/tag/v0.6-r92). [Download CAD & STL](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_R92_Mechanical_20261016.zip) · [Build guide](https://www.showrobotics.ai/moss/build/). It contains individual STL files, editable Fusion source, STEP solid geometry, per-part revisions and attribution. Third-party electronics reference models remain in the internal integration assembly.
 
-Until then: the [parts list](../3DPrinting.md), the [BOM](../BOM.md) and the photos in `media/` are the reference.
+See the [print catalogue](../3DPrinting.md), [BOM](../BOM.md) and [assembly guide](../Assembly.md). Choose the one-piece hull or the current R92 two-piece alternative. The two-piece native Fusion sources are supplied separately from the main one-piece CAD set.
 
-`bench/` holds the raw traces of the bench tests, one folder per date. The 20 September INA219 trace is not a motor-current measurement.
+`bench/` retains the raw bench traces. The 20 September INA219 trace is not a motor-current measurement.
 
 ## Electronics prototypes
 

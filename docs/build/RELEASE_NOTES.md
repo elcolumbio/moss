@@ -1,0 +1,51 @@
+# MOSS R92 — mechanical changes
+
+This is the matched current print set prepared on 16 October 2026.
+
+## Changes carried into this set
+
+| Part | Current revision | Change |
+|---|---|---|
+| Hull | R92 | Repaired the small Cytron-to-wall junction. |
+| Hull partition | R81 | Enlarged the cable opening while preserving the screw supports. |
+| Reinforcement ramps | R82 | Restored the missing outer ramps. |
+| Fan clips | R83 | Moved each opposing clip 0.5 mm inward. |
+| Heat-set insert pockets | R84 | Eleven locations now use M3 inserts with 4 mm outer diameter and 6 mm length. |
+| Audio mounts | R85 | Speaker screw spacing increased 1 mm; amplifier moved 2 mm and gained two support pillars. |
+| Rear electronics | R86 | Fans, clips and vents lowered 2 mm; Cytron and ESP supports lowered 4 mm. The approved rounded relief under the Cytron keeps the motor clearance. |
+| Computer mounts and carriers | R87 | Rear posts reduced to 9 mm diameter and shifted 5 mm toward the computer; Jetson and Pi carriers updated together. Motor-hatch groove cleared. |
+| Gemini window bezel | R89 | Removed only the two thin straight bridges; retained the curved ends and pointed tips. |
+| Motor supports | R90 | Added 8 mm upper corner radii. |
+| Assembly orientation | R91 | Restored Z-up orientation with the hull base atZ0. |
+| Upper cover | R10 split option | Cut at the arm-platform corner, with two integral dovetails assembled from above and glued. |
+| Outer track frames | R32 | Geometry unchanged; STL print orientation rotated to the front-right / rear-left diagonal. |
+| Arm plate | R22 | Geometry unchanged; exported again for this package. |
+| Bin and gripper pads | Removed | The four TPU pads are no longer supplied as printable parts. |
+| Tracks | R78 | Current 70-tooth print masters with the deeper guides. |
+
+## What is included
+
+- 113 part STL files covering hull, computer and camera alternatives, plus two optional split-joint coupons.
+- 106–109 catalogue pieces depending on the hull, cover and camera options.
+-Editable Fusion source with 99 solid parts,8 arm mesh parts and 2 track mesh masters.
+-STEP with 99 solid parts:96 manifold solids and 3 solids with internal voids.
+- 113 current part previews, an overview image, a per-part material list and standard print settings.
+- 20 assembly cards and seven clips in one visual style: a reference guide, five exploded assemblies and the corrected road-wheel fastening example.
+- All 38 printed track spacers have guide references SP01–SP12. The 18 purchased shaft collars use LK05/LK06/LK08, with dimensions in the BOM and part-reference list.
+
+## What is kept separate
+
+The split-hull alternative is rebuilt from the current R92 geometry, with six M4 fixings and the joint clearances.
+
+This mechanical package uses the existing separate electronics modules.
+
+## Validation scope
+
+All 113 part STL meshes are closed, have consistent winding and positive volume. Their geometry was reconciled with the current CAD; the 99 retained solid-part comparisons and the new split-hull and split-cover comparisons differ by less than 0.3%. Tiny export-seam repairs are recorded in `release/data/tessellation_repairs.json` and `release/data/SPLIT_HULL_R92_CHECKS.json` and do not move the intended CAD contours.
+
+The native archives passed every internal archive CRC check. The STEP contains all 99 named solid parts. These checks establish file and geometry consistency; they do not substitute for physical assembly or the planned field test.
+
+
+- Current R92 hull split into two printable halves; native Fusion sources and optional local fit coupons included.
+
+The [two-piece upper cover](SPLIT_COVER.md) uses top-entry dovetails. The [outer track frame guide](OUTER_FRAME_PRINTING.md) shows the front-right to rear-left placement.

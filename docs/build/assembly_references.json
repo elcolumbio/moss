@@ -1,0 +1,491 @@
+{
+  "note": "Guide identifiers, not manufacturer part numbers. SP01\u2013SP08 correspond to the existing dot IDs; SP09\u2013SP12 are guide-only codes and are not engraved. Collar dimensions describe the current CAD envelopes; compare the purchased parts before ordering.",
+  "references": [
+    {
+      "ref": "SP01",
+      "name": "Road wheel / inner",
+      "length_mm": 7.5,
+      "bore_mm": 5.3,
+      "od_mm": 7.6,
+      "dots": 1,
+      "dot_pattern": [
+        [
+          0,
+          0
+        ]
+      ],
+      "quantity": 6,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_road_wheel_-70_inner_ID01_R24",
+          "file": "../release/STL/Common/Left_Spacer_road_wheel_-70_inner_ID01_R24.stl"
+        },
+        {
+          "part_id": "Left_Spacer_road_wheel_0_inner_ID01_R24",
+          "file": "../release/STL/Common/Left_Spacer_road_wheel_0_inner_ID01_R24.stl"
+        },
+        {
+          "part_id": "Left_Spacer_road_wheel_70_inner_ID01_R24",
+          "file": "../release/STL/Common/Left_Spacer_road_wheel_70_inner_ID01_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_road_wheel_-70_inner_ID01_R24",
+          "file": "../release/STL/Common/Right_Spacer_road_wheel_-70_inner_ID01_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_road_wheel_0_inner_ID01_R24",
+          "file": "../release/STL/Common/Right_Spacer_road_wheel_0_inner_ID01_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_road_wheel_70_inner_ID01_R24",
+          "file": "../release/STL/Common/Right_Spacer_road_wheel_70_inner_ID01_R24.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP02",
+      "name": "Road wheel / outer",
+      "length_mm": 5.5,
+      "bore_mm": 5.3,
+      "od_mm": 7.6,
+      "dots": 2,
+      "dot_pattern": [
+        [
+          -1.05,
+          0
+        ],
+        [
+          1.05,
+          0
+        ]
+      ],
+      "quantity": 6,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_road_wheel_-70_outer_ID02_R24",
+          "file": "../release/STL/Common/Left_Spacer_road_wheel_-70_outer_ID02_R24.stl"
+        },
+        {
+          "part_id": "Left_Spacer_road_wheel_0_outer_ID02_R24",
+          "file": "../release/STL/Common/Left_Spacer_road_wheel_0_outer_ID02_R24.stl"
+        },
+        {
+          "part_id": "Left_Spacer_road_wheel_70_outer_ID02_R24",
+          "file": "../release/STL/Common/Left_Spacer_road_wheel_70_outer_ID02_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_road_wheel_-70_outer_ID02_R24",
+          "file": "../release/STL/Common/Right_Spacer_road_wheel_-70_outer_ID02_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_road_wheel_0_outer_ID02_R24",
+          "file": "../release/STL/Common/Right_Spacer_road_wheel_0_outer_ID02_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_road_wheel_70_outer_ID02_R24",
+          "file": "../release/STL/Common/Right_Spacer_road_wheel_70_outer_ID02_R24.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP03",
+      "name": "Drive / motor side",
+      "length_mm": 7.6,
+      "bore_mm": 6.4,
+      "od_mm": 9.0,
+      "dots": 3,
+      "dot_pattern": [
+        [
+          -2.1,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          2.1,
+          0
+        ]
+      ],
+      "quantity": 2,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_drive_inner_ID03_R24",
+          "file": "../release/STL/Common/Left_Spacer_drive_inner_ID03_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_drive_inner_ID03_R24",
+          "file": "../release/STL/Common/Right_Spacer_drive_inner_ID03_R24.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP04",
+      "name": "Drive / outer",
+      "length_mm": 12.6,
+      "bore_mm": 6.4,
+      "od_mm": 9.0,
+      "dots": 4,
+      "dot_pattern": [
+        [
+          -1.05,
+          -1.05
+        ],
+        [
+          -1.05,
+          1.05
+        ],
+        [
+          1.05,
+          -1.05
+        ],
+        [
+          1.05,
+          1.05
+        ]
+      ],
+      "quantity": 2,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24",
+          "file": "../release/STL/Common/Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_drive_outer_HEX12_L12.6_ID04_R24",
+          "file": "../release/STL/Common/Right_Spacer_drive_outer_HEX12_L12.6_ID04_R24.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP05",
+      "name": "Idler / inner",
+      "length_mm": 15.4,
+      "bore_mm": 8.4,
+      "od_mm": 12.0,
+      "dots": 5,
+      "dot_pattern": [
+        [
+          -2.1,
+          -2.1
+        ],
+        [
+          -2.1,
+          2.1
+        ],
+        [
+          2.1,
+          -2.1
+        ],
+        [
+          2.1,
+          2.1
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "quantity": 2,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_tensioner_inner_ID05_R24",
+          "file": "../release/STL/Common/Left_Spacer_tensioner_inner_ID05_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_tensioner_inner_ID05_R24",
+          "file": "../release/STL/Common/Right_Spacer_tensioner_inner_ID05_R24.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP06",
+      "name": "Idler / outer",
+      "length_mm": 13.4,
+      "bore_mm": 8.4,
+      "od_mm": 12.0,
+      "dots": 6,
+      "dot_pattern": [
+        [
+          -2.1,
+          -2.1
+        ],
+        [
+          -2.1,
+          0
+        ],
+        [
+          -2.1,
+          2.1
+        ],
+        [
+          2.1,
+          -2.1
+        ],
+        [
+          2.1,
+          0
+        ],
+        [
+          2.1,
+          2.1
+        ]
+      ],
+      "quantity": 2,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_tensioner_outer_ID06_R24",
+          "file": "../release/STL/Common/Left_Spacer_tensioner_outer_ID06_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_tensioner_outer_ID06_R24",
+          "file": "../release/STL/Common/Right_Spacer_tensioner_outer_ID06_R24.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP07",
+      "name": "Idler / inner retainer",
+      "length_mm": 6.3,
+      "bore_mm": 8.4,
+      "od_mm": 12.0,
+      "dots": 7,
+      "dot_pattern": [
+        [
+          -1.8,
+          -1.8
+        ],
+        [
+          -1.8,
+          0
+        ],
+        [
+          -1.8,
+          1.8
+        ],
+        [
+          1.8,
+          -1.8
+        ],
+        [
+          1.8,
+          0
+        ],
+        [
+          1.8,
+          1.8
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "quantity": 2,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_tensioner_retainer_inner_ID07_R24",
+          "file": "../release/STL/Common/Left_Spacer_tensioner_retainer_inner_ID07_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_tensioner_retainer_inner_ID07_R24",
+          "file": "../release/STL/Common/Right_Spacer_tensioner_retainer_inner_ID07_R24.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP08",
+      "name": "Idler / outer retainer",
+      "length_mm": 6.0,
+      "bore_mm": 8.4,
+      "od_mm": 12.0,
+      "dots": 8,
+      "dot_pattern": [
+        [
+          -1.8,
+          -1.8
+        ],
+        [
+          -1.8,
+          0
+        ],
+        [
+          -1.8,
+          1.8
+        ],
+        [
+          0,
+          -1.8
+        ],
+        [
+          0,
+          1.8
+        ],
+        [
+          1.8,
+          -1.8
+        ],
+        [
+          1.8,
+          0
+        ],
+        [
+          1.8,
+          1.8
+        ]
+      ],
+      "quantity": 2,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_tensioner_retainer_outer_ID08_R24",
+          "file": "../release/STL/Common/Left_Spacer_tensioner_retainer_outer_ID08_R24.stl"
+        },
+        {
+          "part_id": "Right_Spacer_tensioner_retainer_outer_ID08_R24",
+          "file": "../release/STL/Common/Right_Spacer_tensioner_retainer_outer_ID08_R24.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP09",
+      "name": "Road wheel / centre",
+      "length_mm": 18,
+      "bore_mm": 5.3,
+      "od_mm": 7.6,
+      "dots": null,
+      "quantity": 6,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_road_wheel_-70_center",
+          "file": "../release/STL/Common/Left_Spacer_road_wheel_-70_center.stl"
+        },
+        {
+          "part_id": "Left_Spacer_road_wheel_0_center",
+          "file": "../release/STL/Common/Left_Spacer_road_wheel_0_center.stl"
+        },
+        {
+          "part_id": "Left_Spacer_road_wheel_70_center",
+          "file": "../release/STL/Common/Left_Spacer_road_wheel_70_center.stl"
+        },
+        {
+          "part_id": "Right_Spacer_road_wheel_-70_center",
+          "file": "../release/STL/Common/Right_Spacer_road_wheel_-70_center.stl"
+        },
+        {
+          "part_id": "Right_Spacer_road_wheel_0_center",
+          "file": "../release/STL/Common/Right_Spacer_road_wheel_0_center.stl"
+        },
+        {
+          "part_id": "Right_Spacer_road_wheel_70_center",
+          "file": "../release/STL/Common/Right_Spacer_road_wheel_70_center.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP10",
+      "name": "Idler / centre",
+      "length_mm": 3.8,
+      "bore_mm": 8.4,
+      "od_mm": 12,
+      "dots": null,
+      "quantity": 2,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_tensioner_center",
+          "file": "../release/STL/Common/Left_Spacer_tensioner_center.stl"
+        },
+        {
+          "part_id": "Right_Spacer_tensioner_center",
+          "file": "../release/STL/Common/Right_Spacer_tensioner_center.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP11",
+      "name": "Drive / bearing to collar",
+      "length_mm": 3.5,
+      "bore_mm": 6.4,
+      "od_mm": 9,
+      "dots": null,
+      "quantity": 2,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Drive_bearing_to_collar_spacer_R12_C1",
+          "file": "../release/STL/Common/Left_Drive_bearing_to_collar_spacer_R12_C1.stl"
+        },
+        {
+          "part_id": "Right_Drive_bearing_to_collar_spacer_R12_C1",
+          "file": "../release/STL/Common/Right_Drive_bearing_to_collar_spacer_R12_C1.stl"
+        }
+      ]
+    },
+    {
+      "ref": "SP12",
+      "name": "Track frame / cross-member",
+      "length_mm": 41,
+      "bore_mm": 4.4,
+      "od_mm": 14,
+      "dots": null,
+      "quantity": 4,
+      "kind": "printed",
+      "files": [
+        {
+          "part_id": "Left_Spacer_cross_member_-40",
+          "file": "../release/STL/Common/Left_Spacer_cross_member_-40.stl"
+        },
+        {
+          "part_id": "Left_Spacer_cross_member_40",
+          "file": "../release/STL/Common/Left_Spacer_cross_member_40.stl"
+        },
+        {
+          "part_id": "Right_Spacer_cross_member_-40",
+          "file": "../release/STL/Common/Right_Spacer_cross_member_-40.stl"
+        },
+        {
+          "part_id": "Right_Spacer_cross_member_40",
+          "file": "../release/STL/Common/Right_Spacer_cross_member_40.stl"
+        }
+      ]
+    },
+    {
+      "ref": "LK05",
+      "name": "Shaft collar / lock ring",
+      "length_mm": 5,
+      "bore_mm": 5,
+      "od_mm": 10,
+      "quantity": 12,
+      "kind": "purchased",
+      "supplier_part_number": null
+    },
+    {
+      "ref": "LK06",
+      "name": "Shaft collar / lock ring",
+      "length_mm": 5,
+      "bore_mm": 6,
+      "od_mm": 11,
+      "quantity": 2,
+      "kind": "purchased",
+      "supplier_part_number": null
+    },
+    {
+      "ref": "LK08",
+      "name": "Shaft collar / lock ring",
+      "length_mm": 8,
+      "bore_mm": 8,
+      "od_mm": 16,
+      "quantity": 4,
+      "kind": "purchased",
+      "supplier_part_number": null
+    }
+  ]
+}

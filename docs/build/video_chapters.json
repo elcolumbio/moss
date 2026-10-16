@@ -1,0 +1,112 @@
+[
+  {
+    "id": "01-match-spacer-dots",
+    "title": "Identify spacers and shaft collars",
+    "file": "videos/01-match-spacer-dots.mp4",
+    "poster": "images/01-match-spacer-dots.jpg",
+    "source": "Local CAD meshes; rendered anew with the Road wheel palette",
+    "scope": "Part identification with dimensions and matching guide references",
+    "audio": false,
+    "sha256": "07ca420aa88537a55a616a3dd8820e63cfeefc9bb1643c73443f8b642842cf56",
+    "decode_ok": true,
+    "style": "Road wheel: light background, dark printed bodies, green spacers, gold nuts/collars, grey metal",
+    "duration_seconds": 20
+  },
+  {
+    "id": "02-road-wheel-spacers",
+    "title": "Road-wheel spacer order",
+    "file": "videos/02-road-wheel-spacers.mp4",
+    "poster": "images/02-road-wheel-spacers.jpg",
+    "source": "Local CAD meshes; rendered anew with the Road wheel palette",
+    "scope": "Exploded assembly and spacer placement; later fastening actions remain separate",
+    "audio": false,
+    "sha256": "68cdab50694a03e03f5e8edbb500c7ee750748a0219ab724bcc7db7847802715",
+    "decode_ok": true,
+    "style": "Road wheel: light background, dark printed bodies, green spacers, gold nuts/collars, grey metal",
+    "duration_seconds": 19
+  },
+  {
+    "id": "03-drive-wheel-spacers",
+    "title": "Drive-wheel spacer order",
+    "file": "videos/03-drive-wheel-spacers.mp4",
+    "poster": "images/03-drive-wheel-spacers.jpg",
+    "source": "Local CAD meshes; rendered anew with the Road wheel palette",
+    "scope": "Exploded assembly and spacer placement; later fastening actions remain separate",
+    "audio": false,
+    "sha256": "c4bb671ff6d68883098052faffadc9a91de316c9d96e3e8d00b5267069a9dd0d",
+    "decode_ok": true,
+    "style": "Road wheel: light background, dark printed bodies, green spacers, gold nuts/collars, grey metal",
+    "duration_seconds": 19
+  },
+  {
+    "id": "04-idler-tensioner-spacers",
+    "title": "Idler and tensioner spacer order",
+    "file": "videos/04-idler-tensioner-spacers.mp4",
+    "poster": "images/04-idler-tensioner-spacers.jpg",
+    "source": "Local CAD meshes; rendered anew with the Road wheel palette",
+    "scope": "Exploded assembly and spacer placement; later fastening actions remain separate",
+    "audio": false,
+    "sha256": "661cda727e2545b13ae8009536d858c534d5982a28dd5db32f52e078dd33ca35",
+    "decode_ok": true,
+    "style": "Road wheel: light background, dark printed bodies, green spacers, gold nuts/collars, grey metal",
+    "duration_seconds": 19
+  },
+  {
+    "id": "05-track-side-reassembly",
+    "title": "Track-side reassembly overview",
+    "file": "videos/05-track-side-reassembly.mp4",
+    "poster": "images/05-track-side-reassembly.jpg",
+    "source": "Local CAD meshes; rendered anew with the Road wheel palette",
+    "scope": "Exploded assembly and spacer placement; later fastening actions remain separate",
+    "audio": false,
+    "sha256": "d41f231eb2a890d20146b10856edad30ac0708480f960497cad62c64cd19c35c",
+    "decode_ok": true,
+    "style": "Road wheel: light background, dark printed bodies, green spacers, gold nuts/collars, grey metal",
+    "duration_seconds": 19
+  },
+  {
+    "id": "06-road-wheel-screws",
+    "title": "Road wheel: bearings, nuts and screws",
+    "file": "videos/06-road-wheel-screws.mp4",
+    "poster": "images/06-road-wheel-screws.jpg",
+    "source": "Local CAD meshes; rendered anew with the Road wheel palette",
+    "scope": "Bearings enter from the mating faces; nuts seat next, then the halves close around SP09, and screws enter from the outside.",
+    "audio": false,
+    "sha256": "f102febba7fd008e6f213c0f2496ad489b9650a01fe95080f57e00c2f68bfc99",
+    "decode_ok": true,
+    "style": "Road wheel: light background, dark printed bodies, green spacers, gold nuts/collars, grey metal",
+    "duration_seconds": 21
+  },
+  {
+    "id": "07-xt30-power-distribution",
+    "title": "XT30 power distribution: exploded assembly",
+    "file": "videos/07-xt30-power-distribution.mp4",
+    "poster": "images/07-xt30-power-distribution.jpg",
+    "source": "Existing MOSS_XT30_eclate_assemblage.mp4 animation, 4 October 2026; same source geometry and motion, rendered with the guide palette",
+    "scope": "Open and close the XT30 enclosure; remove and refit the insulating divider and rigid soldered connector assembly. No hull-mounting sequence or full rover wiring diagram.",
+    "audio": false,
+    "sha256": "56df6475f3ac853c251396b845d91244ad0bc6da4195683b6517678101e6067d",
+    "decode_ok": true,
+    "style": "Road wheel: light background, dark printed bodies, green divider, gold connectors, grey metal",
+    "duration_seconds": 14,
+    "fps": 30,
+    "printed_part_comparisons": [
+      {
+        "part_id": "XT30_distribution_base",
+        "relative_volume_difference": 6.379379119872626e-05,
+        "dimensions_match_mm": 0.001
+      },
+      {
+        "part_id": "XT30_distribution_lid",
+        "relative_volume_difference": 0.00011425254700672035,
+        "dimensions_match_mm": 0.001
+      },
+      {
+        "part_id": "XT30_insulating_separator",
+        "relative_volume_difference": 1.2581040936747555e-05,
+        "dimensions_match_mm": 0.001
+      }
+    ],
+    "original_animation_motion_unchanged": true
+  }
+]
