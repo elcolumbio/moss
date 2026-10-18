@@ -10,27 +10,32 @@
           "quantity": 1,
           "material": "PETG",
           "file": "STL/Common/Hull_R92.stl",
-          "display_name": "One-piece hull (one-piece option)"
+          "display_name": "One-piece hull",
+          "scope": "HULL_ONE_PIECE"
         },
         {
           "part_id": "Lidar_Base_R84",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Lidar_Base_R84.stl"
+          "file": "STL/Common/Lidar_Base_R84.stl",
+          "display_name": "Lidar Base R84",
+          "scope": "COMMON"
         },
         {
           "part_id": "Hull_R92_Split_Rear_Motor_Computer",
-          "display_name": "Rear hull \u2014 motors and computer",
-          "file": "STL/Options/Hull_R92_Split_Rear_Motor_Computer.stl",
+          "quantity": 1,
           "material": "PETG",
-          "quantity": 1
+          "file": "STL/Options/Hull_R92_Split_Rear_Motor_Computer.stl",
+          "display_name": "Rear hull — motors and computer",
+          "scope": "HULL_SPLIT"
         },
         {
           "part_id": "Hull_R92_Split_Front_Battery_Camera",
-          "display_name": "Front hull \u2014 battery and camera",
-          "file": "STL/Options/Hull_R92_Split_Front_Battery_Camera.stl",
+          "quantity": 1,
           "material": "PETG",
-          "quantity": 1
+          "file": "STL/Options/Hull_R92_Split_Front_Battery_Camera.stl",
+          "display_name": "Front hull — battery and camera",
+          "scope": "HULL_SPLIT"
         }
       ],
       "components": [
@@ -46,7 +51,7 @@
           "quantity": 11
         },
         {
-          "reference": "Split hull only: M4 \u00d7 15 socket-head screw",
+          "reference": "Split hull only: M4 × 15 socket-head screw",
           "quantity": 6,
           "scope": "HULL_SPLIT"
         },
@@ -56,13 +61,13 @@
           "scope": "HULL_SPLIT"
         },
         {
-          "reference": "Split hull only: M4 washer, \u00d89 \u00d7 0.8 mm",
+          "reference": "Split hull only: M4 washer, Ø9 × 0.8 mm",
           "quantity": 6,
           "scope": "HULL_SPLIT"
         }
       ],
       "actions": [
-        "Choose the one-piece hull or both split halves. For the split hull, dry-fit both halves first, then apply a thin layer of two-part epoxy to the mating faces. Engage the locating pins, seat six nuts from the battery side, and fit six M4 \u00d7 15 screws with washers from the motor/computer side. Tighten progressively and let the epoxy cure before installing electronics or the battery.",
+        "Choose the one-piece hull or both split halves. For the split hull, dry-fit both halves first, then apply a thin layer of two-part epoxy to the mating faces. Engage the locating pins, seat six nuts from the battery side, and fit six M4 × 15 screws with washers from the motor/computer side. Tighten progressively and let the epoxy cure before installing electronics or the battery.",
         "Use a soldering iron to fit the inserts: place each insert over its hole, heat it with the iron tip, then gently press it straight into the plastic. Fit four inserts for the cover, four for the arm plate and two for the LiDAR base in the hull.",
         "Use the same soldering-iron method to fit the remaining insert in the LiDAR base for the carriage lock. Keep the threads clear and let all inserts cool before fitting screws."
       ],
@@ -75,118 +80,28 @@
       "title": "Build the six road wheels",
       "printed_parts": [
         {
-          "part_id": "Left_625_road_wheel_-70_inner_half_R13",
-          "quantity": 1,
+          "part_id": "Road_Wheel_Inner_Half_R13",
+          "quantity": 6,
           "material": "PETG",
-          "file": "STL/Common/Left_625_road_wheel_-70_inner_half_R13.stl"
+          "file": "STL/Common/Road_Wheel_Inner_Half_R13.stl",
+          "display_name": "Road wheel inner half",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Left_625_road_wheel_-70_outer_half_R13",
-          "quantity": 1,
+          "part_id": "Road_Wheel_Outer_Half_R13",
+          "quantity": 6,
           "material": "PETG",
-          "file": "STL/Common/Left_625_road_wheel_-70_outer_half_R13.stl"
+          "file": "STL/Common/Road_Wheel_Outer_Half_R13.stl",
+          "display_name": "Road wheel outer half",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Left_625_road_wheel_70_inner_half_R13",
-          "quantity": 1,
+          "part_id": "SP09_Road_Wheel_Centre_Spacer",
+          "quantity": 6,
           "material": "PETG",
-          "file": "STL/Common/Left_625_road_wheel_70_inner_half_R13.stl"
-        },
-        {
-          "part_id": "Left_625_road_wheel_70_outer_half_R13",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_625_road_wheel_70_outer_half_R13.stl"
-        },
-        {
-          "part_id": "Right_625_road_wheel_-70_inner_half_R13",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_625_road_wheel_-70_inner_half_R13.stl"
-        },
-        {
-          "part_id": "Right_625_road_wheel_-70_outer_half_R13",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_625_road_wheel_-70_outer_half_R13.stl"
-        },
-        {
-          "part_id": "Right_625_road_wheel_70_inner_half_R13",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_625_road_wheel_70_inner_half_R13.stl"
-        },
-        {
-          "part_id": "Right_625_road_wheel_70_outer_half_R13",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_625_road_wheel_70_outer_half_R13.stl"
-        },
-        {
-          "part_id": "Left_625_road_wheel_0_inner_half_R13",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_625_road_wheel_0_inner_half_R13.stl"
-        },
-        {
-          "part_id": "Left_625_road_wheel_0_outer_half_R13",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_625_road_wheel_0_outer_half_R13.stl"
-        },
-        {
-          "part_id": "Right_625_road_wheel_0_inner_half_R13",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_625_road_wheel_0_inner_half_R13.stl"
-        },
-        {
-          "part_id": "Right_625_road_wheel_0_outer_half_R13",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_625_road_wheel_0_outer_half_R13.stl"
-        },
-        {
-          "part_id": "Left_Spacer_road_wheel_-70_center",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_road_wheel_-70_center.stl",
-          "assembly_ref": "SP09"
-        },
-        {
-          "part_id": "Left_Spacer_road_wheel_0_center",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_road_wheel_0_center.stl",
-          "assembly_ref": "SP09"
-        },
-        {
-          "part_id": "Left_Spacer_road_wheel_70_center",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_road_wheel_70_center.stl",
-          "assembly_ref": "SP09"
-        },
-        {
-          "part_id": "Right_Spacer_road_wheel_-70_center",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_road_wheel_-70_center.stl",
-          "assembly_ref": "SP09"
-        },
-        {
-          "part_id": "Right_Spacer_road_wheel_0_center",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_road_wheel_0_center.stl",
-          "assembly_ref": "SP09"
-        },
-        {
-          "part_id": "Right_Spacer_road_wheel_70_center",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_road_wheel_70_center.stl",
-          "assembly_ref": "SP09"
+          "file": "STL/Common/SP09_Road_Wheel_Centre_Spacer.stl",
+          "display_name": "SP09 · Road wheel centre spacer",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -197,7 +112,7 @@
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 35 socket-head screw",
+          "reference": "M3 × 35 socket-head screw",
           "quantity": 18
         },
         {
@@ -206,7 +121,7 @@
         }
       ],
       "actions": [
-        "For each wheel, prepare two printed halves, one SP09 centre spacer, two 625 bearings, three M3 \u00d7 35 screws and three M3 nuts.",
+        "For each wheel, prepare two printed halves, one SP09 centre spacer, two 625 bearings, three M3 × 35 screws and three M3 nuts.",
         "Insert each bearing through the open mating face of its wheel half. Do not push it through the smaller outside opening.",
         "Seat the three nuts in the inner half, position SP09 between the bearings, close the wheel halves, then insert the three screws from the outer face. Repeat six times."
       ],
@@ -220,25 +135,33 @@
           "part_id": "Left_HEX12_drive_wheel_inner_half_R13",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Left_HEX12_drive_wheel_inner_half_R13.stl"
+          "file": "STL/Common/Left_HEX12_drive_wheel_inner_half_R13.stl",
+          "display_name": "Left HEX12 drive wheel inner half R13",
+          "scope": "COMMON"
         },
         {
           "part_id": "Left_HEX12_drive_wheel_outer_half_R13",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Left_HEX12_drive_wheel_outer_half_R13.stl"
+          "file": "STL/Common/Left_HEX12_drive_wheel_outer_half_R13.stl",
+          "display_name": "Left HEX12 drive wheel outer half R13",
+          "scope": "COMMON"
         },
         {
           "part_id": "Right_HEX12_drive_wheel_inner_half_R13",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Right_HEX12_drive_wheel_inner_half_R13.stl"
+          "file": "STL/Common/Right_HEX12_drive_wheel_inner_half_R13.stl",
+          "display_name": "Right HEX12 drive wheel inner half R13",
+          "scope": "COMMON"
         },
         {
           "part_id": "Right_HEX12_drive_wheel_outer_half_R13",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Right_HEX12_drive_wheel_outer_half_R13.stl"
+          "file": "STL/Common/Right_HEX12_drive_wheel_outer_half_R13.stl",
+          "display_name": "Right HEX12 drive wheel outer half R13",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -249,7 +172,7 @@
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 20 socket-head screw",
+          "reference": "M3 × 20 socket-head screw",
           "quantity": 6
         },
         {
@@ -259,7 +182,7 @@
       ],
       "actions": [
         "Match the locating feature on each pair of halves.",
-        "Close each wheel with three M3 \u00d7 20 screws and three M3 nuts. Keep the HEX12 seat clear."
+        "Close each wheel with three M3 × 20 screws and three M3 nuts. Keep the HEX12 seat clear."
       ],
       "video": null
     },
@@ -271,39 +194,41 @@
           "part_id": "Left_22T_idler_wheel_inner_half_R13",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Left_22T_idler_wheel_inner_half_R13.stl"
+          "file": "STL/Common/Left_22T_idler_wheel_inner_half_R13.stl",
+          "display_name": "Left 22T idler wheel inner half R13",
+          "scope": "COMMON"
         },
         {
           "part_id": "Left_22T_idler_wheel_outer_half_R13",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Left_22T_idler_wheel_outer_half_R13.stl"
+          "file": "STL/Common/Left_22T_idler_wheel_outer_half_R13.stl",
+          "display_name": "Left 22T idler wheel outer half R13",
+          "scope": "COMMON"
         },
         {
           "part_id": "Right_22T_idler_wheel_inner_half_R13",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Right_22T_idler_wheel_inner_half_R13.stl"
+          "file": "STL/Common/Right_22T_idler_wheel_inner_half_R13.stl",
+          "display_name": "Right 22T idler wheel inner half R13",
+          "scope": "COMMON"
         },
         {
           "part_id": "Right_22T_idler_wheel_outer_half_R13",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Right_22T_idler_wheel_outer_half_R13.stl"
+          "file": "STL/Common/Right_22T_idler_wheel_outer_half_R13.stl",
+          "display_name": "Right 22T idler wheel outer half R13",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Left_Spacer_tensioner_center",
-          "quantity": 1,
+          "part_id": "SP10_Idler_Centre_Spacer",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Left_Spacer_tensioner_center.stl",
-          "assembly_ref": "SP10"
-        },
-        {
-          "part_id": "Right_Spacer_tensioner_center",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_tensioner_center.stl",
-          "assembly_ref": "SP10"
+          "file": "STL/Common/SP10_Idler_Centre_Spacer.stl",
+          "display_name": "SP10 · Idler centre spacer",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -314,7 +239,7 @@
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 25 socket-head screw",
+          "reference": "M3 × 25 socket-head screw",
           "quantity": 6
         },
         {
@@ -324,7 +249,7 @@
       ],
       "actions": [
         "For each idler, seat two 608 bearings with SP10 (centre spacer) between them.",
-        "Close the two halves with three M3 \u00d7 25 screws and three M3 nuts. Repeat for the other side."
+        "Close the two halves with three M3 × 25 screws and three M3 nuts. Repeat for the other side."
       ],
       "video": null
     },
@@ -336,25 +261,25 @@
           "part_id": "Motor_Mount_Left_R90",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Motor_Mount_Left_R90.stl"
+          "file": "STL/Common/Motor_Mount_Left_R90.stl",
+          "display_name": "Motor Mount Left R90",
+          "scope": "COMMON"
         },
         {
           "part_id": "Motor_Mount_Right_R90",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Motor_Mount_Right_R90.stl"
+          "file": "STL/Common/Motor_Mount_Right_R90.stl",
+          "display_name": "Motor Mount Right R90",
+          "scope": "COMMON"
         },
         {
-          "part_id": "05_Left_bearing_retainer",
-          "quantity": 1,
+          "part_id": "Motor_Bearing_Inner_Retainer",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/05_Left_bearing_retainer.stl"
-        },
-        {
-          "part_id": "06_Right_bearing_retainer",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/06_Right_bearing_retainer.stl"
+          "file": "STL/Common/Motor_Bearing_Inner_Retainer.stl",
+          "display_name": "Motor bearing inner retainer",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -373,7 +298,7 @@
       ],
       "fasteners": [
         {
-          "reference": "M4 \u00d7 20 socket-head screw",
+          "reference": "M4 × 20 socket-head screw",
           "quantity": 8
         },
         {
@@ -381,14 +306,14 @@
           "quantity": 8
         },
         {
-          "reference": "M3 \u00d7 8 socket-head screw",
+          "reference": "M3 × 8 socket-head screw",
           "quantity": 12
         }
       ],
       "actions": [
-        "Use three M3 \u00d7 8 screws per motor, without washers. The other six M3 \u00d7 8 screws secure the two bearing retainers.",
-        "Put four M4 nuts into each motor-support nut pocket and secure each support to the hull with four M4 \u00d7 20 screws.",
-        "Fit the inner bearing retainers with three M3 \u00d7 8 screws per side."
+        "Use three M3 × 8 screws per motor, without washers. The other six M3 × 8 screws secure the two bearing retainers.",
+        "Put four M4 nuts into each motor-support nut pocket and secure each support to the hull with four M4 × 20 screws.",
+        "Fit the inner bearing retainers with three M3 × 8 screws per side."
       ],
       "video": null
     },
@@ -400,19 +325,23 @@
           "part_id": "Left_inner_track_frame_R12_C2",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Left_inner_track_frame_R12_C2.stl"
+          "file": "STL/Common/Left_inner_track_frame_R12_C2.stl",
+          "display_name": "Left inner track frame R12 C2",
+          "scope": "COMMON"
         },
         {
           "part_id": "Right_inner_track_frame_R12_C2",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Right_inner_track_frame_R12_C2.stl"
+          "file": "STL/Common/Right_inner_track_frame_R12_C2.stl",
+          "display_name": "Right inner track frame R12 C2",
+          "scope": "COMMON"
         }
       ],
       "components": [],
       "fasteners": [
         {
-          "reference": "M4 \u00d7 15 socket-head screw",
+          "reference": "M4 × 15 socket-head screw",
           "quantity": 6
         },
         {
@@ -422,7 +351,7 @@
       ],
       "actions": [
         "Fit each inner frame directly against the hull.",
-        "Use three M4 \u00d7 15 screws and three M4 nuts per side."
+        "Use three M4 × 15 screws and three M4 nuts per side."
       ],
       "video": null
     },
@@ -431,88 +360,20 @@
       "title": "Fit road-wheel axles and spacer pairs",
       "printed_parts": [
         {
-          "part_id": "Left_Spacer_road_wheel_-70_inner_ID01_R24",
-          "quantity": 1,
+          "part_id": "SP01_Road_Wheel_Inner_Spacer",
+          "quantity": 6,
           "material": "PETG",
-          "file": "STL/Common/Left_Spacer_road_wheel_-70_inner_ID01_R24.stl",
-          "assembly_ref": "SP01"
+          "file": "STL/Common/SP01_Road_Wheel_Inner_Spacer.stl",
+          "display_name": "SP01 · Road wheel inner spacer",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Left_Spacer_road_wheel_0_inner_ID01_R24",
-          "quantity": 1,
+          "part_id": "SP02_Road_Wheel_Outer_Spacer",
+          "quantity": 6,
           "material": "PETG",
-          "file": "STL/Common/Left_Spacer_road_wheel_0_inner_ID01_R24.stl",
-          "assembly_ref": "SP01"
-        },
-        {
-          "part_id": "Left_Spacer_road_wheel_70_inner_ID01_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_road_wheel_70_inner_ID01_R24.stl",
-          "assembly_ref": "SP01"
-        },
-        {
-          "part_id": "Right_Spacer_road_wheel_-70_inner_ID01_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_road_wheel_-70_inner_ID01_R24.stl",
-          "assembly_ref": "SP01"
-        },
-        {
-          "part_id": "Right_Spacer_road_wheel_0_inner_ID01_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_road_wheel_0_inner_ID01_R24.stl",
-          "assembly_ref": "SP01"
-        },
-        {
-          "part_id": "Right_Spacer_road_wheel_70_inner_ID01_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_road_wheel_70_inner_ID01_R24.stl",
-          "assembly_ref": "SP01"
-        },
-        {
-          "part_id": "Left_Spacer_road_wheel_-70_outer_ID02_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_road_wheel_-70_outer_ID02_R24.stl",
-          "assembly_ref": "SP02"
-        },
-        {
-          "part_id": "Left_Spacer_road_wheel_0_outer_ID02_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_road_wheel_0_outer_ID02_R24.stl",
-          "assembly_ref": "SP02"
-        },
-        {
-          "part_id": "Left_Spacer_road_wheel_70_outer_ID02_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_road_wheel_70_outer_ID02_R24.stl",
-          "assembly_ref": "SP02"
-        },
-        {
-          "part_id": "Right_Spacer_road_wheel_-70_outer_ID02_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_road_wheel_-70_outer_ID02_R24.stl",
-          "assembly_ref": "SP02"
-        },
-        {
-          "part_id": "Right_Spacer_road_wheel_0_outer_ID02_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_road_wheel_0_outer_ID02_R24.stl",
-          "assembly_ref": "SP02"
-        },
-        {
-          "part_id": "Right_Spacer_road_wheel_70_outer_ID02_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_road_wheel_70_outer_ID02_R24.stl",
-          "assembly_ref": "SP02"
+          "file": "STL/Common/SP02_Road_Wheel_Outer_Spacer.stl",
+          "display_name": "SP02 · Road wheel outer spacer",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -521,7 +382,7 @@
           "quantity": 6
         },
         {
-          "reference": "LK05 \u2014 shaft collar: 5 mm bore, 10 mm outside diameter, 5 mm long",
+          "reference": "LK05 — shaft collar: 5 mm bore, 10 mm outside diameter, 5 mm long",
           "quantity": 12
         }
       ],
@@ -537,58 +398,36 @@
       "title": "Fit the drive axles and outer bearing covers",
       "printed_parts": [
         {
-          "part_id": "Left_Spacer_drive_inner_ID03_R24",
-          "quantity": 1,
+          "part_id": "SP03_Drive_Inner_Spacer",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Left_Spacer_drive_inner_ID03_R24.stl",
-          "assembly_ref": "SP03"
+          "file": "STL/Common/SP03_Drive_Inner_Spacer.stl",
+          "display_name": "SP03 · Drive motor side spacer",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Right_Spacer_drive_inner_ID03_R24",
-          "quantity": 1,
+          "part_id": "SP04_Drive_Outer_Spacer",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Right_Spacer_drive_inner_ID03_R24.stl",
-          "assembly_ref": "SP03"
+          "file": "STL/Common/SP04_Drive_Outer_Spacer.stl",
+          "display_name": "SP04 · Drive outer spacer",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24",
-          "quantity": 1,
+          "part_id": "Motor_Bearing_Outer_Cover",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24.stl",
-          "assembly_ref": "SP04"
+          "file": "STL/Common/Motor_Bearing_Outer_Cover.stl",
+          "display_name": "Motor bearing outer cover",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Right_Spacer_drive_outer_HEX12_L12.6_ID04_R24",
-          "quantity": 1,
+          "part_id": "SP11_Drive_Bearing_To_Collar_Spacer",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Right_Spacer_drive_outer_HEX12_L12.6_ID04_R24.stl",
-          "assembly_ref": "SP04"
-        },
-        {
-          "part_id": "Left_Cover_motor_bearing",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Cover_motor_bearing.stl"
-        },
-        {
-          "part_id": "Right_Cover_motor_bearing",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Cover_motor_bearing.stl"
-        },
-        {
-          "part_id": "Left_Drive_bearing_to_collar_spacer_R12_C1",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Drive_bearing_to_collar_spacer_R12_C1.stl",
-          "assembly_ref": "SP11"
-        },
-        {
-          "part_id": "Right_Drive_bearing_to_collar_spacer_R12_C1",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Drive_bearing_to_collar_spacer_R12_C1.stl",
-          "assembly_ref": "SP11"
+          "file": "STL/Common/SP11_Drive_Bearing_To_Collar_Spacer.stl",
+          "display_name": "SP11 · Drive bearing to collar spacer",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -601,13 +440,13 @@
           "quantity": 2
         },
         {
-          "reference": "LK06 \u2014 shaft collar: 6 mm bore, 11 mm outside diameter, 5 mm long",
+          "reference": "LK06 — shaft collar: 6 mm bore, 11 mm outside diameter, 5 mm long",
           "quantity": 2
         }
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 15 socket-head screw",
+          "reference": "M3 × 15 socket-head screw",
           "quantity": 6
         },
         {
@@ -617,7 +456,7 @@
       ],
       "actions": [
         "Use SP03 (3 dots, 7.6 mm) on the motor side and SP04 (4 dots, 12.6 mm) on the outer side of the drive wheel.",
-        "Put SP11 (3.5 mm, no dots) between the outer 626 bearing and LK06 (6 mm bore). Secure each bearing cover with three M3 \u00d7 15 screws and nuts."
+        "Put SP11 (3.5 mm, no dots) between the outer 626 bearing and LK06 (6 mm bore). Secure each bearing cover with three M3 × 15 screws and nuts."
       ],
       "video": "videos/03-drive-wheel-spacers.mp4"
     },
@@ -629,105 +468,81 @@
           "part_id": "Left_inner_tensioner_cover_R12_C2",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Left_inner_tensioner_cover_R12_C2.stl"
+          "file": "STL/Common/Left_inner_tensioner_cover_R12_C2.stl",
+          "display_name": "Left inner tensioner cover R12 C2",
+          "scope": "COMMON"
         },
         {
           "part_id": "Right_inner_tensioner_cover_R12_C2",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Right_inner_tensioner_cover_R12_C2.stl"
+          "file": "STL/Common/Right_inner_tensioner_cover_R12_C2.stl",
+          "display_name": "Right inner tensioner cover R12 C2",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Left_Spacer_tensioner_inner_ID05_R24",
-          "quantity": 1,
+          "part_id": "SP05_Idler_Inner_Spacer",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Left_Spacer_tensioner_inner_ID05_R24.stl",
-          "assembly_ref": "SP05"
+          "file": "STL/Common/SP05_Idler_Inner_Spacer.stl",
+          "display_name": "SP05 · Idler inner spacer",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Right_Spacer_tensioner_inner_ID05_R24",
-          "quantity": 1,
+          "part_id": "SP06_Idler_Outer_Spacer",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Right_Spacer_tensioner_inner_ID05_R24.stl",
-          "assembly_ref": "SP05"
-        },
-        {
-          "part_id": "Left_Spacer_tensioner_outer_ID06_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_tensioner_outer_ID06_R24.stl",
-          "assembly_ref": "SP06"
-        },
-        {
-          "part_id": "Right_Spacer_tensioner_outer_ID06_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_tensioner_outer_ID06_R24.stl",
-          "assembly_ref": "SP06"
+          "file": "STL/Common/SP06_Idler_Outer_Spacer.stl",
+          "display_name": "SP06 · Idler outer spacer",
+          "scope": "COMMON"
         },
         {
           "part_id": "Left_Cover_tensioner_outer",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Left_Cover_tensioner_outer.stl"
+          "file": "STL/Common/Left_Cover_tensioner_outer.stl",
+          "display_name": "Left Cover tensioner outer",
+          "scope": "COMMON"
         },
         {
           "part_id": "Right_Cover_tensioner_outer",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Right_Cover_tensioner_outer.stl"
+          "file": "STL/Common/Right_Cover_tensioner_outer.stl",
+          "display_name": "Right Cover tensioner outer",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Left_Slider_outer",
-          "quantity": 1,
+          "part_id": "Tensioner_Slider_A",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Left_Slider_outer.stl"
+          "file": "STL/Common/Tensioner_Slider_A.stl",
+          "display_name": "Tensioner slider A (left outer / right inner)",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Right_Slider_outer",
-          "quantity": 1,
+          "part_id": "Tensioner_Slider_B",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Right_Slider_outer.stl"
+          "file": "STL/Common/Tensioner_Slider_B.stl",
+          "display_name": "Tensioner slider B (right outer / left inner)",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Left_inner_tensioner_slider",
-          "quantity": 1,
+          "part_id": "SP07_Idler_Inner_Retainer_Spacer",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Left_inner_tensioner_slider.stl"
+          "file": "STL/Common/SP07_Idler_Inner_Retainer_Spacer.stl",
+          "display_name": "SP07 · Idler inner retainer spacer",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Right_inner_tensioner_slider",
-          "quantity": 1,
+          "part_id": "SP08_Idler_Outer_Retainer_Spacer",
+          "quantity": 2,
           "material": "PETG",
-          "file": "STL/Common/Right_inner_tensioner_slider.stl"
-        },
-        {
-          "part_id": "Left_Spacer_tensioner_retainer_inner_ID07_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_tensioner_retainer_inner_ID07_R24.stl",
-          "assembly_ref": "SP07"
-        },
-        {
-          "part_id": "Left_Spacer_tensioner_retainer_outer_ID08_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_tensioner_retainer_outer_ID08_R24.stl",
-          "assembly_ref": "SP08"
-        },
-        {
-          "part_id": "Right_Spacer_tensioner_retainer_inner_ID07_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_tensioner_retainer_inner_ID07_R24.stl",
-          "assembly_ref": "SP07"
-        },
-        {
-          "part_id": "Right_Spacer_tensioner_retainer_outer_ID08_R24",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_tensioner_retainer_outer_ID08_R24.stl",
-          "assembly_ref": "SP08"
+          "file": "STL/Common/SP08_Idler_Outer_Retainer_Spacer.stl",
+          "display_name": "SP08 · Idler outer retainer spacer",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -736,13 +551,13 @@
           "quantity": 2
         },
         {
-          "reference": "LK08 \u2014 shaft collar: 8 mm bore, 16 mm outside diameter, 8 mm long",
+          "reference": "LK08 — shaft collar: 8 mm bore, 16 mm outside diameter, 8 mm long",
           "quantity": 4
         }
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 15 socket-head screw",
+          "reference": "M3 × 15 socket-head screw",
           "quantity": 16
         },
         {
@@ -750,7 +565,7 @@
           "quantity": 16
         },
         {
-          "reference": "M4 \u00d7 35 socket-head screw",
+          "reference": "M4 × 35 socket-head screw",
           "quantity": 4
         },
         {
@@ -764,7 +579,7 @@
       ],
       "actions": [
         "Inside to outside: LK08, SP07, inner slider, SP05, idler wheel with SP10 between its bearings, SP06, outer slider, SP08, LK08. Use two LK08 collars (8 mm bore) per axle.",
-        "Fit each tensioner cover with four M3 \u00d7 15 screws and nuts. Use an M4 \u00d7 35 adjuster with its washer and two nuts at each of the four tensioners."
+        "Fit each tensioner cover with four M3 × 15 screws and nuts. Use an M4 × 35 adjuster with its washer and two nuts at each of the four tensioners."
       ],
       "video": "videos/04-idler-tensioner-spacers.mp4"
     },
@@ -776,47 +591,31 @@
           "part_id": "Left_Outer_Track_Frame_R32",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Left_Outer_Track_Frame_R32.stl"
+          "file": "STL/Common/Left_Outer_Track_Frame_R32.stl",
+          "display_name": "Left Outer Track Frame R32",
+          "scope": "COMMON"
         },
         {
           "part_id": "Right_Outer_Track_Frame_R32",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Right_Outer_Track_Frame_R32.stl"
+          "file": "STL/Common/Right_Outer_Track_Frame_R32.stl",
+          "display_name": "Right Outer Track Frame R32",
+          "scope": "COMMON"
         },
         {
-          "part_id": "Left_Spacer_cross_member_-40",
-          "quantity": 1,
+          "part_id": "SP12_Frame_Cross_Member_Spacer",
+          "quantity": 4,
           "material": "PETG",
-          "file": "STL/Common/Left_Spacer_cross_member_-40.stl",
-          "assembly_ref": "SP12"
-        },
-        {
-          "part_id": "Left_Spacer_cross_member_40",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Left_Spacer_cross_member_40.stl",
-          "assembly_ref": "SP12"
-        },
-        {
-          "part_id": "Right_Spacer_cross_member_-40",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_cross_member_-40.stl",
-          "assembly_ref": "SP12"
-        },
-        {
-          "part_id": "Right_Spacer_cross_member_40",
-          "quantity": 1,
-          "material": "PETG",
-          "file": "STL/Common/Right_Spacer_cross_member_40.stl",
-          "assembly_ref": "SP12"
+          "file": "STL/Common/SP12_Frame_Cross_Member_Spacer.stl",
+          "display_name": "SP12 · Track frame cross-member spacer",
+          "scope": "COMMON"
         }
       ],
       "components": [],
       "fasteners": [
         {
-          "reference": "M4 \u00d7 60 socket-head screw",
+          "reference": "M4 × 60 socket-head screw",
           "quantity": 4
         },
         {
@@ -830,7 +629,7 @@
       ],
       "actions": [
         "Put the two SP12 cross-member spacers (41 mm, no dots) in each side assembly.",
-        "Fit the outer frame using two M4 \u00d7 60 screws, washers and nuts per side."
+        "Fit the outer frame using two M4 × 60 screws, washers and nuts per side."
       ],
       "video": "videos/05-track-side-reassembly.mp4"
     },
@@ -839,16 +638,12 @@
       "title": "Fit the tracks",
       "printed_parts": [
         {
-          "part_id": "Left_Track_R78_70_Teeth",
-          "quantity": 1,
+          "part_id": "Track_R78_70_Teeth",
+          "quantity": 2,
           "material": "TPU",
-          "file": "STL/Common/Left_Track_R78_70_Teeth.stl"
-        },
-        {
-          "part_id": "Right_Track_R78_70_Teeth",
-          "quantity": 1,
-          "material": "TPU",
-          "file": "STL/Common/Right_Track_R78_70_Teeth.stl"
+          "file": "STL/Common/Track_R78_70_Teeth.stl",
+          "display_name": "Track · 70 teeth",
+          "scope": "COMMON"
         }
       ],
       "components": [],
@@ -883,11 +678,11 @@
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 6 socket-head screw",
+          "reference": "M3 × 6 socket-head screw",
           "quantity": 4
         },
         {
-          "reference": "M2 \u00d7 6 screw, non-countersunk",
+          "reference": "M2 × 6 screw, non-countersunk",
           "quantity": 6
         },
         {
@@ -896,8 +691,8 @@
         }
       ],
       "actions": [
-        "Secure the MDD10A with four M3 \u00d7 6 screws.",
-        "Use four M2 \u00d7 6 screws and 0.3 mm washers for the BFF, and two of each for the INA219."
+        "Secure the MDD10A with four M3 × 6 screws.",
+        "Use four M2 × 6 screws and 0.3 mm washers for the BFF, and two of each for the INA219."
       ],
       "video": null
     },
@@ -921,11 +716,11 @@
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 6 socket-head screw",
+          "reference": "M3 × 6 socket-head screw",
           "quantity": 2
         },
         {
-          "reference": "M2 \u00d7 6 screw, non-countersunk",
+          "reference": "M2 × 6 screw, non-countersunk",
           "quantity": 2
         },
         {
@@ -934,8 +729,8 @@
         }
       ],
       "actions": [
-        "Fix the speaker with two M3 \u00d7 6 screws above its grille.",
-        "Seat the amplifier on its two mounting posts and two support pillars. Use two M2 \u00d7 6 screws with 0.5 mm washers."
+        "Fix the speaker with two M3 × 6 screws above its grille.",
+        "Seat the amplifier on its two mounting posts and two support pillars. Use two M2 × 6 screws with 0.5 mm washers."
       ],
       "video": null
     },
@@ -947,13 +742,33 @@
           "part_id": "Pi_Adapter_R87",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Options/Pi_Adapter_R87.stl"
+          "file": "STL/Options/Pi_Adapter_R87.stl",
+          "display_name": "Pi Adapter R87",
+          "scope": "COMPUTE_PI"
         },
         {
           "part_id": "Jetson_Adapter_R87",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Options/Jetson_Adapter_R87.stl"
+          "file": "STL/Options/Jetson_Adapter_R87.stl",
+          "display_name": "Jetson Adapter R87",
+          "scope": "COMPUTE_JETSON"
+        },
+        {
+          "part_id": "Jetson_Retaining_Tab_1_R92",
+          "quantity": 1,
+          "material": "PETG",
+          "file": "STL/Options/Jetson_Retaining_Tab_1_R92.stl",
+          "display_name": "JT01 · Jetson retaining tab 1",
+          "scope": "COMPUTE_JETSON"
+        },
+        {
+          "part_id": "Jetson_Retaining_Tab_2_R92",
+          "quantity": 1,
+          "material": "PETG",
+          "file": "STL/Options/Jetson_Retaining_Tab_2_R92.stl",
+          "display_name": "JT02 · Jetson retaining tab 2",
+          "scope": "COMPUTE_JETSON"
         }
       ],
       "components": [
@@ -969,11 +784,11 @@
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 6 socket-head screw",
+          "reference": "M3 × 6 socket-head screw",
           "quantity": 2
         },
         {
-          "reference": "M3 \u00d7 8 socket-head screw",
+          "reference": "M3 × 8 socket-head screw",
           "quantity": 2
         },
         {
@@ -981,7 +796,7 @@
           "quantity": 4
         },
         {
-          "reference": "M2.5 \u00d7 8 screw, non-countersunk",
+          "reference": "M2.5 × 8 screw, non-countersunk",
           "quantity": 4
         },
         {
@@ -989,15 +804,15 @@
           "quantity": 4
         },
         {
-          "reference": "Jetson only: M3 \u00d7 8 socket-head screw, no washer",
+          "reference": "Jetson only: M3 × 8 socket-head screw, no washer",
           "quantity": 2,
           "scope": "COMPUTE_JETSON"
         }
       ],
       "actions": [
         "Choose one carrier: Jetson or Pi.",
-        "Use the two M3 \u00d7 6 screws at the front and the two M3 \u00d7 8 screws at the rear, with one 0.5 mm washer each.",
-        "For Jetson, secure the two retaining tabs with two M3 \u00d7 8 screws, without washers.",
+        "Use the two M3 × 6 screws at the front and the two M3 × 8 screws at the rear, with one 0.5 mm washer each.",
+        "For Jetson, secure the two retaining tabs with two M3 × 8 screws, without washers.",
         "For Pi/HAT, use the screws and spacers supplied with the HAT; prepare this assembly before fitting the carrier in the hull."
       ],
       "video": null
@@ -1010,19 +825,25 @@
           "part_id": "Gemini_Window_Adapter_R89",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Options/Gemini_Window_Adapter_R89.stl"
+          "file": "STL/Options/Gemini_Window_Adapter_R89.stl",
+          "display_name": "Gemini Window Adapter R89",
+          "scope": "CAMERA_GEMINI"
         },
         {
           "part_id": "RealSense_Insert_R72",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Options/RealSense_Insert_R72.stl"
+          "file": "STL/Options/RealSense_Insert_R72.stl",
+          "display_name": "RealSense Insert R72",
+          "scope": "CAMERA_REALSENSE"
         },
         {
           "part_id": "Gemini_Flush_Insert_R72",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Options/Gemini_Flush_Insert_R72.stl"
+          "file": "STL/Options/Gemini_Flush_Insert_R72.stl",
+          "display_name": "Gemini Flush Insert R72",
+          "scope": "CAMERA_GEMINI"
         }
       ],
       "components": [
@@ -1033,17 +854,17 @@
       ],
       "fasteners": [
         {
-          "reference": "RealSense only: M4 \u00d7 10 socket-head screw",
+          "reference": "RealSense only: M4 × 10 socket-head screw",
           "quantity": 2
         },
         {
-          "reference": "Gemini only: M3 \u00d7 8 socket-head screw",
+          "reference": "Gemini only: M3 × 8 socket-head screw",
           "quantity": 2
         }
       ],
       "actions": [
-        "For RealSense, slide the support insert down from the top, then use its two M4 \u00d7 10 screws.",
-        "For Gemini, use the flush insert and the window bezel instead. Secure the camera with two M3 \u00d7 8 screws; keep the USB opening clear."
+        "For RealSense, slide the support insert down from the top, then use its two M4 × 10 screws.",
+        "For Gemini, use the flush insert and the window bezel instead. Secure the camera with two M3 × 8 screws; keep the USB opening clear."
       ],
       "video": null
     },
@@ -1055,7 +876,9 @@
           "part_id": "Lidar_dovetail_carriage_R21",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/Lidar_dovetail_carriage_R21.stl"
+          "file": "STL/Common/Lidar_dovetail_carriage_R21.stl",
+          "display_name": "Lidar dovetail carriage R21",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -1066,21 +889,21 @@
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 10 socket-head screw",
+          "reference": "M3 × 10 socket-head screw",
           "quantity": 2
         },
         {
-          "reference": "M2.5 \u00d7 6 socket-head screw",
+          "reference": "M2.5 × 6 socket-head screw",
           "quantity": 4
         },
         {
-          "reference": "M3 \u00d7 20 socket-head screw",
+          "reference": "M3 × 20 socket-head screw",
           "quantity": 1
         }
       ],
       "actions": [
-        "With the carriage removed, secure the LiDAR base to the hull with two M3 \u00d7 10 screws.",
-        "Secure the C1 to the carriage with four M2.5 \u00d7 6 screws, slide it onto the base and lock it with the M3 \u00d7 20 screw, without a washer, into the M3 insert."
+        "With the carriage removed, secure the LiDAR base to the hull with two M3 × 10 screws.",
+        "Secure the C1 to the carriage with four M2.5 × 6 screws, slide it onto the base and lock it with the M3 × 20 screw, without a washer, into the M3 insert."
       ],
       "video": null
     },
@@ -1092,19 +915,25 @@
           "part_id": "XT30_distribution_base",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/XT30_distribution_base.stl"
+          "file": "STL/Common/XT30_distribution_base.stl",
+          "display_name": "XT30 distribution base",
+          "scope": "COMMON"
         },
         {
           "part_id": "XT30_distribution_lid",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/XT30_distribution_lid.stl"
+          "file": "STL/Common/XT30_distribution_lid.stl",
+          "display_name": "XT30 distribution lid",
+          "scope": "COMMON"
         },
         {
           "part_id": "XT30_insulating_separator",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/XT30_insulating_separator.stl"
+          "file": "STL/Common/XT30_insulating_separator.stl",
+          "display_name": "XT30 insulating separator",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -1121,7 +950,7 @@
           "quantity": 1
         },
         {
-          "reference": "12-cell battery pack, 3S4P, with BMS, 110 \u00d7 67 \u00d7 35 mm",
+          "reference": "12-cell battery pack, 3S4P, with BMS, 110 × 67 × 35 mm",
           "quantity": 1
         },
         {
@@ -1129,7 +958,7 @@
           "quantity": 1
         },
         {
-          "reference": "DC male barrel plug, 5.5 \u00d7 2.5 mm, 9.5 mm barrel, centre positive \u2014 Jetson power",
+          "reference": "DC male barrel plug, 5.5 × 2.5 mm, 9.5 mm barrel, centre positive — Jetson power",
           "quantity": 1,
           "scope": "COMPUTE_JETSON"
         },
@@ -1139,11 +968,11 @@
           "scope": "COMPUTE_PI"
         },
         {
-          "reference": "DC male barrel plug, 5.5 \u00d7 2.1 mm \u2014 Waveshare Bus Servo Adapter A power",
+          "reference": "DC male barrel plug, 5.5 × 2.1 mm — Waveshare Bus Servo Adapter A power",
           "quantity": 1
         },
         {
-          "reference": "DC male barrel plug, 5.5 \u00d7 2.1 mm \u2014 battery extension to the panel socket",
+          "reference": "DC male barrel plug, 5.5 × 2.1 mm — battery extension to the panel socket",
           "quantity": 1
         },
         {
@@ -1153,14 +982,14 @@
       ],
       "fasteners": [
         {
-          "reference": "M2.5 \u00d7 10 low-head screw, head diameter 5 mm maximum",
+          "reference": "M2.5 × 10 low-head screw, head diameter 5 mm maximum",
           "quantity": 4
         }
       ],
       "actions": [
         "Clip the two fans into their mounts.",
         "Fit the emergency stop and rocker switch in their hull openings.",
-        "Assemble the XT30 base, insulating separator and lid with four low-head M2.5 \u00d7 10 screws."
+        "Assemble the XT30 base, insulating separator and lid with four low-head M2.5 × 10 screws."
       ],
       "video": "videos/07-xt30-power-distribution.mp4"
     },
@@ -1172,55 +1001,73 @@
           "part_id": "Arm_Mounting_Platform_R22",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/Arm_Mounting_Platform_R22.stl"
+          "file": "STL/Common/Arm_Mounting_Platform_R22.stl",
+          "display_name": "Arm Mounting Platform R22",
+          "scope": "COMMON"
         },
         {
           "part_id": "SO101_Base",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/SO101_Base.stl"
+          "file": "STL/Common/SO101_Base.stl",
+          "display_name": "SO101 Base",
+          "scope": "COMMON"
         },
         {
           "part_id": "SO101_Shoulder_rotation",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/SO101_Shoulder_rotation.stl"
+          "file": "STL/Common/SO101_Shoulder_rotation.stl",
+          "display_name": "SO101 Shoulder rotation",
+          "scope": "COMMON"
         },
         {
           "part_id": "SO101_Base_motor_holder",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/SO101_Base_motor_holder.stl"
+          "file": "STL/Common/SO101_Base_motor_holder.stl",
+          "display_name": "SO101 Base motor holder",
+          "scope": "COMMON"
         },
         {
           "part_id": "SO101_Shoulder_bracket_cable_clip",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/SO101_Shoulder_bracket_cable_clip.stl"
+          "file": "STL/Common/SO101_Shoulder_bracket_cable_clip.stl",
+          "display_name": "SO101 Shoulder bracket cable clip",
+          "scope": "COMMON"
         },
         {
           "part_id": "SO101_Upper_arm_cable_clip",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/SO101_Upper_arm_cable_clip.stl"
+          "file": "STL/Common/SO101_Upper_arm_cable_clip.stl",
+          "display_name": "SO101 Upper arm cable clip",
+          "scope": "COMMON"
         },
         {
           "part_id": "SO101_Forearm_cable_clip",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/SO101_Forearm_cable_clip.stl"
+          "file": "STL/Common/SO101_Forearm_cable_clip.stl",
+          "display_name": "SO101 Forearm cable clip",
+          "scope": "COMMON"
         },
         {
           "part_id": "SO101_Wrist_cable_clip",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/SO101_Wrist_cable_clip.stl"
+          "file": "STL/Common/SO101_Wrist_cable_clip.stl",
+          "display_name": "SO101 Wrist cable clip",
+          "scope": "COMMON"
         },
         {
           "part_id": "SO101_Wrist_bracket",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/SO101_Wrist_bracket.stl"
+          "file": "STL/Common/SO101_Wrist_bracket.stl",
+          "display_name": "SO101 Wrist bracket",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -1231,11 +1078,11 @@
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 10 socket-head screw",
+          "reference": "M3 × 10 socket-head screw",
           "quantity": 4
         },
         {
-          "reference": "M4 \u00d7 25 countersunk 90-degree screw",
+          "reference": "M4 × 25 countersunk 90-degree screw",
           "quantity": 4
         },
         {
@@ -1243,18 +1090,18 @@
           "quantity": 4
         },
         {
-          "reference": "Kit screw: M2 \u00d7 6, original servo head",
+          "reference": "Kit screw: M2 × 6, original servo head",
           "quantity": 20
         },
         {
-          "reference": "Kit screw: M3 \u00d7 6, original servo head",
+          "reference": "Kit screw: M3 × 6, original servo head",
           "quantity": 37
         }
       ],
       "actions": [
-        "Fit the arm plate with four M3 \u00d7 10 socket-head screws. Do not add washers in the counterbores.",
+        "Fit the arm plate with four M3 × 10 socket-head screws. Do not add washers in the counterbores.",
         "Use the original servo screw packs for the SO101 joints. Keep the camera and servo cables in the printed guides.",
-        "For the wrist-camera cable, heat the printed clips to 70 \u00b0C, then close them around the cable."
+        "For the wrist-camera cable, heat the printed clips to 70 °C, then close them around the cable."
       ],
       "video": null
     },
@@ -1266,49 +1113,65 @@
           "part_id": "NC90_Right_side_shield",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/NC90_Right_side_shield.stl"
+          "file": "STL/Common/NC90_Right_side_shield.stl",
+          "display_name": "NC90 Right side shield",
+          "scope": "COMMON"
         },
         {
           "part_id": "NC90_Pinion",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/NC90_Pinion.stl"
+          "file": "STL/Common/NC90_Pinion.stl",
+          "display_name": "NC90 Pinion",
+          "scope": "COMMON"
         },
         {
           "part_id": "NC90_Cable_guide",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/NC90_Cable_guide.stl"
+          "file": "STL/Common/NC90_Cable_guide.stl",
+          "display_name": "NC90 Cable guide",
+          "scope": "COMMON"
         },
         {
           "part_id": "NC90_Right_jaw_extended_rack",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/NC90_Right_jaw_extended_rack.stl"
+          "file": "STL/Common/NC90_Right_jaw_extended_rack.stl",
+          "display_name": "NC90 Right jaw extended rack",
+          "scope": "COMMON"
         },
         {
           "part_id": "Gripper_Camera_Mount_R30",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/Gripper_Camera_Mount_R30.stl"
+          "file": "STL/Common/Gripper_Camera_Mount_R30.stl",
+          "display_name": "Gripper Camera Mount R30",
+          "scope": "COMMON"
         },
         {
           "part_id": "NC90_Left_side_shield",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/NC90_Left_side_shield.stl"
+          "file": "STL/Common/NC90_Left_side_shield.stl",
+          "display_name": "NC90 Left side shield",
+          "scope": "COMMON"
         },
         {
           "part_id": "NC90_Base_extended_rails",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/NC90_Base_extended_rails.stl"
+          "file": "STL/Common/NC90_Base_extended_rails.stl",
+          "display_name": "NC90 Base extended rails",
+          "scope": "COMMON"
         },
         {
           "part_id": "NC90_Left_jaw_extended_rack",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/NC90_Left_jaw_extended_rack.stl"
+          "file": "STL/Common/NC90_Left_jaw_extended_rack.stl",
+          "display_name": "NC90 Left jaw extended rack",
+          "scope": "COMMON"
         }
       ],
       "components": [
@@ -1317,13 +1180,13 @@
           "quantity": 1
         },
         {
-          "reference": "Wrist USB camera for the R30 mount, 21 \u00d7 13.5 mm PCB hole pattern",
+          "reference": "Wrist USB camera for the R30 mount, 21 × 13.5 mm PCB hole pattern",
           "quantity": 1
         }
       ],
       "fasteners": [
         {
-          "reference": "Kit screw: M3 \u00d7 6 cross-head ISO7045",
+          "reference": "Kit screw: M3 × 6 cross-head ISO7045",
           "quantity": 11
         },
         {
@@ -1331,11 +1194,11 @@
           "quantity": 6
         },
         {
-          "reference": "M2 \u00d7 6 screw, non-countersunk, for wrist camera PCB",
+          "reference": "M2 × 6 screw, non-countersunk, for wrist camera PCB",
           "quantity": 4
         },
         {
-          "reference": "M3 \u00d7 10 socket-head screw, for wrist camera bracket",
+          "reference": "M3 × 10 socket-head screw, for wrist camera bracket",
           "quantity": 2
         },
         {
@@ -1344,10 +1207,10 @@
         }
       ],
       "actions": [
-        "Fix the NC90 base to the wrist-roll horn with four M3 \u00d7 6 screws from the gripper kit. Check that the screws engage securely and the horn turns freely.",
+        "Fix the NC90 base to the wrist-roll horn with four M3 × 6 screws from the gripper kit. Check that the screws engage securely and the horn turns freely.",
         "Fit the gripper servo, its horn and pinion. Slide the widened jaws into the rails with both racks aligned on the pinion, then fit the side shields and cable guide with the remaining kit hardware.",
         "Fit the current camera mount. Retain the original gripper screw types.",
-        "Fix the R30 camera bracket to the gripper with two M3 \u00d7 10 screws and two M3 nuts, without washers. Fix the matching camera PCB with four M2 \u00d7 6 screws."
+        "Fix the R30 camera bracket to the gripper with two M3 × 10 screws and two M3 nuts, without washers. Fix the matching camera PCB with four M2 × 6 screws."
       ],
       "video": null
     },
@@ -1359,34 +1222,41 @@
           "part_id": "02_Motor_access_hatch_10_screws",
           "quantity": 1,
           "material": "PETG",
-          "file": "STL/Common/02_Motor_access_hatch_10_screws.stl"
+          "file": "STL/Common/02_Motor_access_hatch_10_screws.stl",
+          "display_name": "02 Motor access hatch 10 screws",
+          "scope": "COMMON"
         },
         {
           "part_id": "Upper_cover_R9",
           "quantity": 1,
           "material": "PLA",
-          "file": "STL/Common/Upper_cover_R9.stl"
+          "file": "STL/Common/Upper_cover_R9.stl",
+          "display_name": "One-piece upper cover",
+          "scope": "COVER_ONE_PIECE"
         },
         {
           "part_id": "14_Bin_20x10x2_magnet_pockets",
           "quantity": 1,
           "material": "PLA",
           "file": "STL/Common/14_Bin_20x10x2_magnet_pockets.stl",
-          "show_in_prepare": false
+          "display_name": "14 Bin 20x10x2 magnet pockets",
+          "scope": "COMMON"
         },
         {
           "part_id": "Upper_Cover_R10_Rear",
           "quantity": 1,
           "material": "PLA",
           "file": "STL/Options/Upper_Cover_R10_Rear.stl",
-          "display_name": "Split cover \u00b7 rear section"
+          "display_name": "Split cover · rear section",
+          "scope": "COVER_SPLIT"
         },
         {
           "part_id": "Upper_Cover_R10_Lidar_Extension",
           "quantity": 1,
           "material": "PLA",
           "file": "STL/Options/Upper_Cover_R10_Lidar_Extension.stl",
-          "display_name": "Split cover \u00b7 LiDAR extension"
+          "display_name": "Split cover · LiDAR extension",
+          "scope": "COVER_SPLIT"
         }
       ],
       "components": [
@@ -1401,18 +1271,18 @@
       ],
       "fasteners": [
         {
-          "reference": "M3 \u00d7 10 countersunk 90-degree screw, head diameter 6.4 mm maximum",
+          "reference": "M3 × 10 countersunk 90-degree screw, head diameter 6.4 mm maximum",
           "quantity": 10
         },
         {
-          "reference": "M3 \u00d7 10 countersunk 90-degree screw, head diameter 5.6 mm maximum",
+          "reference": "M3 × 10 countersunk 90-degree screw, head diameter 5.6 mm maximum",
           "quantity": 4
         }
       ],
       "actions": [
         "For the split cover: test-fit the two pieces off the rover. Lower the LiDAR extension from above into both dovetail sockets. Apply a thin layer of two-part epoxy on the mating faces, seat the joint, align the outer surfaces and hold until cured. The glued cover then mounts with the same four screws as the one-piece cover.",
-        "Close the motor hatch with ten M3 \u00d7 10 countersunk screws.",
-        "Fit the upper cover with four M3 \u00d7 10 countersunk screws.",
+        "Close the motor hatch with ten M3 × 10 countersunk screws.",
+        "Fit the upper cover with four M3 × 10 countersunk screws.",
         "Check the polarity of all four magnets, then glue them into their pockets with epoxy. Let the epoxy cure before fitting the bin."
       ],
       "video": null,

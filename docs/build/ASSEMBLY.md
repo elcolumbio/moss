@@ -20,10 +20,10 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Hull_R92](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Hull_R92.stl) · PETG | 1 |
-| [Lidar_Base_R84](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Lidar_Base_R84.stl) · PETG | 1 |
-| [Hull_R92_Split_Rear_Motor_Computer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Hull_R92_Split_Rear_Motor_Computer.stl) · PETG | 1 |
-| [Hull_R92_Split_Front_Battery_Camera](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Hull_R92_Split_Front_Battery_Camera.stl) · PETG | 1 |
+| [One-piece hull](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Hull_R92.stl) · PETG · Hull One Piece | 1 |
+| [Lidar Base R84](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Lidar_Base_R84.stl) · PETG | 1 |
+| [Rear hull — motors and computer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Hull_R92_Split_Rear_Motor_Computer.stl) · PETG · Hull Split | 1 |
+| [Front hull — battery and camera](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Hull_R92_Split_Front_Battery_Camera.stl) · PETG · Hull Split | 1 |
 | Epoxy from the two-part kit, for the hull joint | As needed |
 | M3 heat-set insert, OD4 mm, length 6 mm | 11 |
 | Split hull only: M4 × 15 socket-head screw | 6 |
@@ -40,24 +40,9 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Left_625_road_wheel_-70_inner_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_625_road_wheel_-70_inner_half_R13.stl) · PETG | 1 |
-| [Left_625_road_wheel_-70_outer_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_625_road_wheel_-70_outer_half_R13.stl) · PETG | 1 |
-| [Left_625_road_wheel_70_inner_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_625_road_wheel_70_inner_half_R13.stl) · PETG | 1 |
-| [Left_625_road_wheel_70_outer_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_625_road_wheel_70_outer_half_R13.stl) · PETG | 1 |
-| [Right_625_road_wheel_-70_inner_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_625_road_wheel_-70_inner_half_R13.stl) · PETG | 1 |
-| [Right_625_road_wheel_-70_outer_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_625_road_wheel_-70_outer_half_R13.stl) · PETG | 1 |
-| [Right_625_road_wheel_70_inner_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_625_road_wheel_70_inner_half_R13.stl) · PETG | 1 |
-| [Right_625_road_wheel_70_outer_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_625_road_wheel_70_outer_half_R13.stl) · PETG | 1 |
-| [Left_625_road_wheel_0_inner_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_625_road_wheel_0_inner_half_R13.stl) · PETG | 1 |
-| [Left_625_road_wheel_0_outer_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_625_road_wheel_0_outer_half_R13.stl) · PETG | 1 |
-| [Right_625_road_wheel_0_inner_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_625_road_wheel_0_inner_half_R13.stl) · PETG | 1 |
-| [Right_625_road_wheel_0_outer_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_625_road_wheel_0_outer_half_R13.stl) · PETG | 1 |
-| [SP09 · Left_Spacer_road_wheel_-70_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_-70_center.stl) · PETG | 1 |
-| [SP09 · Left_Spacer_road_wheel_0_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_0_center.stl) · PETG | 1 |
-| [SP09 · Left_Spacer_road_wheel_70_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_70_center.stl) · PETG | 1 |
-| [SP09 · Right_Spacer_road_wheel_-70_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_-70_center.stl) · PETG | 1 |
-| [SP09 · Right_Spacer_road_wheel_0_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_0_center.stl) · PETG | 1 |
-| [SP09 · Right_Spacer_road_wheel_70_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_70_center.stl) · PETG | 1 |
+| [Road wheel inner half](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Road_Wheel_Inner_Half_R13.stl) · PETG | 6 |
+| [Road wheel outer half](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Road_Wheel_Outer_Half_R13.stl) · PETG | 6 |
+| [SP09 · Road wheel centre spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP09_Road_Wheel_Centre_Spacer.stl) · PETG | 6 |
 | 625 bearing | 12 |
 | M3 × 35 socket-head screw | 18 |
 | M3 hex nut | 18 |
@@ -72,10 +57,10 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Left_HEX12_drive_wheel_inner_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_HEX12_drive_wheel_inner_half_R13.stl) · PETG | 1 |
-| [Left_HEX12_drive_wheel_outer_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_HEX12_drive_wheel_outer_half_R13.stl) · PETG | 1 |
-| [Right_HEX12_drive_wheel_inner_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_HEX12_drive_wheel_inner_half_R13.stl) · PETG | 1 |
-| [Right_HEX12_drive_wheel_outer_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_HEX12_drive_wheel_outer_half_R13.stl) · PETG | 1 |
+| [Left HEX12 drive wheel inner half R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_HEX12_drive_wheel_inner_half_R13.stl) · PETG | 1 |
+| [Left HEX12 drive wheel outer half R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_HEX12_drive_wheel_outer_half_R13.stl) · PETG | 1 |
+| [Right HEX12 drive wheel inner half R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_HEX12_drive_wheel_inner_half_R13.stl) · PETG | 1 |
+| [Right HEX12 drive wheel outer half R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_HEX12_drive_wheel_outer_half_R13.stl) · PETG | 1 |
 | HEX12 metal hub, 6 mm bore, 18 mm length | 2 |
 | M3 × 20 socket-head screw | 6 |
 | M3 hex nut | 6 |
@@ -87,12 +72,11 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Left_22T_idler_wheel_inner_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_22T_idler_wheel_inner_half_R13.stl) · PETG | 1 |
-| [Left_22T_idler_wheel_outer_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_22T_idler_wheel_outer_half_R13.stl) · PETG | 1 |
-| [Right_22T_idler_wheel_inner_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_22T_idler_wheel_inner_half_R13.stl) · PETG | 1 |
-| [Right_22T_idler_wheel_outer_half_R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_22T_idler_wheel_outer_half_R13.stl) · PETG | 1 |
-| [SP10 · Left_Spacer_tensioner_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_tensioner_center.stl) · PETG | 1 |
-| [SP10 · Right_Spacer_tensioner_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_tensioner_center.stl) · PETG | 1 |
+| [Left 22T idler wheel inner half R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_22T_idler_wheel_inner_half_R13.stl) · PETG | 1 |
+| [Left 22T idler wheel outer half R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_22T_idler_wheel_outer_half_R13.stl) · PETG | 1 |
+| [Right 22T idler wheel inner half R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_22T_idler_wheel_inner_half_R13.stl) · PETG | 1 |
+| [Right 22T idler wheel outer half R13](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_22T_idler_wheel_outer_half_R13.stl) · PETG | 1 |
+| [SP10 · Idler centre spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP10_Idler_Centre_Spacer.stl) · PETG | 2 |
 | 608 bearing | 4 |
 | M3 × 25 socket-head screw | 6 |
 | M3 hex nut | 6 |
@@ -106,10 +90,9 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Motor_Mount_Left_R90](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Motor_Mount_Left_R90.stl) · PETG | 1 |
-| [Motor_Mount_Right_R90](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Motor_Mount_Right_R90.stl) · PETG | 1 |
-| [05_Left_bearing_retainer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/05_Left_bearing_retainer.stl) · PETG | 1 |
-| [06_Right_bearing_retainer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/06_Right_bearing_retainer.stl) · PETG | 1 |
+| [Motor Mount Left R90](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Motor_Mount_Left_R90.stl) · PETG | 1 |
+| [Motor Mount Right R90](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Motor_Mount_Right_R90.stl) · PETG | 1 |
+| [Motor bearing inner retainer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Motor_Bearing_Inner_Retainer.stl) · PETG | 2 |
 | JGB37-520 motor, 12 V, 90:1, 110 rpm, Hall encoder | 2 |
 | 626 bearing, inner | 2 |
 | Rigid coupling, 6 mm to6 mm | 2 |
@@ -125,8 +108,8 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Left_inner_track_frame_R12_C2](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_inner_track_frame_R12_C2.stl) · PETG | 1 |
-| [Right_inner_track_frame_R12_C2](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_inner_track_frame_R12_C2.stl) · PETG | 1 |
+| [Left inner track frame R12 C2](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_inner_track_frame_R12_C2.stl) · PETG | 1 |
+| [Right inner track frame R12 C2](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_inner_track_frame_R12_C2.stl) · PETG | 1 |
 | M4 × 15 socket-head screw | 6 |
 | M4 hex nut | 6 |
 
@@ -137,18 +120,8 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [SP01 · Left_Spacer_road_wheel_-70_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_-70_inner_ID01_R24.stl) · PETG | 1 |
-| [SP01 · Left_Spacer_road_wheel_0_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_0_inner_ID01_R24.stl) · PETG | 1 |
-| [SP01 · Left_Spacer_road_wheel_70_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_70_inner_ID01_R24.stl) · PETG | 1 |
-| [SP01 · Right_Spacer_road_wheel_-70_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_-70_inner_ID01_R24.stl) · PETG | 1 |
-| [SP01 · Right_Spacer_road_wheel_0_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_0_inner_ID01_R24.stl) · PETG | 1 |
-| [SP01 · Right_Spacer_road_wheel_70_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_70_inner_ID01_R24.stl) · PETG | 1 |
-| [SP02 · Left_Spacer_road_wheel_-70_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_-70_outer_ID02_R24.stl) · PETG | 1 |
-| [SP02 · Left_Spacer_road_wheel_0_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_0_outer_ID02_R24.stl) · PETG | 1 |
-| [SP02 · Left_Spacer_road_wheel_70_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_70_outer_ID02_R24.stl) · PETG | 1 |
-| [SP02 · Right_Spacer_road_wheel_-70_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_-70_outer_ID02_R24.stl) · PETG | 1 |
-| [SP02 · Right_Spacer_road_wheel_0_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_0_outer_ID02_R24.stl) · PETG | 1 |
-| [SP02 · Right_Spacer_road_wheel_70_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_70_outer_ID02_R24.stl) · PETG | 1 |
+| [SP01 · Road wheel inner spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP01_Road_Wheel_Inner_Spacer.stl) · PETG | 6 |
+| [SP02 · Road wheel outer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP02_Road_Wheel_Outer_Spacer.stl) · PETG | 6 |
 | Smooth steel axle, 5 x70 mm finished length | 6 |
 | LK05 — shaft collar: 5 mm bore, 10 mm outside diameter, 5 mm long | 12 |
 
@@ -161,14 +134,10 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [SP03 · Left_Spacer_drive_inner_ID03_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_drive_inner_ID03_R24.stl) · PETG | 1 |
-| [SP03 · Right_Spacer_drive_inner_ID03_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_drive_inner_ID03_R24.stl) · PETG | 1 |
-| [SP04 · Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24.stl) · PETG | 1 |
-| [SP04 · Right_Spacer_drive_outer_HEX12_L12.6_ID04_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_drive_outer_HEX12_L12.6_ID04_R24.stl) · PETG | 1 |
-| [Left_Cover_motor_bearing](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Cover_motor_bearing.stl) · PETG | 1 |
-| [Right_Cover_motor_bearing](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Cover_motor_bearing.stl) · PETG | 1 |
-| [SP11 · Left_Drive_bearing_to_collar_spacer_R12_C1](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Drive_bearing_to_collar_spacer_R12_C1.stl) · PETG | 1 |
-| [SP11 · Right_Drive_bearing_to_collar_spacer_R12_C1](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Drive_bearing_to_collar_spacer_R12_C1.stl) · PETG | 1 |
+| [SP03 · Drive motor side spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP03_Drive_Inner_Spacer.stl) · PETG | 2 |
+| [SP04 · Drive outer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP04_Drive_Outer_Spacer.stl) · PETG | 2 |
+| [Motor bearing outer cover](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Motor_Bearing_Outer_Cover.stl) · PETG | 2 |
+| [SP11 · Drive bearing to collar spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP11_Drive_Bearing_To_Collar_Spacer.stl) · PETG | 2 |
 | Smooth steel axle, 6 x77 mm finished length | 2 |
 | 626 bearing, outer | 2 |
 | LK06 — shaft collar: 6 mm bore, 11 mm outside diameter, 5 mm long | 2 |
@@ -184,22 +153,16 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Left_inner_tensioner_cover_R12_C2](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_inner_tensioner_cover_R12_C2.stl) · PETG | 1 |
-| [Right_inner_tensioner_cover_R12_C2](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_inner_tensioner_cover_R12_C2.stl) · PETG | 1 |
-| [SP05 · Left_Spacer_tensioner_inner_ID05_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_tensioner_inner_ID05_R24.stl) · PETG | 1 |
-| [SP05 · Right_Spacer_tensioner_inner_ID05_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_tensioner_inner_ID05_R24.stl) · PETG | 1 |
-| [SP06 · Left_Spacer_tensioner_outer_ID06_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_tensioner_outer_ID06_R24.stl) · PETG | 1 |
-| [SP06 · Right_Spacer_tensioner_outer_ID06_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_tensioner_outer_ID06_R24.stl) · PETG | 1 |
-| [Left_Cover_tensioner_outer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Cover_tensioner_outer.stl) · PETG | 1 |
-| [Right_Cover_tensioner_outer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Cover_tensioner_outer.stl) · PETG | 1 |
-| [Left_Slider_outer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Slider_outer.stl) · PETG | 1 |
-| [Right_Slider_outer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Slider_outer.stl) · PETG | 1 |
-| [Left_inner_tensioner_slider](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_inner_tensioner_slider.stl) · PETG | 1 |
-| [Right_inner_tensioner_slider](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_inner_tensioner_slider.stl) · PETG | 1 |
-| [SP07 · Left_Spacer_tensioner_retainer_inner_ID07_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_tensioner_retainer_inner_ID07_R24.stl) · PETG | 1 |
-| [SP08 · Left_Spacer_tensioner_retainer_outer_ID08_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_tensioner_retainer_outer_ID08_R24.stl) · PETG | 1 |
-| [SP07 · Right_Spacer_tensioner_retainer_inner_ID07_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_tensioner_retainer_inner_ID07_R24.stl) · PETG | 1 |
-| [SP08 · Right_Spacer_tensioner_retainer_outer_ID08_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_tensioner_retainer_outer_ID08_R24.stl) · PETG | 1 |
+| [Left inner tensioner cover R12 C2](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_inner_tensioner_cover_R12_C2.stl) · PETG | 1 |
+| [Right inner tensioner cover R12 C2](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_inner_tensioner_cover_R12_C2.stl) · PETG | 1 |
+| [SP05 · Idler inner spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP05_Idler_Inner_Spacer.stl) · PETG | 2 |
+| [SP06 · Idler outer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP06_Idler_Outer_Spacer.stl) · PETG | 2 |
+| [Left Cover tensioner outer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Cover_tensioner_outer.stl) · PETG | 1 |
+| [Right Cover tensioner outer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Cover_tensioner_outer.stl) · PETG | 1 |
+| [Tensioner slider A (left outer / right inner)](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Tensioner_Slider_A.stl) · PETG | 2 |
+| [Tensioner slider B (right outer / left inner)](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Tensioner_Slider_B.stl) · PETG | 2 |
+| [SP07 · Idler inner retainer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP07_Idler_Inner_Retainer_Spacer.stl) · PETG | 2 |
+| [SP08 · Idler outer retainer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP08_Idler_Outer_Retainer_Spacer.stl) · PETG | 2 |
 | Smooth steel axle, 8 x87 mm finished length | 2 |
 | LK08 — shaft collar: 8 mm bore, 16 mm outside diameter, 8 mm long | 4 |
 | M3 × 15 socket-head screw | 16 |
@@ -217,12 +180,9 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Left_Outer_Track_Frame_R32](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Outer_Track_Frame_R32.stl) · PETG | 1 |
-| [Right_Outer_Track_Frame_R32](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Outer_Track_Frame_R32.stl) · PETG | 1 |
-| [SP12 · Left_Spacer_cross_member_-40](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_cross_member_-40.stl) · PETG | 1 |
-| [SP12 · Left_Spacer_cross_member_40](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_cross_member_40.stl) · PETG | 1 |
-| [SP12 · Right_Spacer_cross_member_-40](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_cross_member_-40.stl) · PETG | 1 |
-| [SP12 · Right_Spacer_cross_member_40](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_cross_member_40.stl) · PETG | 1 |
+| [Left Outer Track Frame R32](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Outer_Track_Frame_R32.stl) · PETG | 1 |
+| [Right Outer Track Frame R32](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Outer_Track_Frame_R32.stl) · PETG | 1 |
+| [SP12 · Track frame cross-member spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP12_Frame_Cross_Member_Spacer.stl) · PETG | 4 |
 | M4 × 60 socket-head screw | 4 |
 | M4 hex nut | 4 |
 | M4 washer | 4 |
@@ -236,8 +196,6 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Left_Track_R78_70_Teeth](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Track_R78_70_Teeth.stl) · TPU | 1 |
-| [Right_Track_R78_70_Teeth](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Track_R78_70_Teeth.stl) · TPU | 1 |
 
 1. Use the 70-tooth track print masters supplied in this package.
 2. Seat the central guides in the wheel grooves. Adjust both ends evenly and turn each track by hand.
@@ -277,8 +235,10 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Pi_Adapter_R87](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Pi_Adapter_R87.stl) · PETG | 1 |
-| [Jetson_Adapter_R87](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Adapter_R87.stl) · PETG | 1 |
+| [Pi Adapter R87](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Pi_Adapter_R87.stl) · PETG · Compute Pi | 1 |
+| [Jetson Adapter R87](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Adapter_R87.stl) · PETG · Compute Jetson | 1 |
+| [JT01 · Jetson retaining tab 1](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_1_R92.stl) · PETG · Compute Jetson | 1 |
+| [JT02 · Jetson retaining tab 2](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_2_R92.stl) · PETG · Compute Jetson | 1 |
 | Waveshare Bus Servo Adapter A | 1 |
 | Pi only: HAT mounting screws and spacers, supplied with the HAT | 1 kit |
 | M3 × 6 socket-head screw | 2 |
@@ -297,9 +257,9 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Gemini_Window_Adapter_R89](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Gemini_Window_Adapter_R89.stl) · PETG | 1 |
-| [RealSense_Insert_R72](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/RealSense_Insert_R72.stl) · PETG | 1 |
-| [Gemini_Flush_Insert_R72](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Gemini_Flush_Insert_R72.stl) · PETG | 1 |
+| [Gemini Window Adapter R89](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Gemini_Window_Adapter_R89.stl) · PETG · Camera Gemini | 1 |
+| [RealSense Insert R72](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/RealSense_Insert_R72.stl) · PETG · Camera Realsense | 1 |
+| [Gemini Flush Insert R72](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Gemini_Flush_Insert_R72.stl) · PETG · Camera Gemini | 1 |
 | RealSense D455 OR Orbbec Gemini 2 | 1 |
 | RealSense only: M4 × 10 socket-head screw | 2 |
 | Gemini only: M3 × 8 socket-head screw | 2 |
@@ -311,7 +271,7 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Lidar_dovetail_carriage_R21](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Lidar_dovetail_carriage_R21.stl) · PETG | 1 |
+| [Lidar dovetail carriage R21](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Lidar_dovetail_carriage_R21.stl) · PETG | 1 |
 | SLAMTEC RPLIDAR C1 | 1 |
 | M3 × 10 socket-head screw | 2 |
 | M2.5 × 6 socket-head screw | 4 |
@@ -324,9 +284,9 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [XT30_distribution_base](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/XT30_distribution_base.stl) · PETG | 1 |
-| [XT30_distribution_lid](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/XT30_distribution_lid.stl) · PETG | 1 |
-| [XT30_insulating_separator](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/XT30_insulating_separator.stl) · PETG | 1 |
+| [XT30 distribution base](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/XT30_distribution_base.stl) · PETG | 1 |
+| [XT30 distribution lid](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/XT30_distribution_lid.stl) · PETG | 1 |
+| [XT30 insulating separator](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/XT30_insulating_separator.stl) · PETG | 1 |
 | 3010 fan, 12 V | 2 |
 | Emergency stop LA16-11ZS/A, 16 mm | 1 |
 | KCD11 two-pin rocker switch and splash cover | 1 |
@@ -351,15 +311,15 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [Arm_Mounting_Platform_R22](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Arm_Mounting_Platform_R22.stl) · PLA | 1 |
-| [SO101_Base](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Base.stl) · PLA | 1 |
-| [SO101_Shoulder_rotation](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Shoulder_rotation.stl) · PLA | 1 |
-| [SO101_Base_motor_holder](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Base_motor_holder.stl) · PLA | 1 |
-| [SO101_Shoulder_bracket_cable_clip](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Shoulder_bracket_cable_clip.stl) · PLA | 1 |
-| [SO101_Upper_arm_cable_clip](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Upper_arm_cable_clip.stl) · PLA | 1 |
-| [SO101_Forearm_cable_clip](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Forearm_cable_clip.stl) · PLA | 1 |
-| [SO101_Wrist_cable_clip](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Wrist_cable_clip.stl) · PLA | 1 |
-| [SO101_Wrist_bracket](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Wrist_bracket.stl) · PLA | 1 |
+| [Arm Mounting Platform R22](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Arm_Mounting_Platform_R22.stl) · PLA | 1 |
+| [SO101 Base](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Base.stl) · PLA | 1 |
+| [SO101 Shoulder rotation](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Shoulder_rotation.stl) · PLA | 1 |
+| [SO101 Base motor holder](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Base_motor_holder.stl) · PLA | 1 |
+| [SO101 Shoulder bracket cable clip](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Shoulder_bracket_cable_clip.stl) · PLA | 1 |
+| [SO101 Upper arm cable clip](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Upper_arm_cable_clip.stl) · PLA | 1 |
+| [SO101 Forearm cable clip](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Forearm_cable_clip.stl) · PLA | 1 |
+| [SO101 Wrist cable clip](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Wrist_cable_clip.stl) · PLA | 1 |
+| [SO101 Wrist bracket](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SO101_Wrist_bracket.stl) · PLA | 1 |
 | ST3215 12 V serial bus servo | 5 |
 | M3 × 10 socket-head screw | 4 |
 | M4 × 25 countersunk 90-degree screw | 4 |
@@ -375,14 +335,14 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [NC90_Right_side_shield](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Right_side_shield.stl) · PLA | 1 |
-| [NC90_Pinion](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Pinion.stl) · PLA | 1 |
-| [NC90_Cable_guide](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Cable_guide.stl) · PLA | 1 |
-| [NC90_Right_jaw_extended_rack](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Right_jaw_extended_rack.stl) · PLA | 1 |
-| [Gripper_Camera_Mount_R30](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Gripper_Camera_Mount_R30.stl) · PLA | 1 |
-| [NC90_Left_side_shield](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Left_side_shield.stl) · PLA | 1 |
-| [NC90_Base_extended_rails](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Base_extended_rails.stl) · PLA | 1 |
-| [NC90_Left_jaw_extended_rack](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Left_jaw_extended_rack.stl) · PLA | 1 |
+| [NC90 Right side shield](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Right_side_shield.stl) · PLA | 1 |
+| [NC90 Pinion](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Pinion.stl) · PLA | 1 |
+| [NC90 Cable guide](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Cable_guide.stl) · PLA | 1 |
+| [NC90 Right jaw extended rack](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Right_jaw_extended_rack.stl) · PLA | 1 |
+| [Gripper Camera Mount R30](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Gripper_Camera_Mount_R30.stl) · PLA | 1 |
+| [NC90 Left side shield](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Left_side_shield.stl) · PLA | 1 |
+| [NC90 Base extended rails](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Base_extended_rails.stl) · PLA | 1 |
+| [NC90 Left jaw extended rack](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/NC90_Left_jaw_extended_rack.stl) · PLA | 1 |
 | CF35-12 gripper servo | 1 |
 | Wrist USB camera for the R30 mount, 21 × 13.5 mm PCB hole pattern | 1 |
 | Kit screw: M3 × 6 cross-head ISO7045 | 11 |
@@ -402,10 +362,11 @@ Build MOSS in this order:
 
 | Prepare | Quantity |
 |---|---:|
-| [02_Motor_access_hatch_10_screws](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/02_Motor_access_hatch_10_screws.stl) · PETG | 1 |
-| [Upper_cover_R9](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Upper_cover_R9.stl) · PLA | 1 |
-| [Upper_Cover_R10_Rear](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Upper_Cover_R10_Rear.stl) · PLA | 1 |
-| [Upper_Cover_R10_Lidar_Extension](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Upper_Cover_R10_Lidar_Extension.stl) · PLA | 1 |
+| [02 Motor access hatch 10 screws](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/02_Motor_access_hatch_10_screws.stl) · PETG | 1 |
+| [One-piece upper cover](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Upper_cover_R9.stl) · PLA · Cover One Piece | 1 |
+| [14 Bin 20x10x2 magnet pockets](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/14_Bin_20x10x2_magnet_pockets.stl) · PLA | 1 |
+| [Split cover · rear section](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Upper_Cover_R10_Rear.stl) · PLA · Cover Split | 1 |
+| [Split cover · LiDAR extension](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Upper_Cover_R10_Lidar_Extension.stl) · PLA · Cover Split | 1 |
 | Magnet, 20 x10 x2 mm | 4 |
 | Small two-part epoxy adhesive kit, two tubes (resin + hardener), for the magnets and split cover | 1 kit |
 | M3 × 10 countersunk 90-degree screw, head diameter 6.4 mm maximum | 10 |

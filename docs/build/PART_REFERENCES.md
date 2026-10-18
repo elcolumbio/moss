@@ -26,77 +26,21 @@ Collar sizes are taken from the CAD envelopes. LK codes identify the dimensions 
 
 ## Matching STL files
 
-### SP01 — Road wheel / inner
+Download each shared file once and print the quantity shown. Left/right and axle-position names in the original archive are aliases, not extra parts.
 
-- [Left_Spacer_road_wheel_-70_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_-70_inner_ID01_R24.stl)
-- [Left_Spacer_road_wheel_0_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_0_inner_ID01_R24.stl)
-- [Left_Spacer_road_wheel_70_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_70_inner_ID01_R24.stl)
-- [Right_Spacer_road_wheel_-70_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_-70_inner_ID01_R24.stl)
-- [Right_Spacer_road_wheel_0_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_0_inner_ID01_R24.stl)
-- [Right_Spacer_road_wheel_70_inner_ID01_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_70_inner_ID01_R24.stl)
+| Ref | Shared STL | Print quantity |
+|---|---|---:|
+| SP01 | [SP01 · Road wheel inner spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP01_Road_Wheel_Inner_Spacer.stl) | 6 |
+| SP02 | [SP02 · Road wheel outer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP02_Road_Wheel_Outer_Spacer.stl) | 6 |
+| SP03 | [SP03 · Drive motor side spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP03_Drive_Inner_Spacer.stl) | 2 |
+| SP04 | [SP04 · Drive outer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP04_Drive_Outer_Spacer.stl) | 2 |
+| SP05 | [SP05 · Idler inner spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP05_Idler_Inner_Spacer.stl) | 2 |
+| SP06 | [SP06 · Idler outer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP06_Idler_Outer_Spacer.stl) | 2 |
+| SP07 | [SP07 · Idler inner retainer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP07_Idler_Inner_Retainer_Spacer.stl) | 2 |
+| SP08 | [SP08 · Idler outer retainer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP08_Idler_Outer_Retainer_Spacer.stl) | 2 |
+| SP09 | [SP09 · Road wheel centre spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP09_Road_Wheel_Centre_Spacer.stl) | 6 |
+| SP10 | [SP10 · Idler centre spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP10_Idler_Centre_Spacer.stl) | 2 |
+| SP11 | [SP11 · Drive bearing to collar spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP11_Drive_Bearing_To_Collar_Spacer.stl) | 2 |
+| SP12 | [SP12 · Track frame cross-member spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP12_Frame_Cross_Member_Spacer.stl) | 4 |
 
-### SP02 — Road wheel / outer
-
-- [Left_Spacer_road_wheel_-70_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_-70_outer_ID02_R24.stl)
-- [Left_Spacer_road_wheel_0_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_0_outer_ID02_R24.stl)
-- [Left_Spacer_road_wheel_70_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_70_outer_ID02_R24.stl)
-- [Right_Spacer_road_wheel_-70_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_-70_outer_ID02_R24.stl)
-- [Right_Spacer_road_wheel_0_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_0_outer_ID02_R24.stl)
-- [Right_Spacer_road_wheel_70_outer_ID02_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_70_outer_ID02_R24.stl)
-
-### SP03 — Drive / motor side
-
-- [Left_Spacer_drive_inner_ID03_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_drive_inner_ID03_R24.stl)
-- [Right_Spacer_drive_inner_ID03_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_drive_inner_ID03_R24.stl)
-
-### SP04 — Drive / outer
-
-- [Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24.stl)
-- [Right_Spacer_drive_outer_HEX12_L12.6_ID04_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_drive_outer_HEX12_L12.6_ID04_R24.stl)
-
-### SP05 — Idler / inner
-
-- [Left_Spacer_tensioner_inner_ID05_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_tensioner_inner_ID05_R24.stl)
-- [Right_Spacer_tensioner_inner_ID05_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_tensioner_inner_ID05_R24.stl)
-
-### SP06 — Idler / outer
-
-- [Left_Spacer_tensioner_outer_ID06_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_tensioner_outer_ID06_R24.stl)
-- [Right_Spacer_tensioner_outer_ID06_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_tensioner_outer_ID06_R24.stl)
-
-### SP07 — Idler / inner retainer
-
-- [Left_Spacer_tensioner_retainer_inner_ID07_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_tensioner_retainer_inner_ID07_R24.stl)
-- [Right_Spacer_tensioner_retainer_inner_ID07_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_tensioner_retainer_inner_ID07_R24.stl)
-
-### SP08 — Idler / outer retainer
-
-- [Left_Spacer_tensioner_retainer_outer_ID08_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_tensioner_retainer_outer_ID08_R24.stl)
-- [Right_Spacer_tensioner_retainer_outer_ID08_R24](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_tensioner_retainer_outer_ID08_R24.stl)
-
-### SP09 — Road wheel / centre
-
-- [Left_Spacer_road_wheel_-70_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_-70_center.stl)
-- [Left_Spacer_road_wheel_0_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_0_center.stl)
-- [Left_Spacer_road_wheel_70_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_road_wheel_70_center.stl)
-- [Right_Spacer_road_wheel_-70_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_-70_center.stl)
-- [Right_Spacer_road_wheel_0_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_0_center.stl)
-- [Right_Spacer_road_wheel_70_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_road_wheel_70_center.stl)
-
-### SP10 — Idler / centre
-
-- [Left_Spacer_tensioner_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_tensioner_center.stl)
-- [Right_Spacer_tensioner_center](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_tensioner_center.stl)
-
-### SP11 — Drive / bearing to collar
-
-- [Left_Drive_bearing_to_collar_spacer_R12_C1](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Drive_bearing_to_collar_spacer_R12_C1.stl)
-- [Right_Drive_bearing_to_collar_spacer_R12_C1](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Drive_bearing_to_collar_spacer_R12_C1.stl)
-
-### SP12 — Track frame / cross-member
-
-- [Left_Spacer_cross_member_-40](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_cross_member_-40.stl)
-- [Left_Spacer_cross_member_40](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Spacer_cross_member_40.stl)
-- [Right_Spacer_cross_member_-40](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_cross_member_-40.stl)
-- [Right_Spacer_cross_member_40](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Spacer_cross_member_40.stl)
-
+[Original archive filename mapping](print_aliases.json).

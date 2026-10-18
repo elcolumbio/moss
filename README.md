@@ -40,6 +40,8 @@ I pick up litter by hand on my walks. MOSS is the robot I want next to me doing 
 
 ## News
 
+- 18 October 2026: [Print catalogue](https://www.showrobotics.ai/moss/build/#print) consolidated: identical parts share one STL and the total print quantity. Jetson retaining tabs [JT01](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_1_R92.stl) and [JT02](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_2_R92.stl) are available separately; the original archive is unchanged.
+
 - 16 October 2026: **V0.6 / R92 is available.** [Build guide](https://www.showrobotics.ai/moss/build/), [CAD & STL package](https://github.com/metrox-eth/moss/releases/tag/v0.6-r92) and [BOM](BOM.md). One-piece and two-piece hull/cover options, modular computer and camera carriers, and short assembly videos.
 
 - 15 October 2026: [MOSS Core V1D routed PCB draft](hardware/electronics/moss-core-v1d/): integrated audio and switched motor/servo power, published for review. Untested and not approved for fabrication. [V1C critical erratum](hardware/electronics/moss-core-v1d/V1C_CRITICAL_ERRATA.txt): do not fabricate V1C.

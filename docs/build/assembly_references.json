@@ -1,5 +1,5 @@
 {
-  "note": "Guide identifiers, not manufacturer part numbers. SP01\u2013SP08 correspond to the existing dot IDs; SP09\u2013SP12 are guide-only codes and are not engraved. Collar dimensions describe the current CAD envelopes; compare the purchased parts before ordering.",
+  "note": "Guide identifiers, not manufacturer part numbers. SP01–SP08 correspond to the existing dot IDs; SP09–SP12 are guide-only codes and are not engraved. Collar dimensions describe the current CAD envelopes; compare the purchased parts before ordering.",
   "references": [
     {
       "ref": "SP01",
@@ -17,6 +17,12 @@
       "quantity": 6,
       "kind": "printed",
       "files": [
+        {
+          "part_id": "SP01_Road_Wheel_Inner_Spacer",
+          "file": "STL/Common/SP01_Road_Wheel_Inner_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
         {
           "part_id": "Left_Spacer_road_wheel_-70_inner_ID01_R24",
           "file": "../release/STL/Common/Left_Spacer_road_wheel_-70_inner_ID01_R24.stl"
@@ -63,6 +69,12 @@
       "quantity": 6,
       "kind": "printed",
       "files": [
+        {
+          "part_id": "SP02_Road_Wheel_Outer_Spacer",
+          "file": "STL/Common/SP02_Road_Wheel_Outer_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
         {
           "part_id": "Left_Spacer_road_wheel_-70_outer_ID02_R24",
           "file": "../release/STL/Common/Left_Spacer_road_wheel_-70_outer_ID02_R24.stl"
@@ -114,6 +126,12 @@
       "kind": "printed",
       "files": [
         {
+          "part_id": "SP03_Drive_Inner_Spacer",
+          "file": "STL/Common/SP03_Drive_Inner_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
+        {
           "part_id": "Left_Spacer_drive_inner_ID03_R24",
           "file": "../release/STL/Common/Left_Spacer_drive_inner_ID03_R24.stl"
         },
@@ -151,6 +169,12 @@
       "quantity": 2,
       "kind": "printed",
       "files": [
+        {
+          "part_id": "SP04_Drive_Outer_Spacer",
+          "file": "STL/Common/SP04_Drive_Outer_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
         {
           "part_id": "Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24",
           "file": "../release/STL/Common/Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24.stl"
@@ -193,6 +217,12 @@
       "quantity": 2,
       "kind": "printed",
       "files": [
+        {
+          "part_id": "SP05_Idler_Inner_Spacer",
+          "file": "STL/Common/SP05_Idler_Inner_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
         {
           "part_id": "Left_Spacer_tensioner_inner_ID05_R24",
           "file": "../release/STL/Common/Left_Spacer_tensioner_inner_ID05_R24.stl"
@@ -239,6 +269,12 @@
       "quantity": 2,
       "kind": "printed",
       "files": [
+        {
+          "part_id": "SP06_Idler_Outer_Spacer",
+          "file": "STL/Common/SP06_Idler_Outer_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
         {
           "part_id": "Left_Spacer_tensioner_outer_ID06_R24",
           "file": "../release/STL/Common/Left_Spacer_tensioner_outer_ID06_R24.stl"
@@ -289,6 +325,12 @@
       "quantity": 2,
       "kind": "printed",
       "files": [
+        {
+          "part_id": "SP07_Idler_Inner_Retainer_Spacer",
+          "file": "STL/Common/SP07_Idler_Inner_Retainer_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
         {
           "part_id": "Left_Spacer_tensioner_retainer_inner_ID07_R24",
           "file": "../release/STL/Common/Left_Spacer_tensioner_retainer_inner_ID07_R24.stl"
@@ -344,6 +386,12 @@
       "kind": "printed",
       "files": [
         {
+          "part_id": "SP08_Idler_Outer_Retainer_Spacer",
+          "file": "STL/Common/SP08_Idler_Outer_Retainer_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
+        {
           "part_id": "Left_Spacer_tensioner_retainer_outer_ID08_R24",
           "file": "../release/STL/Common/Left_Spacer_tensioner_retainer_outer_ID08_R24.stl"
         },
@@ -363,6 +411,12 @@
       "quantity": 6,
       "kind": "printed",
       "files": [
+        {
+          "part_id": "SP09_Road_Wheel_Centre_Spacer",
+          "file": "STL/Common/SP09_Road_Wheel_Centre_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
         {
           "part_id": "Left_Spacer_road_wheel_-70_center",
           "file": "../release/STL/Common/Left_Spacer_road_wheel_-70_center.stl"
@@ -400,6 +454,12 @@
       "kind": "printed",
       "files": [
         {
+          "part_id": "SP10_Idler_Centre_Spacer",
+          "file": "STL/Common/SP10_Idler_Centre_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
+        {
           "part_id": "Left_Spacer_tensioner_center",
           "file": "../release/STL/Common/Left_Spacer_tensioner_center.stl"
         },
@@ -420,6 +480,12 @@
       "kind": "printed",
       "files": [
         {
+          "part_id": "SP11_Drive_Bearing_To_Collar_Spacer",
+          "file": "STL/Common/SP11_Drive_Bearing_To_Collar_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
+        {
           "part_id": "Left_Drive_bearing_to_collar_spacer_R12_C1",
           "file": "../release/STL/Common/Left_Drive_bearing_to_collar_spacer_R12_C1.stl"
         },
@@ -439,6 +505,12 @@
       "quantity": 4,
       "kind": "printed",
       "files": [
+        {
+          "part_id": "SP12_Frame_Cross_Member_Spacer",
+          "file": "STL/Common/SP12_Frame_Cross_Member_Spacer.stl"
+        }
+      ],
+      "legacy_files": [
         {
           "part_id": "Left_Spacer_cross_member_-40",
           "file": "../release/STL/Common/Left_Spacer_cross_member_-40.stl"

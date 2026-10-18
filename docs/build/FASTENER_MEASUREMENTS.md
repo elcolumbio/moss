@@ -19,4 +19,4 @@ Use the HAT's supplied mounting hardware. No separate HAT screw purchase is adde
 
 ## Jetson retaining tabs
 
-The retaining-tab STL files are not included in this package. The two screws listed above are for tabs that are 2.4 mm thick.
+Print one JT01 and one JT02 in PETG. Download the [first tab](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_1_R92.stl) and [second tab](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_2_R92.stl) separately from the unchanged original archive. Both tabs are 2.4 mm thick and use the two screws listed above.

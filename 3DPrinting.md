@@ -1,6 +1,10 @@
 # 3D printing
 
-Choose the hull, upper cover, computer carrier and camera option. With a one-piece hull and cover, the catalogue contains **106 pieces for RealSense or 107 for Gemini**. Each split option adds one piece, for a maximum of **109 pieces**. The download includes 113 part STL files plus two optional hull-joint fit coupons.
+Choose one hull, one upper cover, one computer carrier and one camera option. Print each shared STL in the **quantity shown**, rather than downloading a separate copy for every wheel or axle position. The catalogue has **74 distinct STL files** across all options.
+
+With a one-piece hull and cover: **106 pieces for Pi + RealSense, 107 for Pi + Gemini, 108 for Jetson + RealSense, or 109 for Jetson + Gemini**. Each split option adds one piece.
+
+**Jetson builders:** download [JT01](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_1_R92.stl) and [JT02](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_2_R92.stl) separately and print one of each in PETG. They are different retaining tabs. The original 16 October archive is unchanged and does not include them.
 
 | Material | Parts |
 |---|---|
@@ -10,7 +14,7 @@ Choose the hull, upper cover, computer carrier and camera option. With a one-pie
 
 Use the standard/default profile and **15% gyroid infill**. For the tracks, use **15% infill with the standard profile pattern, not gyroid**.
 
-The STL files are oriented for printing. The [visual catalogue](https://www.showrobotics.ai/moss/build/#print) shows the material and quantity for every part; the [CSV](hardware/mechanical/r92/data/printed_parts.csv) gives the exact filenames.
+The STL files are oriented for printing. The [visual catalogue](https://www.showrobotics.ai/moss/build/#print) shows the material and quantity for every part; the [CSV](docs/build/printed_parts.csv) gives the exact filenames.
 
 ## Choose the camera option
 

@@ -49,3 +49,11 @@ The native archives passed every internal archive CRC check. The STEP contains a
 - Current R92 hull split into two printable halves; native Fusion sources and optional local fit coupons included.
 
 The [two-piece upper cover](SPLIT_COVER.md) uses top-entry dovetails. The [outer track frame guide](OUTER_FRAME_PRINTING.md) shows the front-right to rear-left placement.
+
+## 18 October catalogue supplement
+
+Identical printed parts now share one reference and one STL download, with the total quantity required for a rover. The catalogue contains 74 distinct files across all alternatives. The original archive and its files remain unchanged; [filename aliases](print_aliases.json) map its old left/right and axle-position names to the shared references.
+
+Jetson builds also need **one JT01 and one JT02 retaining tab**, printed in PETG. Download them separately from the release. Both were exported from the complete R92 CAD; only their position on the print bed changed. They are included in the source catalogue for the next archive.
+
+The current total is 106–111 printed pieces, depending on computer, camera, hull and cover options. No printable shape was remeshed for this catalogue update.

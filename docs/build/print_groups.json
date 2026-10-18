@@ -24,20 +24,10 @@
     "part_ids": [
       "Left_inner_track_frame_R12_C2",
       "Right_inner_track_frame_R12_C2",
-      "Left_Spacer_cross_member_-40",
-      "Left_Spacer_cross_member_40",
-      "Right_Spacer_cross_member_-40",
-      "Right_Spacer_cross_member_40",
-      "Left_Spacer_road_wheel_-70_inner_ID01_R24",
-      "Left_Spacer_road_wheel_0_inner_ID01_R24",
-      "Left_Spacer_road_wheel_70_inner_ID01_R24",
-      "Right_Spacer_road_wheel_-70_inner_ID01_R24",
-      "Right_Spacer_road_wheel_0_inner_ID01_R24",
-      "Right_Spacer_road_wheel_70_inner_ID01_R24",
-      "Left_Spacer_tensioner_inner_ID05_R24",
-      "Right_Spacer_tensioner_inner_ID05_R24",
-      "Left_Spacer_drive_inner_ID03_R24",
-      "Right_Spacer_drive_inner_ID03_R24"
+      "SP12_Frame_Cross_Member_Spacer",
+      "SP01_Road_Wheel_Inner_Spacer",
+      "SP05_Idler_Inner_Spacer",
+      "SP03_Drive_Inner_Spacer"
     ]
   },
   {
@@ -47,8 +37,7 @@
       "02_Motor_access_hatch_10_screws",
       "Motor_Mount_Left_R90",
       "Motor_Mount_Right_R90",
-      "05_Left_bearing_retainer",
-      "06_Right_bearing_retainer",
+      "Motor_Bearing_Inner_Retainer",
       "Lidar_Base_R84",
       "Lidar_dovetail_carriage_R21"
     ]
@@ -57,16 +46,9 @@
     "id": "05",
     "title": "Outer spacers & covers",
     "part_ids": [
-      "Left_Spacer_road_wheel_-70_outer_ID02_R24",
-      "Left_Spacer_road_wheel_0_outer_ID02_R24",
-      "Left_Spacer_road_wheel_70_outer_ID02_R24",
-      "Right_Spacer_road_wheel_-70_outer_ID02_R24",
-      "Right_Spacer_road_wheel_0_outer_ID02_R24",
-      "Right_Spacer_road_wheel_70_outer_ID02_R24",
-      "Left_Spacer_tensioner_outer_ID06_R24",
-      "Right_Spacer_tensioner_outer_ID06_R24",
-      "Left_Spacer_drive_outer_HEX12_L12.6_ID04_R24",
-      "Right_Spacer_drive_outer_HEX12_L12.6_ID04_R24",
+      "SP02_Road_Wheel_Outer_Spacer",
+      "SP06_Idler_Outer_Spacer",
+      "SP04_Drive_Outer_Spacer",
       "Left_Cover_tensioner_outer",
       "Right_Cover_tensioner_outer"
     ]
@@ -89,18 +71,8 @@
     "id": "07",
     "title": "Road wheels",
     "part_ids": [
-      "Left_625_road_wheel_-70_inner_half_R13",
-      "Left_625_road_wheel_-70_outer_half_R13",
-      "Left_625_road_wheel_70_inner_half_R13",
-      "Left_625_road_wheel_70_outer_half_R13",
-      "Right_625_road_wheel_-70_inner_half_R13",
-      "Right_625_road_wheel_-70_outer_half_R13",
-      "Right_625_road_wheel_70_inner_half_R13",
-      "Right_625_road_wheel_70_outer_half_R13",
-      "Left_625_road_wheel_0_inner_half_R13",
-      "Left_625_road_wheel_0_outer_half_R13",
-      "Right_625_road_wheel_0_inner_half_R13",
-      "Right_625_road_wheel_0_outer_half_R13"
+      "Road_Wheel_Inner_Half_R13",
+      "Road_Wheel_Outer_Half_R13"
     ]
   },
   {
@@ -116,26 +88,14 @@
     "id": "09",
     "title": "Slides, retainers & spacers",
     "part_ids": [
-      "Left_Slider_outer",
-      "Left_Cover_motor_bearing",
-      "Right_Slider_outer",
-      "Right_Cover_motor_bearing",
-      "Left_inner_tensioner_slider",
-      "Right_inner_tensioner_slider",
-      "Left_Spacer_tensioner_retainer_inner_ID07_R24",
-      "Left_Spacer_tensioner_retainer_outer_ID08_R24",
-      "Left_Spacer_tensioner_center",
-      "Right_Spacer_tensioner_retainer_inner_ID07_R24",
-      "Right_Spacer_tensioner_retainer_outer_ID08_R24",
-      "Right_Spacer_tensioner_center",
-      "Left_Spacer_road_wheel_-70_center",
-      "Left_Spacer_road_wheel_0_center",
-      "Left_Spacer_road_wheel_70_center",
-      "Right_Spacer_road_wheel_-70_center",
-      "Right_Spacer_road_wheel_0_center",
-      "Right_Spacer_road_wheel_70_center",
-      "Left_Drive_bearing_to_collar_spacer_R12_C1",
-      "Right_Drive_bearing_to_collar_spacer_R12_C1"
+      "Tensioner_Slider_A",
+      "Motor_Bearing_Outer_Cover",
+      "Tensioner_Slider_B",
+      "SP07_Idler_Inner_Retainer_Spacer",
+      "SP08_Idler_Outer_Retainer_Spacer",
+      "SP10_Idler_Centre_Spacer",
+      "SP09_Road_Wheel_Centre_Spacer",
+      "SP11_Drive_Bearing_To_Collar_Spacer"
     ]
   },
   {
@@ -197,23 +157,18 @@
   },
   {
     "id": "16",
-    "title": "Left track",
+    "title": "Tracks",
     "part_ids": [
-      "Left_Track_R78_70_Teeth"
-    ]
-  },
-  {
-    "id": "17",
-    "title": "Right track",
-    "part_ids": [
-      "Right_Track_R78_70_Teeth"
+      "Track_R78_70_Teeth"
     ]
   },
   {
     "id": "19",
     "title": "Jetson carrier",
     "part_ids": [
-      "Jetson_Adapter_R87"
+      "Jetson_Adapter_R87",
+      "Jetson_Retaining_Tab_1_R92",
+      "Jetson_Retaining_Tab_2_R92"
     ]
   },
   {
