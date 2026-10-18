@@ -23,5 +23,7 @@
       "url": "https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_2_R92.step",
       "sha256": "ad63baefe6fc481b9a2733b37826d66e1b66121738d3b17047dc0856851bbde0"
     }
-  ]
+  ],
+  "fulfilled_by": "MOSS_R92_Mechanical_20261018.zip",
+  "status": "Included in the 18 October package"
 }

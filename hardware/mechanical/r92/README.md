@@ -1,30 +1,27 @@
-# MOSS V0.6 / R92 mechanical package
+# MOSS R92 mechanical package
 
-**[Download the complete CAD & STL package](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_R92_Mechanical_20261016.zip)** · [Build guide](https://www.showrobotics.ai/moss/build/) · [BOM](../../../BOM.md) · [Release and individual files](https://github.com/metrox-eth/moss/releases/tag/v0.6-r92)
+**[Download CAD, STL and both 3MF projects](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_R92_Mechanical_20261018.zip)** · [Build guide](https://www.showrobotics.ai/moss/build/) · [BOM](../../../BOM.md)
 
-The package includes 113 part STL files plus two optional hull-joint fit coupons, editable Fusion source, STEP solid geometry, part previews and seven silent assembly clips. Choose the one-piece or two-piece hull and cover, one computer carrier, and one camera option. The updated catalogue uses 106–111 pieces, including the separately supplied Jetson tabs.
+The 18 October package contains **74 distinct part STLs**, two optional hull-joint fit coupons, editable Fusion sources, STEP geometry, part previews and assembly clips. Both Jetson retaining tabs (**JT01 and JT02**) and their STEP sources are included.
 
-- [One-piece printable Fusion source](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_Printable_Source_R92.f3d)
-- [STEP solids](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_Printable_BRep_Parts_R92.step)
-- [Two-piece hull Fusion assembly](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_Hull_R92_Split_Assembly.f3d)
-- [Two-piece upper-cover Fusion assembly](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_Upper_Cover_R10_Split_Assembly.f3d)
-- [Parts CSV](../../../docs/build/printed_parts.csv)
+Identical spacers and road-wheel halves share one STL, with the total quantity in the [print list](../../../docs/build/printed_parts.csv). Left/right parts with different geometry remain separate. The archive includes [legacy filename aliases](../../../docs/build/print_aliases.json).
 
-The guide's catalogue links directly to each STL. The ZIP also contains attribution, licence notices, geometry checks and per-file checksums. Manufacturer electronics/camera reference models and the complete internal integration assembly are excluded.
+## Ready-to-print 3MF plates
 
-**Jetson supplement:** print one [JT01](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_1_R92.stl) and one [JT02](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_2_R92.stl) in PETG. These files are separate from the unchanged original archive. See [fastener measurements](../../../docs/build/FASTENER_MEASUREMENTS.md#jetson-retaining-tabs).
+Download **one** project and open it in Bambu Studio. The quantities, part orientations, materials and automatic tree supports are already set. Choose the matching printer and your filament before slicing.
 
-[Printing instructions](../../../3DPrinting.md) · [Written assembly cards](../../../docs/build/ASSEMBLY.md)
+| Project | Hull and cover | Common plates | Computer: choose one | Camera: choose one |
+|---|---|---|---|---|
+| [H2S — 21 plates](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_V06_R92_H2S_Print_Plates.3mf) | One piece each | 1–17 | 18 Jetson **or** 19 Pi | 20 Gemini **or** 21 RealSense |
+| [P1 / P2 — 24 plates](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_V06_R92_256mm_Split_Print_Plates.3mf) | Split hull and split cover | 1–20 | 21 Jetson **or** 22 Pi | 23 Gemini **or** 24 RealSense |
 
-## Next archive
+The compact profile is published for P1S, P1P and P2S. Both projects include the two Jetson retaining tabs on the Jetson plate. The copies of shared spacers and wheels are already placed; do not multiply them again. Each plate uses one material.
 
-The published 16 October 2026 archive is frozen. Do not replace it for the catalogue correction.
+Standard 0.20 mm settings, 0.4 mm nozzle, **15% gyroid** and **automatic tree supports**. Tracks use TPU with **15% grid**. Keep the supplied orientations. For the split hull and cover, follow the epoxy and fastening steps in the assembly guide.
 
-For the next archive:
+[See every plate and its contents](https://www.showrobotics.ai/moss/build/print-plates.html).
 
-1. Use the current [print catalogue](../../../docs/build/printed_parts.json); include one file per shared reference and keep its quantity.
-2. Include both Jetson retaining tabs (JT01 and JT02), their STEP sources, and the checksummed supplements in [next_archive.json](next_archive.json).
-3. Include the two optional hull fit coupons and [legacy filename aliases](../../../docs/build/print_aliases.json).
-4. Use a new archive filename. Verify that every catalogue file and every required supplement is included.
 
-The current [CSV](../../../docs/build/printed_parts.csv) is the builder-facing print list. Quantities are physical copies, not a count of distinct files.
+The original 16 October archive remains available for reference. Use the 18 October package for the current grouped files and prepared plates. CAD geometry is unchanged by this packaging update.
+
+Hardware: CERN-OHL-S-2.0. Upstream SO-101 and NormaCore notices are included. Documentation and media: CC BY 4.0.
