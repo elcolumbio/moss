@@ -5,7 +5,7 @@ Cleaner streets, one maker at a time.
 > **MOSS kits are coming soon on [TNKR](https://tnkr.ai/).**
 > Skip printing and sourcing the parts yourself. **[Join the waitlist →](https://ak4khuvxkya.typeform.com/to/qaKmXNME)** to be notified when kits are available.
 
-**[Build guide](https://www.showrobotics.ai/moss/build/) · [Print parts](https://www.showrobotics.ai/moss/build/#print) · [Bill of materials](BOM.md) · [Download CAD & STL](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_R92_Mechanical_20261016.zip) · [Software setup](Software.md)**
+**[Build guide](https://www.showrobotics.ai/moss/build/) · [Print parts](https://www.showrobotics.ai/moss/build/#print) · [Bill of materials](BOM.md) · [Download CAD, STL & 3MF](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_R92_Mechanical_20261018.zip) · [Software setup](Software.md)**
 
 MOSS is a small litter-picking rover you print and build yourself: a tracked base, a bin on top, an arm derived from the SO-101 with a parallel gripper. It is open hardware, built in public, and meant to be built by many hands.
 
@@ -40,7 +40,7 @@ I pick up litter by hand on my walks. MOSS is the robot I want next to me doing 
 
 ## News
 
-- 18 October 2026: [Print catalogue](https://www.showrobotics.ai/moss/build/#print) consolidated: identical parts share one STL and the total print quantity. Jetson retaining tabs [JT01](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_1_R92.stl) and [JT02](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_2_R92.stl) are available separately; the original archive is unchanged.
+- 18 October 2026: **Ready-to-print plates are available.** [H2S: one-piece hull and cover](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_V06_R92_H2S_Print_Plates.3mf) or [P1 / P2: split hull and cover](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_V06_R92_256mm_Split_Print_Plates.3mf). The [updated package](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_R92_Mechanical_20261018.zip) includes both Jetson retaining tabs, grouped STLs with quantities, and both 3MF projects. [Choose your plates](https://www.showrobotics.ai/moss/build/print-plates.html).
 
 - 16 October 2026: **V0.6 / R92 is available.** [Build guide](https://www.showrobotics.ai/moss/build/), [CAD & STL package](https://github.com/metrox-eth/moss/releases/tag/v0.6-r92) and [BOM](BOM.md). One-piece and two-piece hull/cover options, modular computer and camera carriers, and short assembly videos.
 

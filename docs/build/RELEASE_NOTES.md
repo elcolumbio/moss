@@ -25,8 +25,8 @@ This is the matched current print set prepared on 16 October 2026.
 
 ## What is included
 
-- 113 part STL files covering hull, computer and camera alternatives, plus two optional split-joint coupons.
-- 106–109 catalogue pieces depending on the hull, cover and camera options.
+- 74 distinct part STL files covering hull, computer and camera alternatives, plus two optional split-joint coupons.
+- 106–111 printed pieces depending on the computer, camera, hull and cover options.
 -Editable Fusion source with 99 solid parts,8 arm mesh parts and 2 track mesh masters.
 -STEP with 99 solid parts:96 manifold solids and 3 solids with internal voids.
 - 113 current part previews, an overview image, a per-part material list and standard print settings.
@@ -50,10 +50,13 @@ The native archives passed every internal archive CRC check. The STEP contains a
 
 The [two-piece upper cover](SPLIT_COVER.md) uses top-entry dovetails. The [outer track frame guide](OUTER_FRAME_PRINTING.md) shows the front-right to rear-left placement.
 
-## 18 October catalogue supplement
+## 18 October print package
 
-Identical printed parts now share one reference and one STL download, with the total quantity required for a rover. The catalogue contains 74 distinct files across all alternatives. The original archive and its files remain unchanged; [filename aliases](print_aliases.json) map its old left/right and axle-position names to the shared references.
+- 74 distinct part STLs with total quantities, plus two optional hull-joint fit coupons.
+- Both Jetson retaining tabs, JT01 and JT02, with their STEP sources.
+- H2S: 21 prepared plates, one-piece hull and cover.
+- P1 / P2: 24 prepared plates, split hull and cover. The two pieces on cover plate 13 have been spaced apart to clear their supports.
+- Standard 0.20 mm settings, 15% gyroid and automatic tree supports; TPU tracks use 15% grid.
+- Choose one computer plate and one camera plate. No part geometry was changed or remeshed for this packaging update.
 
-Jetson builds also need **one JT01 and one JT02 retaining tab**, printed in PETG. Download them separately from the release. Both were exported from the complete R92 CAD; only their position on the print bed changed. They are included in the source catalogue for the next archive.
-
-The current total is 106–111 printed pieces, depending on computer, camera, hull and cover options. No printable shape was remeshed for this catalogue update.
+See [the plate guide](PRINT_PLATES.md) for the exact plate numbers. The original 16 October archive remains available; use the new 18 October archive for the complete current package.

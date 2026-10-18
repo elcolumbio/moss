@@ -4,4 +4,6 @@
 
 Each step lists the printed parts, components and fasteners to prepare. Seven short clips show part identification, exploded assemblies and road-wheel fastening.
 
-[Grouped print list and quantities](printed_parts.csv) · [Original filename aliases](print_aliases.json). Jetson builds need the two retaining tabs listed in the catalogue; download them separately from the original archive.
+[Grouped print list and quantities](printed_parts.csv) · [Original filename aliases](print_aliases.json). The current archive and both 3MF projects include the two Jetson retaining tabs.
+
+[Ready-to-print 3MF projects](PRINT_PLATES.md) · [Complete package](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_R92_Mechanical_20261018.zip).
