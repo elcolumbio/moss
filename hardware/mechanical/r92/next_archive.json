@@ -1,0 +1,27 @@
+{
+  "base_archive": "MOSS_R92_Mechanical_20261016.zip",
+  "base_archive_policy": "Keep the published archive unchanged. Build the next archive under a new filename.",
+  "catalogue": "../../../docs/build/printed_parts.json",
+  "required_supplements": [
+    {
+      "filename": "Jetson_Retaining_Tab_1_R92.stl",
+      "url": "https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_1_R92.stl",
+      "sha256": "e36a330e6820215b9374ea752bd35d50f87f58c429b1b4c0ffa8f139b930051f"
+    },
+    {
+      "filename": "Jetson_Retaining_Tab_1_R92.step",
+      "url": "https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_1_R92.step",
+      "sha256": "898ac05089c00fddab52a6902fbc5a3cc03b415ff1e33552a9749b20039dc4c5"
+    },
+    {
+      "filename": "Jetson_Retaining_Tab_2_R92.stl",
+      "url": "https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_2_R92.stl",
+      "sha256": "bbfb80654acb04eb1c8531a5f5bb95e0de4939ac47fdcb70a088ef5ee05566ef"
+    },
+    {
+      "filename": "Jetson_Retaining_Tab_2_R92.step",
+      "url": "https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Jetson_Retaining_Tab_2_R92.step",
+      "sha256": "ad63baefe6fc481b9a2733b37826d66e1b66121738d3b17047dc0856851bbde0"
+    }
+  ]
+}
