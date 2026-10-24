@@ -49,6 +49,29 @@ uv pip install --python .venv/bin/python --index-url https://download.pytorch.or
 uv pip install --python .venv/bin/python ultralytics lap    # lap: the tracker ultralytics would otherwise fetch on first use
 ```
 
+### Measure the detector on the floor before trusting it
+
+`tools/moss_litter_probe.py` runs the nose camera and the detector alone, stack
+down, and writes one CSV line per detection with the object's position in
+`base_link` (x forward, y left, z up, the lidar's floor projection: the frame
+of `MOSS_PICK_XY_M`), then a summary: the share of frames that saw the litter,
+the median position and its spread per class, the detector's time per frame,
+and, with `--expect X Y`, how far the median is from where the tape measure
+put the object.
+
+```sh
+tools/moss-fly.sh stop                                   # the camera must be free
+tools/moss_litter_probe.py --seconds 10 --expect 1.00 0.00   # a can 1.00 m ahead of the lidar axis, on it
+tools/moss_litter_probe.py --fake --frames 20            # no camera, no torch: the chain on a synthetic frame
+```
+
+Three or four pieces of litter at measured places, ten seconds each, give the
+two numbers this chain needs before any training: the hit rate on our floor
+and the position error at the approach distance. The geometry is the one the
+stack uses: `MOSS_CAMERA_XYZ_M` and `MOSS_CAMERA_PITCH_DEG` from the robot
+profile (`--camera-xyz`, `--pitch-deg` override them for a test). The CSV
+lands in `<MOSS_STATE_DIR>/litter_probe/`.
+
 ## The mission
 
 `moss_dimos/mission.py`. The decision (`MissionLogic`) is pure and the
