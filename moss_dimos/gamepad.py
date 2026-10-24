@@ -11,13 +11,16 @@ Mapping (standard dual-stick):
 The tracked base ignores vy (moss_adapter); it is still published, so the
 same module drives a holonomic base unchanged.
 
-Publishes ONLY while the deadman (R1) is held, plus a brake of zeros right
-after it is released - 0.5 s by default, up to 1.0 s with MOSS_BRAKE_S - then
+Publishes ONLY while a stick is out of its deadzone - there is no deadman
+by default: a small tracked rover at walking pace does not need a held button,
+and MOSS_PAD_DEADMAN=r1 (or an SDL button number) brings one back - plus a
+brake of zeros right after the sticks return to centre (or the optional
+deadman is released) - 0.5 s by default, up to 1.0 s with MOSS_BRAKE_S - then
 silence (see BRAKE_S and resolve_brake_s). A pad lying at rest owns nothing,
 so the same stack can explore on its own while the pad is plugged in.
-Pressing the deadman again ends that brake window on the spot
-(BRAKE_CANCEL_ON_DEADMAN), but only on a tick that is trusted and about to
-publish - see the worker.
+Moving a stick again (or pressing the deadman again) ends that brake window
+on the spot (BRAKE_CANCEL_ON_DEADMAN), but only on a tick that is trusted and
+about to publish - see the worker.
 
 Wiring in this package's blueprints (moss_dimos.blueprints):
     moss-gamepad, moss-nav  tele_cmd_vel is REMAPPED to cmd_vel: direct
@@ -70,21 +73,34 @@ RESCAN_PERIOD_S = 2.0         # how often we re-scan SDL for a pad
 # The pad's LAYOUT depends on how it shows up: the MOSS pad on its 2.4 GHz dongle in Android mode
 # (2563:0526) is the default; the same pad on its USB cable enumerates as an Xbox 360 pad (045e:028e,
 # kernel xpad), where R1 is button 5, the right stick X is axis 3 and the triggers are axes 2 and 5.
-# MOSS_PAD_LAYOUT=android|xinput picks a set; MOSS_PAD_DEADMAN / MOSS_PAD_AXIS_RIGHT_X / MOSS_PAD_AXIS_R2
-# override one value each; MOSS_PAD_INDEX picks the SDL joystick when several are plugged (the mute
-# dongle is usually index 0). All read once at import.
+# MOSS_PAD_LAYOUT=android|xinput picks a set; MOSS_PAD_AXIS_RIGHT_X / MOSS_PAD_AXIS_R2 override one
+# value each; MOSS_PAD_DEADMAN adds a held button (none by default: r1 = the layout's R1, or an SDL
+# button number); MOSS_PAD_INDEX picks the SDL joystick when several are plugged (the mute dongle is
+# usually index 0). All read once at import.
 PAD_LAYOUTS = {
-    "android": {"deadman": 7, "axis_right_x": 2, "axis_r2": 5},
-    "xinput": {"deadman": 5, "axis_right_x": 3, "axis_r2": 5},
+    "android": {"r1": 7, "axis_right_x": 2, "axis_r2": 5},
+    "xinput": {"r1": 5, "axis_right_x": 3, "axis_r2": 5},
 }
+DEADMAN_OFF = ("", "none", "off", "no")   # MOSS_PAD_DEADMAN values that mean: no deadman
 
 
-def pad_layout(env: Mapping[str, str] | None = None) -> dict[str, int]:
-    """The button / axis numbers in force: a named layout, then one-value overrides. Pure."""
+def pad_layout(env: Mapping[str, str] | None = None) -> dict[str, int | None]:
+    """The button / axis numbers in force: a named layout, then one-value overrides. Pure.
+    "deadman" is None by default (the sticks drive); MOSS_PAD_DEADMAN=r1 is the layout's R1,
+    an integer is that SDL button, none / off / empty is no deadman."""
     e = os.environ if env is None else env
     name = (e.get("MOSS_PAD_LAYOUT") or "android").strip().lower()
-    out = dict(PAD_LAYOUTS.get(name, PAD_LAYOUTS["android"]))
-    for key, var in (("deadman", "MOSS_PAD_DEADMAN"), ("axis_right_x", "MOSS_PAD_AXIS_RIGHT_X"), ("axis_r2", "MOSS_PAD_AXIS_R2")):
+    base = PAD_LAYOUTS.get(name, PAD_LAYOUTS["android"])
+    out: dict[str, int | None] = {"deadman": None, "axis_right_x": base["axis_right_x"], "axis_r2": base["axis_r2"]}
+    raw = (e.get("MOSS_PAD_DEADMAN") or "").strip().lower()
+    if raw == "r1":
+        out["deadman"] = base["r1"]
+    elif raw not in DEADMAN_OFF:
+        try:
+            out["deadman"] = int(raw)
+        except ValueError:
+            pass
+    for key, var in (("axis_right_x", "MOSS_PAD_AXIS_RIGHT_X"), ("axis_r2", "MOSS_PAD_AXIS_R2")):
         raw = (e.get(var) or "").strip()
         if raw:
             try:
@@ -146,7 +162,7 @@ CLAMP_ANGULAR_RADS = 0.8
 # passes its own envelope, sized to the tracks (moss_adapter.teleop_envelope).
 DEFAULT_LEVER_M = 0.50    # m of rim speed per rad/s of rotation
 DEFAULT_RIM_MS = 0.45     # max rim speed however the sticks are mixed
-DEADMAN_BUTTON = _LAYOUT["deadman"]   # R1: SDL button 7 on the 2563:0526 pad in Android mode (5 on the cable, xinput). Held = commands allowed; released = zeros, always
+DEADMAN_BUTTON = _LAYOUT["deadman"]   # None = no deadman, the sticks drive (default). MOSS_PAD_DEADMAN=r1: SDL button 7 on the 2563:0526 pad in Android mode, 5 on the cable (xinput). Held = commands allowed; released = zeros, always
 BRAKE_S = 0.5             # how long the zeros keep flowing after the deadman is
                           # released - then TOTAL SILENCE until it is held again.
                           # dimOS's MovementManager reads ANY tele_cmd_vel message,
@@ -286,6 +302,13 @@ def axes_neutral(ax0: float, ax1: float, ax2: float, deadzone: float) -> bool:
     return abs(ax0) < deadzone and abs(ax1) < deadzone and abs(ax2) < deadzone
 
 
+def sticks_active(ax0: float, ax1: float, ax2: float, deadzone: float) -> bool:
+    """True when a drive axis is out of its deadzone. Without a deadman this IS
+    the "command present" condition: the exact complement of axes_neutral, so
+    an inactive tick is a tick whose twist would have been zero anyway."""
+    return not axes_neutral(ax0, ax1, ax2, deadzone)
+
+
 def axes_to_twist(ax0: float, ax1: float, ax2: float, ax5: float,
                   cfg: TeleopConfig) -> tuple[float, float, float]:
     """Raw SDL axis values -> (vx m/s, vy m/s, wz rad/s).
@@ -405,11 +428,18 @@ class GamepadTeleop(Module):
         trusted = False            # neutral-first trust gate
         prev_vx = prev_vy = 0.0    # slew-limiter state
         brake_until = 0.0          # publish zeros until this instant, then shut up
-        prev_deadman = False       # to see the RISING edge of the deadman
+        prev_active = False        # to see the RISING edge of a command (stick out, or deadman pressed)
         waiting_logged = False
-        logger.info("gamepad brake window: %.2f s of zeros after the deadman is "
-                    "released, then silence (cancel-on-press: %s)",
-                    self.brake_s, BRAKE_CANCEL_ON_DEADMAN)
+        if DEADMAN_BUTTON is None:
+            logger.info("gamepad: no deadman - a stick out of its deadzone drives, centred sticks stop "
+                        "(MOSS_PAD_DEADMAN=r1 brings the held button back)")
+        else:
+            logger.info("gamepad: deadman = SDL button %d, held to drive", DEADMAN_BUTTON)
+        logger.info("gamepad brake window: %.2f s of zeros after the sticks return to centre%s, "
+                    "then silence (cancel-on-press: %s)",
+                    self.brake_s,
+                    "" if DEADMAN_BUTTON is None else " or the deadman is released",
+                    BRAKE_CANCEL_ON_DEADMAN)
         try:
             while not self._stop_event.is_set():
                 if pad is None:
@@ -429,13 +459,16 @@ class GamepadTeleop(Module):
                     pygame.event.pump()
                     axes = (_axis(pad, AXIS_LEFT_X), _axis(pad, AXIS_LEFT_Y),
                             _axis(pad, AXIS_RIGHT_X), _axis(pad, AXIS_R2))
-                    deadman = bool(pad.get_button(DEADMAN_BUTTON)) if pad.get_numbuttons() > DEADMAN_BUTTON else False
+                    if DEADMAN_BUTTON is None:
+                        deadman = True        # no held button required
+                    else:
+                        deadman = bool(pad.get_button(DEADMAN_BUTTON)) if pad.get_numbuttons() > DEADMAN_BUTTON else False
                     if pygame.joystick.get_count() <= self.joystick_index:
                         raise pygame.error("joystick disappeared")
                 except pygame.error as exc:
                     pad = None
                     trusted = False
-                    prev_deadman = False          # a pad that is gone holds nothing
+                    prev_active = False           # a pad that is gone holds nothing
                     # ... and it holds no RAMP either. The slew state must die
                     # with the pad: otherwise a pad that vanished for one read
                     # while driving at the ceiling comes back with 0.45 m/s of
@@ -453,8 +486,9 @@ class GamepadTeleop(Module):
                 if not trusted:
                     if axes_neutral(axes[0], axes[1], axes[2], self.cfg.deadzone):
                         trusted = True
-                        logger.info("Gamepad axes seen at neutral - commands now trusted "
-                                    "(hold the deadman button to drive)")
+                        logger.info("Gamepad axes seen at neutral - commands now trusted (%s)",
+                                    "move a stick to drive" if DEADMAN_BUTTON is None
+                                    else "hold the deadman button to drive")
                     else:
                         if time.monotonic() < brake_until:
                             self._publish(0.0, 0.0, 0.0)
@@ -477,11 +511,16 @@ class GamepadTeleop(Module):
                 # to 1 (0.011 s). BRAKE_S exists to REPEAT the stop order on a
                 # latest-only bus; the cancel may therefore only run on a tick
                 # that is itself about to publish a command - i.e. here.
-                brake_until = brake_window_after_press(brake_until, deadman,
-                                                       prev_deadman)
-                prev_deadman = deadman
-                # DEADMAN: no held button, no motion - ever.
-                if not deadman:
+                # A COMMAND IS PRESENT when the optional deadman is held (always, when there
+                # is none) AND, without a deadman, a stick is out of its deadzone: a pad lying
+                # at rest publishes nothing either way.
+                active = deadman and (DEADMAN_BUTTON is not None
+                                      or sticks_active(axes[0], axes[1], axes[2], self.cfg.deadzone))
+                brake_until = brake_window_after_press(brake_until, active,
+                                                       prev_active)
+                prev_active = active
+                # NO COMMAND (sticks centred, or the optional deadman released): no motion - ever.
+                if not active:
                     # Releasing also resets the slew state: the ramp restarts
                     # from rest, so a re-press with the sticks centred cannot
                     # replay the last driven speed.

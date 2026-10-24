@@ -16,8 +16,8 @@ costs the coordinator class and the two side effects below, nothing more.
 
 Nothing here moves the robot by itself:
   * moss-gamepad and moss-nav have no planner and no explorer: the pad drives
-    the coordinator directly (tele_cmd_vel -> cmd_vel), and only while its
-    deadman is held.
+    the coordinator directly (tele_cmd_vel -> cmd_vel), and only while a
+    stick is out of its deadzone (no deadman by default, MOSS_PAD_DEADMAN).
   * moss-explore's explorer starts only on Bool(True) on `explore_cmd`
     (tools/explore_ctl.py start, the cockpit), and the planner moves only
     toward a goal on `goal_request` / `clicked_point`. MovementManager

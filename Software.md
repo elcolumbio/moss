@@ -27,7 +27,7 @@ To reflash the QT Py, from the root of the checkout: build the images with `ardu
 | Module | Role |
 |---|---|
 | `moss_adapter.py`, `moss_mock.py` | the tracked-base adapter (twist to track percent, keepalive inside the firmware's 300 ms deadman) and a fake firmware for runs without motors |
-| `gamepad.py` | the pad: twist behind a deadman, slew-limited, sized to the base |
+| `gamepad.py` | the pad: twist from the sticks (no deadman by default), slew-limited, sized to the base |
 | `c1_serial.py`, `rplidar_c1.py` | the RPLidar C1 driver and its dimOS module |
 | `lidar_odometry.py` | the pose, from the lidar (kiss-icp) |
 | `costmap2d.py` | the 2D map the planner and the cockpit read |
@@ -72,7 +72,7 @@ MOCK=1 tools/moss-fly.sh map          # fake motor board, no motor; the lidar mu
 tools/moss-teleop.sh                  # the pad only: gates, then moss-gamepad
 ```
 
-Pad on the dimOS path: hold R1 to drive (the deadman), left stick forward and back, right stick to turn, R2 boost. Release R1 and the tracks stop.
+Pad on the dimOS path: left stick forward and back, right stick to turn, R2 boost; centre the sticks and the tracks stop. No deadman by default (`MOSS_PAD_DEADMAN=r1` in `robot.env` brings the held R1 back).
 
 Every gate refuses rather than guesses, with the fix on the same line: a stack already up, a missing board, a port held by another program, a mute firmware, a battery at the BMS floor, a lidar that does not spin. Nothing moves by itself: in `map` only the pad drives; in `explore` the planner moves on a goal or once exploration is armed. The firmware stops the tracks 300 ms after the last command, whatever happens above it.
 

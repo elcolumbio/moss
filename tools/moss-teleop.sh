@@ -14,8 +14,9 @@
 # Every gate REFUSES rather than guesses: a stack already up,
 # no pad, no board, a port held by a bench, a mute firmware, a battery at the
 # BMS floor - each is a refusal with the fix on the same line. Nothing moves
-# until the deadman is held AND a stick leaves the deadzone; the stack can
-# stay up with the pad on the table.
+# until a stick leaves the deadzone (no deadman by default; MOSS_PAD_DEADMAN=r1
+# in robot.env brings the held button back); the stack can stay up with the pad
+# on the table.
 set -u
 cd "$(dirname "$0")/.." || exit 1
 # robot.env: what THIS robot is (MOSS_DRIVER, MOSS_PAD_LAYOUT, measured numbers), next to the
@@ -139,7 +140,11 @@ if [ $OK_BASE != 1 ] || [ $OK_PAD != 1 ] || [ $OK_TRUST != 1 ]; then
 fi
 
 echo "== 5/5 YOU CAN DRIVE (base connected, pad seen at neutral by the stack, layout ${MOSS_PAD_LAYOUT:-android}) =="
-echo "  deadman = R1 (right shoulder) held the whole time"
+if [ -n "${MOSS_PAD_DEADMAN:-}" ] && [ "${MOSS_PAD_DEADMAN}" != "none" ]; then
+  echo "  deadman = MOSS_PAD_DEADMAN (${MOSS_PAD_DEADMAN}) held the whole time; release = 0.5 s of zeros then silence"
+else
+  echo "  no deadman: a stick out of its deadzone drives, centred sticks = 0.5 s of zeros then silence"
+fi
 echo "  left stick up/down = forward/back   right stick left/right = turn   R2 = boost (capped at ${MOSS_MAX_PCT} %)"
-echo "  release R1 = 0.5 s of zeros then silence; the firmware stops 300 ms after the last drive"
+echo "  the firmware stops 300 ms after the last drive"
 echo "  stop:  tools/moss-teleop.sh stop      watch:  tools/moss-teleop.sh log"

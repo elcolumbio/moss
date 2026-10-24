@@ -480,7 +480,7 @@ def pad_verdict(name: str, init_axes, layout: str) -> tuple[bool, str]:
         return False, f"{name}: an Xbox 360 pad to the kernel (the pad on its cable), MOSS_PAD_LAYOUT is {lay}: set MOSS_PAD_LAYOUT=xinput in robot.env"
     if "shanwan" in n and lay == "xinput":
         return False, f"{name}: the dongle in Android mode, MOSS_PAD_LAYOUT is xinput: set MOSS_PAD_LAYOUT=android in robot.env"
-    return True, f"{name} alive, layout {lay} (deadman = R1)"
+    return True, f"{name} alive, layout {lay}"
 
 
 # ── helpers ────────────────────────────────────────────────────────────────

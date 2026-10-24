@@ -2,6 +2,7 @@
 
 Hardware revisions. Dates are when it was real, not when it was planned.
 
+- **24 October 2026, no deadman on the pad.** A small tracked rover at walking pace does not need a held button: a stick out of its deadzone drives, centred sticks stop (0.5 s of zeros, then silence); the neutral-first trust gate and the firmware's 300 ms stop stay. `MOSS_PAD_DEADMAN=r1` (or an SDL button number) in `robot.env` brings the held button back. Launcher, flight check and docs follow.
 - **11 October 2026, dimOS software moves into this repository** (`moss_dimos`): base, lidar odometry, map, planner, explorer, gamepad, recorder, flight check, launcher, cockpit. dimOS itself stays an outside dependency, installed from git ([Software.md](Software.md)).
 - **10 October 2026, first drive at the gamepad.** The V0.5 rover, arm mounted, driven on the floor from a gamepad through dimOS: forward, reverse, turns, pivots. What it took and what it showed:
   - Firmware `qtpy-mdd3a-v3` on the QT Py ESP32-S3 (`firmware/MOSS_QTPY_MDD3A/`): the 25 % commissioning limit is gone, full stick is 100 % PWM (at 25 % the loaded tracks did not move at all); left track direction fixed in the firmware, encoder counts follow; `ramp UP DOWN` sets the rise and fall slopes live; a build switch for the Cytron MDD10A (PWM + DIR) next to the MDD3A build; the board names its driver in the banner and the telemetry. Host test updated.

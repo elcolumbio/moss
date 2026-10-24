@@ -76,14 +76,17 @@ check("pygame" not in sys.modules, "mapping is testable with pygame unimported")
 check((LIN, ANG) == (0.45, 0.8), f"ceilings: {LIN} m/s, {ANG} rad/s")
 # The pad contract as literals: every press below goes through
 # gp.DEADMAN_BUTTON, so without these a moved constant would still pass.
-check(gp.DEADMAN_BUTTON == 7,
-      f"deadman = R1 = SDL button 7 on the MOSS pad (moss_pi's L1 is a different path): {gp.DEADMAN_BUTTON}")
+check(gp.DEADMAN_BUTTON is None,
+      f"no deadman by default: the sticks drive (MOSS_PAD_DEADMAN=r1 brings R1 back): {gp.DEADMAN_BUTTON}")
 # the pad on its USB cable is an Xbox 360 pad to the kernel (xpad): R1 = button 5, right stick X = axis 3,
 # triggers at rest = -1 on axes 2 and 5 (measured: js1 initial state axes 2 and 5 at -32767, sticks at 0)
-check(gp.pad_layout({}) == {"deadman": 7, "axis_right_x": 2, "axis_r2": 5}, "default layout = android (7, 2, 5)")
-check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput"}) == {"deadman": 5, "axis_right_x": 3, "axis_r2": 5}, "xinput layout = (5, 3, 5)")
-check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_DEADMAN": "4"}) == {"deadman": 4, "axis_right_x": 3, "axis_r2": 5}, "one-value override wins")
-check(gp.pad_layout({"MOSS_PAD_LAYOUT": "nope", "MOSS_PAD_AXIS_R2": "x"}) == {"deadman": 7, "axis_right_x": 2, "axis_r2": 5}, "unknown layout / bad number -> android")
+check(gp.pad_layout({}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 5}, "default layout = android, no deadman (None, 2, 5)")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput"}) == {"deadman": None, "axis_right_x": 3, "axis_r2": 5}, "xinput layout = (None, 3, 5)")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_DEADMAN": "4"}) == {"deadman": 4, "axis_right_x": 3, "axis_r2": 5}, "MOSS_PAD_DEADMAN=4 -> that SDL button")
+check(gp.pad_layout({"MOSS_PAD_DEADMAN": "r1"})["deadman"] == 7 and gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_DEADMAN": "R1"})["deadman"] == 5
+      and gp.pad_layout({"MOSS_PAD_DEADMAN": "none"})["deadman"] is None and gp.pad_layout({"MOSS_PAD_DEADMAN": "x"})["deadman"] is None,
+      "MOSS_PAD_DEADMAN=r1 -> the layout's R1 (7 android, 5 xinput); none / unparseable -> no deadman")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "nope", "MOSS_PAD_AXIS_R2": "x"}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 5}, "unknown layout / bad number -> android")
 check(gp.pad_index({}) == 0 and gp.pad_index({"MOSS_PAD_INDEX": "1"}) == 1 and gp.pad_index({"MOSS_PAD_INDEX": "-3"}) == 0, "MOSS_PAD_INDEX: 0 by default, clamped at 0")
 check((gp.AXIS_LEFT_X, gp.AXIS_LEFT_Y, gp.AXIS_RIGHT_X, gp.AXIS_R2) == (0, 1, 2, 5),
       "strafe = left X (axis 0), throttle = left Y (axis 1), turn = right X (axis 2), boost = R2 (axis 5)")
@@ -307,11 +310,28 @@ check(all(close(t.linear.x, 0.0) for t in published[-10:]) if published else Tru
 js.pad.axes = [0.0, 0.0, 0.0, 0.0, 0.0, -1.0]
 check(wait_for(lambda: spy.count("axes seen at neutral") == 1, 3.0),
       "sticks at rest -> trust earned (logged once)")
+# 2a. NO DEADMAN (the default): a stick out of its deadzone drives, centred sticks stop
+n_rest = len(published)
+time.sleep(0.3)
+check(len(published) == n_rest, f"trusted, sticks at rest, no deadman -> nothing published ({len(published) - n_rest} messages)")
+js.pad.axes = [0.0, -1.0, 0.0, 0.0, 0.0, -1.0]
+check(wait_for(lambda: published and close(published[-1].linear.x, LIN), 3.0),
+      f"no deadman + stick forward -> vx = {LIN} m/s CEILING, no button held (got {published[-1].linear.x if published else None})")
+js.pad.axes = [0.0, 0.0, 0.0, 0.0, 0.0, -1.0]
+check(wait_for(lambda: close(published[-1].linear.x, 0.0), 3.0), "sticks back to centre -> zeros published (the brake window)")
+time.sleep(pad_module.brake_s + 0.3)
+n_silent = len(published)
+time.sleep(0.3)
+check(len(published) == n_silent and close(published[-1].linear.x, 0.0),
+      f"then SILENCE: no message after the brake window with the sticks centred ({len(published) - n_silent} extra)")
+# From here on the bench drives the OPTIONAL deadman (MOSS_PAD_DEADMAN=r1 -> R1 = SDL button 7 on the
+# MOSS pad): the module reads gp.DEADMAN_BUTTON on every tick, so the switch takes effect at once.
+gp.DEADMAN_BUTTON = 7
 # deadman NOT held: still zeros even with a deflected stick
 js.pad.axes = [0.0, -1.0, 0.0, 0.0, 0.0, -1.0]
 time.sleep(0.3)
 check(all(close(t.linear.x, 0.0) for t in published[-5:]),
-      "stick forward WITHOUT the deadman held -> still zeros")
+      "deadman on, NOT held, stick forward -> still zeros")
 # deadman held -> motion, CLAMPED at the ceiling
 js.pad.buttons[gp.DEADMAN_BUTTON] = 1
 check(wait_for(lambda: published and close(published[-1].linear.x, LIN), 3.0),
