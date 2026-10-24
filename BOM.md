@@ -2,6 +2,8 @@
 
 One rover, using separate off-the-shelf modules. Choose one computer and one depth camera.
 
+[Download the purchasing list as CSV](docs/build/MOSS_BOM.csv).
+
 ## Control and audio
 
 | Item | Quantity | Note |
@@ -62,7 +64,8 @@ LK05/LK06/LK08 are guide identifiers for purchased shaft collars, also called lo
 | DC male barrel plug, 5.5 × 2.1 mm — servo power branch | 1 | For the Waveshare Bus Servo Adapter A ([Waveshare specification](https://docs.waveshare.com/Bus_Servo_Adapter_A)). |
 | DC male barrel plug, 5.5 × 2.1 mm — battery extension | 1 | Matches the 5.5 × 2.1 mm panel socket listed above. |
 | Wire, ferrules and heat-shrink | 1 lot |  |
-| Plugable USB hub, model USB2-2port | 1 |  |
+| Hoco HB1 four-port USB 2.0 hub | 1 |  |
+| GameSir Nova 2 Lite gamepad with wireless USB receiver | 1 | For manual driving; include the wireless USB receiver. Used successfully on MOSS. |
 | USB-C to USB-A cable, 30 cm | 3 |  |
 | RealSense camera cable | 1 | [Lazada product link](https://www.lazada.co.th/products/i16248699269-s127506585857.html) · RealSense option only. |
 

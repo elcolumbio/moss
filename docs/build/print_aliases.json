@@ -64,12 +64,12 @@
   "XT30_distribution_base": "XT30_distribution_base",
   "XT30_distribution_lid": "XT30_distribution_lid",
   "XT30_insulating_separator": "XT30_insulating_separator",
-  "Left_Slider_outer": "Tensioner_Slider_A",
-  "Right_inner_tensioner_slider": "Tensioner_Slider_A",
+  "Left_Slider_outer": "Tensioner_Slider",
+  "Right_inner_tensioner_slider": "Tensioner_Slider",
   "Left_Cover_motor_bearing": "Motor_Bearing_Outer_Cover",
   "Right_Cover_motor_bearing": "Motor_Bearing_Outer_Cover",
-  "Right_Slider_outer": "Tensioner_Slider_B",
-  "Left_inner_tensioner_slider": "Tensioner_Slider_B",
+  "Right_Slider_outer": "Tensioner_Slider",
+  "Left_inner_tensioner_slider": "Tensioner_Slider",
   "Left_Spacer_tensioner_retainer_inner_ID07_R24": "SP07_Idler_Inner_Retainer_Spacer",
   "Right_Spacer_tensioner_retainer_inner_ID07_R24": "SP07_Idler_Inner_Retainer_Spacer",
   "Left_Spacer_tensioner_retainer_outer_ID08_R24": "SP08_Idler_Outer_Retainer_Spacer",
@@ -111,5 +111,7 @@
   "RealSense_Insert_R72": "RealSense_Insert_R72",
   "Gemini_Flush_Insert_R72": "Gemini_Flush_Insert_R72",
   "Upper_Cover_R10_Rear": "Upper_Cover_R10_Rear",
-  "Upper_Cover_R10_Lidar_Extension": "Upper_Cover_R10_Lidar_Extension"
+  "Upper_Cover_R10_Lidar_Extension": "Upper_Cover_R10_Lidar_Extension",
+  "Tensioner_Slider_A": "Tensioner_Slider",
+  "Tensioner_Slider_B": "Tensioner_Slider"
 }

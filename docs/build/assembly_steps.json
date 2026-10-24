@@ -513,19 +513,11 @@
           "scope": "COMMON"
         },
         {
-          "part_id": "Tensioner_Slider_A",
-          "quantity": 2,
+          "part_id": "Tensioner_Slider",
+          "quantity": 4,
           "material": "PETG",
-          "file": "STL/Common/Tensioner_Slider_A.stl",
-          "display_name": "Tensioner slider A (left outer / right inner)",
-          "scope": "COMMON"
-        },
-        {
-          "part_id": "Tensioner_Slider_B",
-          "quantity": 2,
-          "material": "PETG",
-          "file": "STL/Common/Tensioner_Slider_B.stl",
-          "display_name": "Tensioner slider B (right outer / left inner)",
+          "file": "STL/Common/Tensioner_Slider.stl",
+          "display_name": "Tensioner slider",
           "scope": "COMMON"
         },
         {
@@ -579,7 +571,8 @@
       ],
       "actions": [
         "Inside to outside: LK08, SP07, inner slider, SP05, idler wheel with SP10 between its bearings, SP06, outer slider, SP08, LK08. Use two LK08 collars (8 mm bore) per axle.",
-        "Fit each tensioner cover with four M3 × 15 screws and nuts. Use an M4 × 35 adjuster with its washer and two nuts at each of the four tensioners."
+        "Fit each tensioner cover with four M3 × 15 screws and nuts. Use an M4 × 35 adjuster with its washer and two nuts at each of the four tensioners.",
+        "All four tensioner sliders are the same printed part. Rotate each slider to match its inner or outer position shown in the assembly; do not print a separate mirrored version."
       ],
       "video": "videos/04-idler-tensioner-spacers.mp4"
     },

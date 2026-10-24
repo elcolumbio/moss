@@ -1,0 +1,77 @@
+name,quantity,notes
+"Adafruit QT Py ESP32-S3, 8 MB flash/no PSRAM, ref.5426",1,
+"Adafruit Terminal Block BFF, ref.6495",1,
+"Adafruit INA219 STEMMA QT, ref.904",1,
+"STEMMA QT cable, 300 mm, Adafruit 5384",1,
+Cytron MDD10A Rev2 dual motor driver,1,
+Waveshare Bus Servo Adapter A,1,
+MAX98357A amplifier module,1,
+"Speaker, 3 W, 4 ohm",1,
+Acoustic splash membrane and compatible adhesive,1,EPTFE or non woven fabric membrane.
+"JGB37-520, 12 V, 90:1, 110 rpm, Hall encoder, 6 mm D-shaft",2,
+625 bearing,12,
+608 bearing,4,
+626 bearing,4,
+"LK05 — shaft collar, 5 mm bore, Ø10 × 5 mm",12,
+"LK06 — shaft collar, 6 mm bore, Ø11 × 5 mm",2,
+"LK08 — shaft collar, 8 mm bore, Ø16 × 8 mm",4,
+"Smooth steel axle, 5 ×70 mm finished length",6,Check the physical stack before cutting stock.
+"Smooth steel axle, 6 ×77 mm finished length",2,
+"Smooth steel axle, 8 ×87 mm finished length",2,
+"Rigid motor-to-shaft coupling, 6 mm bores",2,
+"HEX12 metal wheel hub, 6 mm bore, 18 mm length",2,
+ST3215 12 V serial bus servo,5,Keep the original servo screw packs.
+CF35-12 constant-force gripper servo,1,
+"3010 fan, 12 V",2,
+"Magnet, 20 ×10 ×2 mm",4,Glue into the pockets with epoxy; check polarity before gluing.
+Two-part epoxy adhesive kit (resin + hardener),1,For gluing the four bin magnets and joining the two-piece hull and cover when printing on a smaller printer.
+"M3 brass heat-set insert, OD4 mm, length 6 mm",11,10 in the hull and 1 in the LiDAR base.
+"12-cell battery pack, 3S4P, with BMS",1,110 × 67 × 35 mm.
+12.6 V CC/CV charger for the selected 3S pack,1,
+"Emergency stop LA16-11ZS/A, 16 mm",1,
+KCD11 two-pin rocker switch and splash cover,1,
+"Inline blade-fuse holder, 14 AWG",1,
+"ATC blade fuse, 15 A",1,
+Amass XT30 male/female connector pair,6,
+"DC panel socket, 5.5 ×2.1 mm",2,Female panel-mount sockets.
+DC male barrel plug — computer power,1,"Jetson option: 5.5 × 2.5 mm, 9.5 mm barrel, centre positive. Pi option: match the input of the selected 5 V power supply. Choose one."
+"DC male barrel plug, 5.5 × 2.1 mm",2,One for Waveshare Bus Servo Adapter A; one for the battery extension.
+"Wire, ferrules and heat-shrink",1,One set for the power and signal wiring.
+Hoco HB1 four-port USB 2.0 hub,1,
+GameSir Nova 2 Lite gamepad with wireless USB receiver,1,For manual driving; include the wireless USB receiver. Used successfully on MOSS.
+"USB-C to USB-A cable, 30 cm",3,
+RealSense camera cable,1,Lazada product link: https://www.lazada.co.th/products/i16248699269-s127506585857.html · RealSense option only.
+Computer — Jetson Orin Nano Super OR Raspberry Pi 5,1,"Choose ONE computer. Pi: add its cooler, storage and appropriate 5 V supply. Use the matching printed carrier; Pi/HAT mounting screws and spacers are supplied with the HAT."
+Intel RealSense D455 OR Orbbec Gemini 2,1,Use the matching printed insert(s); these are alternatives.
+SLAMTEC RPLIDAR C1,1,
+Wrist USB camera for the R30 mount,1,PCB mounting-hole pattern: 21 × 13.5 mm.
+"M2 × 6 screw, non-countersunk",12,Controller/INA219: 6; amplifier: 2; wrist-camera PCB: 4.
+"M2 washer, 0.3 mm thick",6,Controller/BFF and INA219.
+"M2 washer, 0.5 mm thick",2,Amplifier.
+M2.5 × 6 socket-head screw,4,LiDAR.
+"M2.5 × 8 screw, non-countersunk",4,Servo adapter.
+M2.5 × 10 low-head screw,4,Power distribution. Head diameter 5 mm maximum.
+"M2.5 washer, 0.5 mm thick",4,Servo adapter.
+M3 × 6 socket-head screw,8,Motor driver: 4; speaker: 2; computer carrier: 2.
+M3 × 8 socket-head screw,18,14 common screws. Add 2 for the Jetson retaining tabs and 2 for the Gemini option. Total required: 14–18 depending on options.
+M3 × 10 socket-head screw,8,LiDAR base: 2; arm plate: 4; wrist-camera bracket: 2.
+M3 × 15 socket-head screw,22,Drive axle/outer bearing covers: 6; idler slides/tensioners: 16.
+M3 × 20 socket-head screw,7,Drive wheels: 6; LiDAR carriage lock: 1.
+M3 × 25 socket-head screw,6,Idler wheels.
+M3 × 35 socket-head screw,18,"Six road wheels, 3 screws each."
+"M3 × 10 countersunk 90° screw, head Ø6.4 mm maximum",10,Cover and bin assembly.
+"M3 × 10 countersunk 90° screw, head Ø5.6 mm maximum",4,Cover and bin assembly; smaller head clearance than the other M3 countersunk screws.
+M3 hex nut,54,Road wheels: 18; drive wheels: 6; idlers: 6; bearing covers: 6; tensioners: 16; wrist-camera bracket: 2.
+"M3 washer, 0.5 mm thick",4,Computer carrier and servo-adapter assembly.
+M4 × 10 socket-head screw,2,RealSense option only. Not needed with Gemini.
+M4 × 15 socket-head screw,12,6 for the inner track frames. Add 6 only for the split hull (12 total); monobloc hull uses 6.
+M4 × 20 socket-head screw,8,Motor mounts and inner bearing retainers.
+M4 × 25 countersunk 90° screw,4,Arm base.
+M4 × 35 socket-head screw,4,Track tensioners.
+M4 × 60 socket-head screw,4,Outer track frames.
+M4 hex nut,36,30 for a monobloc rover. Add 6 for the split hull (36 total); split-hull pockets require 7 mm across flats.
+"M4 washer, Ø9 × 0.8 mm",14,8 for tensioners and outer frames. Add 6 for the split hull (14 total).
+M2 × 6 original servo screw,20,Supplied with the servo hardware. Keep the original head type; do not buy twice.
+M3 × 6 original servo screw,37,Supplied with the servo hardware. Keep the original head type; do not substitute generic socket heads.
+"M3 × 6 cross-head screw, ISO 7045",11,Original gripper hardware; retain the supplied screw pack.
+#1-42 × 3/16 inch Type AB screw,6,Original gripper hardware; retain the supplied screw pack.

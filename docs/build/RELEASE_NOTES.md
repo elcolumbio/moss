@@ -1,5 +1,15 @@
 # MOSS R92 — mechanical changes
 
+## 24 October package update
+
+- Replaced the two-port USB hub with the Hoco HB1 four-port USB 2.0 hub.
+- Added one GameSir Nova 2 Lite gamepad with its wireless USB receiver for manual driving.
+- Grouped all 38 spacers on one plate: H2S plate 5 or P1 / P2 plate 8. The profiles still contain 21 and 24 plates, respectively.
+- Consolidated the rotation-equivalent tensioner sliders into one `Tensioner_Slider` reference, quantity 4. Rotate the same part for its assembly position.
+- The archive now contains 73 distinct printable STL files, both Jetson retaining tabs and both 3MF projects. The number of physical parts per rover is unchanged.
+- Original part meshes and print orientations are retained. The revised layouts were checked in Bambu Studio; this packaging update does not claim new physical print tests.
+
+
 This is the matched current print set prepared on 16 October 2026.
 
 ## Changes carried into this set
@@ -56,7 +66,7 @@ The [two-piece upper cover](SPLIT_COVER.md) uses top-entry dovetails. The [outer
 - Both Jetson retaining tabs, JT01 and JT02, with their STEP sources.
 - H2S: 21 prepared plates, one-piece hull and cover.
 - P1 / P2: 24 prepared plates, split hull and cover. The two pieces on cover plate 13 have been spaced apart to clear their supports.
-- Standard 0.20 mm settings, 15% gyroid and automatic tree supports; TPU tracks use 15% grid.
+- Standard 0.20 mm settings, 15% gyroid and automatic tree supports; all parts, including TPU tracks, use 15% gyroid.
 - Choose one computer plate and one camera plate. No part geometry was changed or remeshed for this packaging update.
 
 See [the plate guide](PRINT_PLATES.md) for the exact plate numbers. The original 16 October archive remains available; use the new 18 October archive for the complete current package.

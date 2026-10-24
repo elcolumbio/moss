@@ -1,6 +1,6 @@
 # Hardware
 
-The current mechanical package is [V0.6 / R92](https://github.com/metrox-eth/moss/releases/tag/v0.6-r92). [Download CAD, STL & 3MF](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_R92_Mechanical_20261018.zip) · [Build guide](https://www.showrobotics.ai/moss/build/). It contains individual STL files, editable Fusion source, STEP solid geometry, per-part revisions and attribution. Third-party electronics reference models remain in the internal integration assembly.
+The current mechanical package is [V0.6 / R92](https://github.com/metrox-eth/moss/releases/tag/v0.6-r92). [Download CAD, STL & 3MF](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_R92_Mechanical_20261024.zip) · [Build guide](https://www.showrobotics.ai/moss/build/). It contains individual STL files, editable Fusion source, STEP solid geometry, per-part revisions and attribution. Third-party electronics reference models remain in the internal integration assembly.
 
 See the [print catalogue](../3DPrinting.md), [BOM](../BOM.md) and [assembly guide](../Assembly.md). Choose the one-piece hull or the current R92 two-piece alternative. The two-piece native Fusion sources are supplied separately from the main one-piece CAD set.
 

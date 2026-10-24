@@ -159,8 +159,7 @@ Build MOSS in this order:
 | [SP06 · Idler outer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP06_Idler_Outer_Spacer.stl) · PETG | 2 |
 | [Left Cover tensioner outer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Left_Cover_tensioner_outer.stl) · PETG | 1 |
 | [Right Cover tensioner outer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Right_Cover_tensioner_outer.stl) · PETG | 1 |
-| [Tensioner slider A (left outer / right inner)](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Tensioner_Slider_A.stl) · PETG | 2 |
-| [Tensioner slider B (right outer / left inner)](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Tensioner_Slider_B.stl) · PETG | 2 |
+| [Tensioner slider](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/Tensioner_Slider.stl) · PETG | 4 |
 | [SP07 · Idler inner retainer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP07_Idler_Inner_Retainer_Spacer.stl) · PETG | 2 |
 | [SP08 · Idler outer retainer spacer](https://github.com/metrox-eth/moss/releases/download/v0.6-r92/SP08_Idler_Outer_Retainer_Spacer.stl) · PETG | 2 |
 | Smooth steel axle, 8 x87 mm finished length | 2 |
@@ -173,6 +172,8 @@ Build MOSS in this order:
 
 1. Inside to outside: LK08, SP07, inner slider, SP05, idler wheel with SP10 between its bearings, SP06, outer slider, SP08, LK08. Use two LK08 collars (8 mm bore) per axle.
 2. Fit each tensioner cover with four M3 × 15 screws and nuts. Use an M4 × 35 adjuster with its washer and two nuts at each of the four tensioners.
+
+All four tensioner sliders are the same printed part. Rotate each slider to match its inner or outer position shown in the assembly; do not print a separate mirrored version.
 
 [Watch the exploded assembly](videos/04-idler-tensioner-spacers.mp4)
 

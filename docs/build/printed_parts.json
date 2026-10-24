@@ -10,7 +10,6 @@
     "profile": "standard/default",
     "infill_percent": 15,
     "infill_pattern": "gyroid",
-    "tracks_pattern": "standard profile pattern, not gyroid",
     "print_duration_displayed": false,
     "printer_model_displayed": false
   },
@@ -195,7 +194,7 @@
       "material": "PETG",
       "quantity": 4,
       "scope": "COMMON",
-      "group_id": "03",
+      "group_id": "05",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -218,7 +217,7 @@
       "material": "PETG",
       "quantity": 6,
       "scope": "COMMON",
-      "group_id": "03",
+      "group_id": "05",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -243,7 +242,7 @@
       "material": "PETG",
       "quantity": 2,
       "scope": "COMMON",
-      "group_id": "03",
+      "group_id": "05",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -264,7 +263,7 @@
       "material": "PETG",
       "quantity": 2,
       "scope": "COMMON",
-      "group_id": "03",
+      "group_id": "05",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -467,7 +466,7 @@
       "material": "PETG",
       "quantity": 1,
       "scope": "COMMON",
-      "group_id": "05",
+      "group_id": "09",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -486,7 +485,7 @@
       "material": "PETG",
       "quantity": 1,
       "scope": "COMMON",
-      "group_id": "05",
+      "group_id": "09",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -756,23 +755,27 @@
       "image_part_id": "XT30_insulating_separator"
     },
     {
-      "part_id": "Tensioner_Slider_A",
-      "file": "STL/Common/Tensioner_Slider_A.stl",
+      "part_id": "Tensioner_Slider",
+      "file": "STL/Common/Tensioner_Slider.stl",
       "revision": "Retained geometry",
       "material": "PETG",
-      "quantity": 2,
+      "quantity": 4,
       "scope": "COMMON",
       "group_id": "09",
-      "orientation": "Existing print contact face retained",
+      "orientation": "Print on the supplied contact face. Rotate the same part to suit the inner or outer tensioner during assembly.",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
       "profile": "standard/default",
       "sha256": "6813f1fd774ecaac418b789a7b44a54baa0b683bc97ee36af9a8b0670919c862",
       "legacy_part_ids": [
+        "Tensioner_Slider_A",
+        "Tensioner_Slider_B",
         "Left_Slider_outer",
-        "Right_inner_tensioner_slider"
+        "Right_inner_tensioner_slider",
+        "Right_Slider_outer",
+        "Left_inner_tensioner_slider"
       ],
-      "display_name": "Tensioner slider A (left outer / right inner)",
+      "display_name": "Tensioner slider",
       "image_part_id": "Left_Slider_outer"
     },
     {
@@ -796,33 +799,13 @@
       "image_part_id": "Left_Cover_motor_bearing"
     },
     {
-      "part_id": "Tensioner_Slider_B",
-      "file": "STL/Common/Tensioner_Slider_B.stl",
-      "revision": "Retained geometry",
-      "material": "PETG",
-      "quantity": 2,
-      "scope": "COMMON",
-      "group_id": "09",
-      "orientation": "Existing print contact face retained",
-      "infill_percent": 15,
-      "infill_pattern": "gyroid",
-      "profile": "standard/default",
-      "sha256": "5ad05e25a2b4b15d010c1bc7580751cfd5ecd4b5a6d578c9273aa096a6819234",
-      "legacy_part_ids": [
-        "Right_Slider_outer",
-        "Left_inner_tensioner_slider"
-      ],
-      "display_name": "Tensioner slider B (right outer / left inner)",
-      "image_part_id": "Right_Slider_outer"
-    },
-    {
       "part_id": "SP07_Idler_Inner_Retainer_Spacer",
       "file": "STL/Common/SP07_Idler_Inner_Retainer_Spacer.stl",
       "revision": "R24",
       "material": "PETG",
       "quantity": 2,
       "scope": "COMMON",
-      "group_id": "09",
+      "group_id": "05",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -843,7 +826,7 @@
       "material": "PETG",
       "quantity": 2,
       "scope": "COMMON",
-      "group_id": "09",
+      "group_id": "05",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -864,7 +847,7 @@
       "material": "PETG",
       "quantity": 2,
       "scope": "COMMON",
-      "group_id": "09",
+      "group_id": "05",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -885,7 +868,7 @@
       "material": "PETG",
       "quantity": 6,
       "scope": "COMMON",
-      "group_id": "09",
+      "group_id": "05",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -910,7 +893,7 @@
       "material": "PETG",
       "quantity": 2,
       "scope": "COMMON",
-      "group_id": "09",
+      "group_id": "05",
       "orientation": "Existing print contact face retained",
       "infill_percent": 15,
       "infill_pattern": "gyroid",
@@ -1335,7 +1318,7 @@
       "group_id": "16",
       "orientation": "Flat side down; 70 teeth, 6.8 mm central guides",
       "infill_percent": 15,
-      "infill_pattern": "standard profile pattern (not gyroid)",
+      "infill_pattern": "gyroid",
       "profile": "standard/default",
       "sha256": "d092d2bf59d6c6a89a8a82b96383cf3bd632fb41a7db1df81de91426a6ae5c4c",
       "legacy_part_ids": [
@@ -1510,7 +1493,7 @@
       "computer": "JETSON",
       "camera": "REALSENSE",
       "pieces": 108,
-      "distinct_files": 67
+      "distinct_files": 66
     },
     {
       "hull": "ONE_PIECE",
@@ -1518,7 +1501,7 @@
       "computer": "JETSON",
       "camera": "GEMINI",
       "pieces": 109,
-      "distinct_files": 68
+      "distinct_files": 67
     },
     {
       "hull": "ONE_PIECE",
@@ -1526,23 +1509,23 @@
       "computer": "PI",
       "camera": "REALSENSE",
       "pieces": 106,
+      "distinct_files": 64
+    },
+    {
+      "hull": "ONE_PIECE",
+      "cover": "ONE_PIECE",
+      "computer": "PI",
+      "camera": "GEMINI",
+      "pieces": 107,
       "distinct_files": 65
     },
     {
       "hull": "ONE_PIECE",
-      "cover": "ONE_PIECE",
-      "computer": "PI",
-      "camera": "GEMINI",
-      "pieces": 107,
-      "distinct_files": 66
-    },
-    {
-      "hull": "ONE_PIECE",
       "cover": "SPLIT",
       "computer": "JETSON",
       "camera": "REALSENSE",
       "pieces": 109,
-      "distinct_files": 68
+      "distinct_files": 67
     },
     {
       "hull": "ONE_PIECE",
@@ -1550,7 +1533,7 @@
       "computer": "JETSON",
       "camera": "GEMINI",
       "pieces": 110,
-      "distinct_files": 69
+      "distinct_files": 68
     },
     {
       "hull": "ONE_PIECE",
@@ -1558,7 +1541,7 @@
       "computer": "PI",
       "camera": "REALSENSE",
       "pieces": 107,
-      "distinct_files": 66
+      "distinct_files": 65
     },
     {
       "hull": "ONE_PIECE",
@@ -1566,7 +1549,7 @@
       "computer": "PI",
       "camera": "GEMINI",
       "pieces": 108,
-      "distinct_files": 67
+      "distinct_files": 66
     },
     {
       "hull": "SPLIT",
@@ -1574,7 +1557,7 @@
       "computer": "JETSON",
       "camera": "REALSENSE",
       "pieces": 109,
-      "distinct_files": 68
+      "distinct_files": 67
     },
     {
       "hull": "SPLIT",
@@ -1582,7 +1565,7 @@
       "computer": "JETSON",
       "camera": "GEMINI",
       "pieces": 110,
-      "distinct_files": 69
+      "distinct_files": 68
     },
     {
       "hull": "SPLIT",
@@ -1590,7 +1573,7 @@
       "computer": "PI",
       "camera": "REALSENSE",
       "pieces": 107,
-      "distinct_files": 66
+      "distinct_files": 65
     },
     {
       "hull": "SPLIT",
@@ -1598,7 +1581,7 @@
       "computer": "PI",
       "camera": "GEMINI",
       "pieces": 108,
-      "distinct_files": 67
+      "distinct_files": 66
     },
     {
       "hull": "SPLIT",
@@ -1606,7 +1589,7 @@
       "computer": "JETSON",
       "camera": "REALSENSE",
       "pieces": 110,
-      "distinct_files": 69
+      "distinct_files": 68
     },
     {
       "hull": "SPLIT",
@@ -1614,7 +1597,7 @@
       "computer": "JETSON",
       "camera": "GEMINI",
       "pieces": 111,
-      "distinct_files": 70
+      "distinct_files": 69
     },
     {
       "hull": "SPLIT",
@@ -1622,7 +1605,7 @@
       "computer": "PI",
       "camera": "REALSENSE",
       "pieces": 108,
-      "distinct_files": 67
+      "distinct_files": 66
     },
     {
       "hull": "SPLIT",
@@ -1630,12 +1613,12 @@
       "computer": "PI",
       "camera": "GEMINI",
       "pieces": 109,
-      "distinct_files": 68
+      "distinct_files": 67
     }
   ],
   "release": "R92 / 2026-10-16",
-  "distinct_part_count": 74,
-  "catalogue_updated": "2026-10-18",
+  "distinct_part_count": 73,
+  "catalogue_updated": "2026-10-24",
   "legacy_archive": "MOSS_R92_Mechanical_20261016.zip",
-  "archive_note": "The 16 October archive is unchanged. Download JT01 and JT02 separately for the Jetson option. Shared part references replace duplicate occurrence filenames; print the quantity shown."
+  "archive_note": "The current package includes both Jetson retaining tabs and both prepared 3MF projects. Shared parts have one reference and a total print quantity. Tensioner_Slider replaces the rotation-equivalent A/B references."
 }

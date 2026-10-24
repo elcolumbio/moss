@@ -1,11 +1,11 @@
 {
-  "release_date": "2026-10-18",
+  "release_date": "2026-10-24",
   "profiles": [
     {
       "name": "H2S",
       "file": "MOSS_V06_R92_H2S_Print_Plates.3mf",
       "url": "https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_V06_R92_H2S_Print_Plates.3mf",
-      "sha256": "098e0f5ff8fa06fb3931ab7533e50428543a1daefb57e200da7ddc99d1016311",
+      "sha256": "8e984615b9c9249fb237852d4b103e47fb7e73ed877e914c7c2db130d10bf5bc",
       "plate_count": 21,
       "common_plates": [
         1,
@@ -71,7 +71,7 @@
         },
         {
           "number": 3,
-          "name": "Inner frames & spacers",
+          "name": "Inner track frames",
           "material": "PETG",
           "parts": [
             {
@@ -81,22 +81,6 @@
             {
               "part_id": "Right_inner_track_frame_R12_C2",
               "quantity": 1
-            },
-            {
-              "part_id": "SP12_Frame_Cross_Member_Spacer",
-              "quantity": 4
-            },
-            {
-              "part_id": "SP05_Idler_Inner_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP03_Drive_Inner_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP01_Road_Wheel_Inner_Spacer",
-              "quantity": 6
             }
           ]
         },
@@ -133,16 +117,24 @@
         },
         {
           "number": 5,
-          "name": "Outer spacers & covers",
+          "name": "All 38 spacers",
           "material": "PETG",
           "parts": [
             {
-              "part_id": "Left_Cover_tensioner_outer",
-              "quantity": 1
+              "part_id": "SP05_Idler_Inner_Spacer",
+              "quantity": 2
             },
             {
-              "part_id": "Right_Cover_tensioner_outer",
-              "quantity": 1
+              "part_id": "SP12_Frame_Cross_Member_Spacer",
+              "quantity": 4
+            },
+            {
+              "part_id": "SP01_Road_Wheel_Inner_Spacer",
+              "quantity": 6
+            },
+            {
+              "part_id": "SP03_Drive_Inner_Spacer",
+              "quantity": 2
             },
             {
               "part_id": "SP06_Idler_Outer_Spacer",
@@ -154,6 +146,26 @@
             },
             {
               "part_id": "SP02_Road_Wheel_Outer_Spacer",
+              "quantity": 6
+            },
+            {
+              "part_id": "SP07_Idler_Inner_Retainer_Spacer",
+              "quantity": 2
+            },
+            {
+              "part_id": "SP08_Idler_Outer_Retainer_Spacer",
+              "quantity": 2
+            },
+            {
+              "part_id": "SP10_Idler_Centre_Spacer",
+              "quantity": 2
+            },
+            {
+              "part_id": "SP11_Drive_Bearing_To_Collar_Spacer",
+              "quantity": 2
+            },
+            {
+              "part_id": "SP09_Road_Wheel_Centre_Spacer",
               "quantity": 6
             }
           ]
@@ -233,40 +245,24 @@
         },
         {
           "number": 9,
-          "name": "Slides, retainers & spacers",
+          "name": "Tensioners and bearing covers",
           "material": "PETG",
           "parts": [
+            {
+              "part_id": "Left_Cover_tensioner_outer",
+              "quantity": 1
+            },
+            {
+              "part_id": "Right_Cover_tensioner_outer",
+              "quantity": 1
+            },
             {
               "part_id": "Motor_Bearing_Outer_Cover",
               "quantity": 2
             },
             {
-              "part_id": "Tensioner_Slider_A",
-              "quantity": 2
-            },
-            {
-              "part_id": "Tensioner_Slider_B",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP07_Idler_Inner_Retainer_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP08_Idler_Outer_Retainer_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP10_Idler_Centre_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP11_Drive_Bearing_To_Collar_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP09_Road_Wheel_Centre_Spacer",
-              "quantity": 6
+              "part_id": "Tensioner_Slider",
+              "quantity": 4
             }
           ]
         },
@@ -472,7 +468,7 @@
       "name": "P1 / P2",
       "file": "MOSS_V06_R92_256mm_Split_Print_Plates.3mf",
       "url": "https://github.com/metrox-eth/moss/releases/download/v0.6-r92/MOSS_V06_R92_256mm_Split_Print_Plates.3mf",
-      "sha256": "319faefd4d02c14079a22c080fc6fc3780e64285c360f2030591cef1a82bfca8",
+      "sha256": "d58dc9d09a2285d4e8e6d1924c5c026c6e5f715afe392cf113c2060a1fc8b30a",
       "plate_count": 24,
       "common_plates": [
         1,
@@ -566,7 +562,7 @@
         },
         {
           "number": 6,
-          "name": "Inner frames & spacers",
+          "name": "Inner track frames",
           "material": "PETG",
           "parts": [
             {
@@ -576,22 +572,6 @@
             {
               "part_id": "Right_inner_track_frame_R12_C2",
               "quantity": 1
-            },
-            {
-              "part_id": "SP12_Frame_Cross_Member_Spacer",
-              "quantity": 4
-            },
-            {
-              "part_id": "SP05_Idler_Inner_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP03_Drive_Inner_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP01_Road_Wheel_Inner_Spacer",
-              "quantity": 6
             }
           ]
         },
@@ -628,16 +608,32 @@
         },
         {
           "number": 8,
-          "name": "Outer spacers & covers",
+          "name": "All 38 spacers",
           "material": "PETG",
           "parts": [
             {
-              "part_id": "Left_Cover_tensioner_outer",
-              "quantity": 1
+              "part_id": "SP09_Road_Wheel_Centre_Spacer",
+              "quantity": 6
             },
             {
-              "part_id": "Right_Cover_tensioner_outer",
-              "quantity": 1
+              "part_id": "SP07_Idler_Inner_Retainer_Spacer",
+              "quantity": 2
+            },
+            {
+              "part_id": "SP08_Idler_Outer_Retainer_Spacer",
+              "quantity": 2
+            },
+            {
+              "part_id": "SP10_Idler_Centre_Spacer",
+              "quantity": 2
+            },
+            {
+              "part_id": "SP11_Drive_Bearing_To_Collar_Spacer",
+              "quantity": 2
+            },
+            {
+              "part_id": "SP01_Road_Wheel_Inner_Spacer",
+              "quantity": 6
             },
             {
               "part_id": "SP06_Idler_Outer_Spacer",
@@ -650,6 +646,18 @@
             {
               "part_id": "SP02_Road_Wheel_Outer_Spacer",
               "quantity": 6
+            },
+            {
+              "part_id": "SP12_Frame_Cross_Member_Spacer",
+              "quantity": 4
+            },
+            {
+              "part_id": "SP05_Idler_Inner_Spacer",
+              "quantity": 2
+            },
+            {
+              "part_id": "SP03_Drive_Inner_Spacer",
+              "quantity": 2
             }
           ]
         },
@@ -728,40 +736,24 @@
         },
         {
           "number": 12,
-          "name": "Slides, retainers & spacers",
+          "name": "Tensioners and bearing covers",
           "material": "PETG",
           "parts": [
+            {
+              "part_id": "Left_Cover_tensioner_outer",
+              "quantity": 1
+            },
+            {
+              "part_id": "Right_Cover_tensioner_outer",
+              "quantity": 1
+            },
             {
               "part_id": "Motor_Bearing_Outer_Cover",
               "quantity": 2
             },
             {
-              "part_id": "Tensioner_Slider_A",
-              "quantity": 2
-            },
-            {
-              "part_id": "Tensioner_Slider_B",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP07_Idler_Inner_Retainer_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP08_Idler_Outer_Retainer_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP10_Idler_Centre_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP11_Drive_Bearing_To_Collar_Spacer",
-              "quantity": 2
-            },
-            {
-              "part_id": "SP09_Road_Wheel_Centre_Spacer",
-              "quantity": 6
+              "part_id": "Tensioner_Slider",
+              "quantity": 4
             }
           ]
         },

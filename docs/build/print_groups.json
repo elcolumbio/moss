@@ -20,14 +20,10 @@
   },
   {
     "id": "03",
-    "title": "Inner frames & spacers",
+    "title": "Inner track frames",
     "part_ids": [
       "Left_inner_track_frame_R12_C2",
-      "Right_inner_track_frame_R12_C2",
-      "SP12_Frame_Cross_Member_Spacer",
-      "SP01_Road_Wheel_Inner_Spacer",
-      "SP05_Idler_Inner_Spacer",
-      "SP03_Drive_Inner_Spacer"
+      "Right_inner_track_frame_R12_C2"
     ]
   },
   {
@@ -44,13 +40,20 @@
   },
   {
     "id": "05",
-    "title": "Outer spacers & covers",
+    "title": "All 38 spacers",
     "part_ids": [
+      "SP12_Frame_Cross_Member_Spacer",
+      "SP01_Road_Wheel_Inner_Spacer",
+      "SP05_Idler_Inner_Spacer",
+      "SP03_Drive_Inner_Spacer",
       "SP02_Road_Wheel_Outer_Spacer",
       "SP06_Idler_Outer_Spacer",
       "SP04_Drive_Outer_Spacer",
-      "Left_Cover_tensioner_outer",
-      "Right_Cover_tensioner_outer"
+      "SP07_Idler_Inner_Retainer_Spacer",
+      "SP08_Idler_Outer_Retainer_Spacer",
+      "SP10_Idler_Centre_Spacer",
+      "SP09_Road_Wheel_Centre_Spacer",
+      "SP11_Drive_Bearing_To_Collar_Spacer"
     ]
   },
   {
@@ -86,16 +89,12 @@
   },
   {
     "id": "09",
-    "title": "Slides, retainers & spacers",
+    "title": "Tensioners and bearing covers",
     "part_ids": [
-      "Tensioner_Slider_A",
+      "Tensioner_Slider",
       "Motor_Bearing_Outer_Cover",
-      "Tensioner_Slider_B",
-      "SP07_Idler_Inner_Retainer_Spacer",
-      "SP08_Idler_Outer_Retainer_Spacer",
-      "SP10_Idler_Centre_Spacer",
-      "SP09_Road_Wheel_Centre_Spacer",
-      "SP11_Drive_Bearing_To_Collar_Spacer"
+      "Left_Cover_tensioner_outer",
+      "Right_Cover_tensioner_outer"
     ]
   },
   {
