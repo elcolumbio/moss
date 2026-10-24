@@ -80,13 +80,23 @@ check(gp.DEADMAN_BUTTON is None,
       f"no deadman by default: the sticks drive (MOSS_PAD_DEADMAN=r1 brings R1 back): {gp.DEADMAN_BUTTON}")
 # the pad on its USB cable is an Xbox 360 pad to the kernel (xpad): R1 = button 5, right stick X = axis 3,
 # triggers at rest = -1 on axes 2 and 5 (measured: js1 initial state axes 2 and 5 at -32767, sticks at 0)
-check(gp.pad_layout({}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 5, "y_sign": 1, "turn_sign": 1}, "default layout = android, no deadman (None, 2, 5)")
-check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput"}) == {"deadman": None, "axis_right_x": 3, "axis_r2": 5, "y_sign": 1, "turn_sign": 1}, "xinput layout = (None, 3, 5)")
-check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_DEADMAN": "4"}) == {"deadman": 4, "axis_right_x": 3, "axis_r2": 5, "y_sign": 1, "turn_sign": 1}, "MOSS_PAD_DEADMAN=4 -> that SDL button")
+check(gp.pad_layout({}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 5, "y_sign": 1, "turn_sign": 1, "name": "android"}, "default layout = android, no deadman (None, 2, 5)")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput"}) == {"deadman": None, "axis_right_x": 3, "axis_r2": 5, "y_sign": 1, "turn_sign": 1, "name": "xinput"}, "xinput layout = (None, 3, 5)")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_DEADMAN": "4"}) == {"deadman": 4, "axis_right_x": 3, "axis_r2": 5, "y_sign": 1, "turn_sign": 1, "name": "xinput"}, "MOSS_PAD_DEADMAN=4 -> that SDL button")
 check(gp.pad_layout({"MOSS_PAD_DEADMAN": "r1"})["deadman"] == 7 and gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_DEADMAN": "R1"})["deadman"] == 5
       and gp.pad_layout({"MOSS_PAD_DEADMAN": "none"})["deadman"] is None and gp.pad_layout({"MOSS_PAD_DEADMAN": "x"})["deadman"] is None,
       "MOSS_PAD_DEADMAN=r1 -> the layout's R1 (7 android, 5 xinput); none / unparseable -> no deadman")
-check(gp.pad_layout({"MOSS_PAD_LAYOUT": "nope", "MOSS_PAD_AXIS_R2": "x"}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 5, "y_sign": 1, "turn_sign": 1}, "unknown layout / bad number -> android")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "nope", "MOSS_PAD_AXIS_R2": "x"}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 5, "y_sign": 1, "turn_sign": 1, "name": "nope"}, "unknown layout / bad number -> android")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "ds4"}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 4, "y_sign": 1, "turn_sign": 1, "name": "ds4"}
+      and gp.pad_layout({"MOSS_PAD_LAYOUT": "ds4", "MOSS_PAD_DEADMAN": "r1"})["deadman"] == 5,
+      "ds4 layout (a DualShock 4 to the kernel): right stick X = axis 2, R2 = axis 4, R1 = button 5")
+check((gp.layout_for_name("Sony Computer Entertainment Wireless Controller"), gp.layout_for_name("Microsoft X-Box 360 pad"),
+       gp.layout_for_name("shanwan Android GamePad"), gp.layout_for_name(None)) == ("ds4", "xinput", "android", "android"),
+      "layout_for_name: Sony -> ds4, X-Box -> xinput, shanwan / none -> android")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "auto"}, pad_name="Sony Computer Entertainment Wireless Controller")["name"] == "ds4"
+      and gp.pad_layout({"MOSS_PAD_LAYOUT": "auto"}, pad_name="Microsoft X-Box 360 pad")["axis_right_x"] == 3
+      and gp.pad_layout({"MOSS_PAD_LAYOUT": "auto"}, pad_name=None)["name"] in ("android", "ds4", "xinput"),
+      "MOSS_PAD_LAYOUT=auto picks the layout from the pad's kernel name (no pad on this machine -> android)")
 check((gp.pad_layout({})["y_sign"], gp.pad_layout({})["turn_sign"]) == (1, 1)
       and (gp.pad_layout({"MOSS_PAD_INVERT_Y": "1"})["y_sign"], gp.pad_layout({"MOSS_PAD_INVERT_TURN": "yes"})["turn_sign"]) == (-1, -1)
       and gp.pad_layout({"MOSS_PAD_INVERT_Y": "0"})["y_sign"] == 1 and (gp.Y_SIGN, gp.TURN_SIGN) == (1, 1),

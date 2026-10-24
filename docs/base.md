@@ -20,7 +20,11 @@ Pad (a shanwan receiver in Android mode): **no deadman**, a stick out of its
 deadzone drives and centred sticks stop (`MOSS_PAD_DEADMAN=r1` brings a held
 button back: R1 is SDL button 7 on this pad, 5 on its USB cable),
 left stick up/down = forward/back, right stick left/right = turn, R2 = boost
-(`MOSS_PAD_INVERT_Y=1` / `MOSS_PAD_INVERT_TURN=1` in `robot.env` flip a stick whose sign is the other way round)
+(`MOSS_PAD_INVERT_Y=1` / `MOSS_PAD_INVERT_TURN=1` in `robot.env` flip a stick whose sign is the other way round).
+`MOSS_PAD_LAYOUT` names the button and axis numbers: `android` (the shanwan receiver), `xinput` (an Xbox 360 pad to the
+kernel), `ds4` (a DualShock 4 to the kernel, which is what the GameSir 2.4G receiver is in its DInput mode), or `auto`,
+which picks one from the pad's kernel name at launch. The GameSir receiver in its XInput mode (`3537:1098`) has no Linux
+driver: hold View + Menu on the pad to cycle modes until it shows up as a DualShock 4.
 (capped at `MOSS_MAX_PCT`). The stick scale comes from the base's envelope
 (`teleop_speeds`: full stick = `MOSS_MPS_AT_LIMIT`, full turn = a pivot at that
 limit), so the stick stays proportional across its travel. With the default

@@ -470,11 +470,16 @@ def pad_verdict(name: str, init_axes, layout: str) -> tuple[bool, str]:
     init_axes: the joystick API's initial axis values (None = could not read)."""
     lay = (layout or "android").strip().lower() or "android"
     n = (name or "").lower()
+    if lay == "auto":
+        from moss_dimos.gamepad import layout_for_name
+        lay = f"auto -> {layout_for_name(name)}"
     if init_axes is None:
         return False, f"{name}: cannot read it (permissions? held exclusively?)"
     if init_axes and all(int(v) == PAD_MUTE_AXIS for v in init_axes):
         return False, (f"{name}: MUTE - every axis at its never-reported value: the receiver sees no pad "
                        "(pad off, or not paired with this dongle); the stack will never see it at neutral")
+    if lay.startswith("auto"):
+        return True, f"{name} alive, layout {lay}"
     xbox = ("x-box" in n or "xbox" in n or "x box" in n)
     if xbox and lay != "xinput":
         return False, f"{name}: an Xbox 360 pad to the kernel (the pad on its cable), MOSS_PAD_LAYOUT is {lay}: set MOSS_PAD_LAYOUT=xinput in robot.env"

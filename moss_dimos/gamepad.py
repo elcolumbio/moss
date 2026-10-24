@@ -80,10 +80,35 @@ RESCAN_PERIOD_S = 2.0         # how often we re-scan SDL for a pad
 # picks the SDL joystick when several are plugged (the mute dongle is usually index 0). All read once
 # at import.
 PAD_LAYOUTS = {
-    "android": {"r1": 7, "axis_right_x": 2, "axis_r2": 5},
-    "xinput": {"r1": 5, "axis_right_x": 3, "axis_r2": 5},
+    "android": {"r1": 7, "axis_right_x": 2, "axis_r2": 5},   # the shanwan receiver in Android mode (2563:0526)
+    "xinput": {"r1": 5, "axis_right_x": 3, "axis_r2": 5},    # an Xbox 360 pad to the kernel (xpad): the shanwan pad on its cable
+    "ds4": {"r1": 5, "axis_right_x": 2, "axis_r2": 4},       # a DualShock 4 to the kernel (hid-generic): the GameSir 2.4G receiver in its DInput mode
 }
 DEADMAN_OFF = ("", "none", "off", "no")   # MOSS_PAD_DEADMAN values that mean: no deadman
+JS_SYSFS_GLOB = "/sys/class/input/js*/device/name"
+
+
+def layout_for_name(name: str | None) -> str:
+    """The layout a pad's kernel name calls for: "Sony ... Wireless Controller" / DualShock -> ds4,
+    "X-Box" / Xbox -> xinput, anything else (the shanwan Android GamePad included) -> android. Pure."""
+    n = (name or "").lower()
+    if "sony" in n or "dualshock" in n or "wireless controller" in n:
+        return "ds4"
+    if "x-box" in n or "xbox" in n or "x box" in n:
+        return "xinput"
+    return "android"
+
+
+def detect_pad_name() -> str | None:
+    """The kernel name of the first /dev/input/js* (sysfs), None without one."""
+    import glob
+    for path in sorted(glob.glob(JS_SYSFS_GLOB)):
+        try:
+            with open(path) as f:
+                return f.read().strip()
+        except OSError:
+            continue
+    return None
 
 
 def _on(raw: str | None) -> bool:
@@ -91,14 +116,19 @@ def _on(raw: str | None) -> bool:
     return (raw or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def pad_layout(env: Mapping[str, str] | None = None) -> dict[str, int | None]:
-    """The button / axis numbers in force: a named layout, then one-value overrides. Pure.
+def pad_layout(env: Mapping[str, str] | None = None, pad_name: str | None = None) -> dict[str, int | None]:
+    """The button / axis numbers in force: a named layout, then one-value overrides. Pure when
+    the layout is named; MOSS_PAD_LAYOUT=auto picks it from the pad's kernel name (pad_name, else
+    the first js device in sysfs), so the same robot.env serves a pad that shows up as a
+    DualShock 4 one day and as an Xbox 360 pad the next.
     "deadman" is None by default (the sticks drive); MOSS_PAD_DEADMAN=r1 is the layout's R1,
     an integer is that SDL button, none / off / empty is no deadman."""
     e = os.environ if env is None else env
     name = (e.get("MOSS_PAD_LAYOUT") or "android").strip().lower()
+    if name == "auto":
+        name = layout_for_name(detect_pad_name() if pad_name is None else pad_name)
     base = PAD_LAYOUTS.get(name, PAD_LAYOUTS["android"])
-    out: dict[str, int | None] = {"deadman": None, "axis_right_x": base["axis_right_x"], "axis_r2": base["axis_r2"],
+    out: dict[str, int | None] = {"deadman": None, "axis_right_x": base["axis_right_x"], "axis_r2": base["axis_r2"], "name": name,
                                   "y_sign": -1 if _on(e.get("MOSS_PAD_INVERT_Y")) else 1,
                                   "turn_sign": -1 if _on(e.get("MOSS_PAD_INVERT_TURN")) else 1}
     raw = (e.get("MOSS_PAD_DEADMAN") or "").strip().lower()
@@ -129,6 +159,7 @@ def pad_index(env: Mapping[str, str] | None = None) -> int:
 
 
 _LAYOUT = pad_layout()
+LAYOUT_NAME = _LAYOUT["name"]       # the layout in force (auto resolved at import, from the first js device)
 AXIS_LEFT_X = 0
 AXIS_LEFT_Y = 1
 AXIS_RIGHT_X = _LAYOUT["axis_right_x"]   # android: measured on the 2563:0526 pad, right-stick X sweeps axis 2 over its full travel (axis 3 is its vertical, which leaks a little)
@@ -441,6 +472,7 @@ class GamepadTeleop(Module):
         brake_until = 0.0          # publish zeros until this instant, then shut up
         prev_active = False        # to see the RISING edge of a command (stick out, or deadman pressed)
         waiting_logged = False
+        logger.info("gamepad layout: %s (right stick X = axis %d, R2 = axis %d)", LAYOUT_NAME, AXIS_RIGHT_X, AXIS_R2)
         if DEADMAN_BUTTON is None:
             logger.info("gamepad: no deadman - a stick out of its deadzone drives, centred sticks stop "
                         "(MOSS_PAD_DEADMAN=r1 brings the held button back)")
