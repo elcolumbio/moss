@@ -98,8 +98,9 @@ firmware 300 ms after the last drive.
   fails on the rover and takes the camera down), and `MOSS_GYRO_FORCE=1` builds it anyway,
   as an experiment ([imu.md](imu.md#the-gyro-and-the-odometry));
 - the sound module (`moss_dimos/sounds.py`): a pack of short synthesized cues in
-  `assets/sounds` played through the robot user's PulseAudio session (a Bluetooth
-  speaker once connected, the default sink otherwise) on confirmed events only: the
+  `assets/sounds` played through the robot user's PulseAudio session (its default sink:
+  the on-board amplifier, [Software.md](../Software.md#speaker-on-the-jetsons-i2s), or a
+  Bluetooth speaker once connected) on confirmed events only: the
   stack up, a contact, the tracks moving again after a stall, the order to explore,
   the end of an exploration, the battery crossing low and critical (with hysteresis).
   Each cue has a cooldown and the player keeps a gap between cues, so the rover

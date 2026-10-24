@@ -60,6 +60,12 @@ On a computer where dimOS sits on wheels built for that board, install this pack
 
 dimOS's bus (LCM) needs multicast on the loopback interface, a `224.0.0.0/4` route on it, and 64 MB socket buffers (`net.core.rmem_max`, `net.core.rmem_default`). None of it survives a reboot. dimOS checks them at each launch and sets what is missing with sudo, so either the robot's user has passwordless sudo, or `tools/lcm-loopback.service` applies them at boot (install line in [docs/cockpit.md](docs/cockpit.md#the-cockpit-as-a-service)). Without either, a launch stops on a `CalledProcessError` from `sudo ip ...`.
 
+### Speaker on the Jetson's I2S
+
+The rover's speaker is a MAX98357A I2S amplifier on the Jetson's 40-pin header, I2S2: BCLK on pin 12, LRCLK on pin 35, DIN on pin 40 (the Jetson's data out), 5 V and ground. The header has no function enabled by default; `sudo /opt/nvidia/jetson-io/config-by-function.py -o dt 1="i2s2"` writes a device-tree overlay and a boot entry for it, and the board reboots. Then the I2S2 controls of the `APE` sound card (`amixer -c APE controls | grep -i i2s2`): codec frame mode `i2s`, codec master mode `cbs-cfs`, playback bit format `16`, sample rate `44100`, playback channels `2`, kept across reboots with `sudo alsactl store`. As done on the Orin Nano devkit under JetPack 6; `paplay assets/sounds/hello_01.wav` is the test.
+
+PulseAudio: make the card the default sink (`pactl set-default-sink alsa_output.platform-sound.analog-stereo`, then `pactl set-sink-volume @DEFAULT_SINK@ 100%`) and keep the sink from suspending between cues, which clicks on this amplifier, with a `~/.config/pulse/default.pa` of two lines: `.include /etc/pulse/default.pa` and `unload-module module-suspend-on-idle`. The sound module (`moss_dimos/sounds.py`, [docs/cockpit.md](docs/cockpit.md)) plays into that session: a stack launched from a login shell or over ssh as the robot's user finds it, the boot service's stack does not and stays silent.
+
 ## Run
 
 ```
