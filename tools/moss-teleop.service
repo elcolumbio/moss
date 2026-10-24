@@ -1,0 +1,29 @@
+# MOSS teleop at boot: the pad drives as soon as the rover is powered (tools/moss-teleop-boot.sh
+# retries tools/moss-teleop.sh until its gates pass, then leaves the stack running).
+# A template, like tools/moss-cockpit.service: MOSS_USER is the account that runs the rover's
+# stack, MOSS_DIR the absolute path of this checkout (with its .venv). Install from the checkout:
+#   sed -e "s|MOSS_USER|$USER|g" -e "s|MOSS_DIR|$PWD|g" tools/moss-teleop.service \
+#     | sudo tee /etc/systemd/system/moss-teleop.service >/dev/null
+#   sudo systemctl daemon-reload && sudo systemctl enable moss-teleop
+# Off again: sudo systemctl disable --now moss-teleop (the stack itself: tools/moss-teleop.sh stop).
+# No NoNewPrivileges on purpose: dimOS sets loopback multicast and the socket buffers with sudo
+# at launch (or tools/lcm-loopback.service does it at boot, ordered before this unit).
+[Unit]
+Description=MOSS teleop at boot: the pad drives as soon as the rover is powered
+Wants=lcm-loopback.service
+After=network.target lcm-loopback.service moss-cockpit.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=MOSS_USER
+WorkingDirectory=MOSS_DIR
+Environment=GLIBC_TUNABLES=glibc.rtld.optional_static_tls=4194304
+ExecStart=MOSS_DIR/tools/moss-teleop-boot.sh
+# The dimOS daemon the launcher starts lives in this unit's cgroup: a stop or restart of this
+# unit ends the retry loop only, never the stack (tools/moss-teleop.sh stop does that).
+KillMode=process
+LimitSTACK=8M
+
+[Install]
+WantedBy=multi-user.target

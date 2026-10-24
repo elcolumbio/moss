@@ -17,7 +17,7 @@
 # tools/moss-teleop.sh stays the pad-only launcher.
 #
 # Every gate REFUSES rather than guesses, with the fix on the same line.
-# Nothing moves by itself: in `map` only the pad drives (deadman held); in
+# Nothing moves by itself: in `map` only the pad drives (a stick out of its deadzone); in
 # `explore` the planner moves only on a goal or once exploration is armed
 # (EXPLORE=1 here, or the cockpit's button). The firmware stops the tracks
 # 300 ms after the last command whatever happens up here.
@@ -393,7 +393,7 @@ fi
 
 echo "== READY: moss-dimos.$BP =="
 if [ "$BP" = "moss-nav" ]; then
-  echo "  pad: hold R1 (deadman), left stick forward/back, right stick turn - the map builds as you drive"
+  echo "  pad: left stick forward/back, right stick turn (no deadman) - the map builds as you drive"
 elif [ "${EXPLORE:-0}" != "1" ]; then
   echo "  exploration NOT armed: the cockpit's 'Start exploration', or a goal click on its map"
 fi

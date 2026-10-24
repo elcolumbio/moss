@@ -98,8 +98,9 @@ firmware 300 ms after the last drive.
   fails on the rover and takes the camera down), and `MOSS_GYRO_FORCE=1` builds it anyway,
   as an experiment ([imu.md](imu.md#the-gyro-and-the-odometry));
 - the sound module (`moss_dimos/sounds.py`): a pack of short synthesized cues in
-  `assets/sounds` played through the robot user's PulseAudio session (a Bluetooth
-  speaker once connected, the default sink otherwise) on confirmed events only: the
+  `assets/sounds` played through the robot user's PulseAudio session (its default sink:
+  the on-board amplifier, [Software.md](../Software.md#speaker-on-the-jetsons-i2s), or a
+  Bluetooth speaker once connected) on confirmed events only: the
   stack up, a contact, the tracks moving again after a stall, the order to explore,
   the end of an exploration, the battery crossing low and critical (with hysteresis).
   Each cue has a cooldown and the player keeps a gap between cues, so the rover
@@ -323,7 +324,7 @@ Other variables:
 | `PROOF_S` | how long `tools/moss-fly.sh` waits for the stack to prove itself in its log, 120 s by default |
 | `MOSS_MOCK_BUS=1` | the fake firmware, no motors (`MOCK=1` on the launchers sets it) |
 | `MOSS_STATE_DIR` | the state directory, `~/.local/state/moss` by default: recordings, the saved flight check |
-| `MOSS_BRAKE_S` | how long the pad sends zeros after the deadman is released, 0.5 s by default, 0 to 1.0 s |
+| `MOSS_BRAKE_S` | how long the pad sends zeros after the sticks return to centre (or the optional deadman is released), 0.5 s by default, 0 to 1.0 s |
 | `MOSS_TURN_GAIN` | turn authority against forward speed on the pad, 2 by default, 0.5 to 4 ([base.md](base.md)) |
 | `MOSS_OCCUPIED_AT` | how many hits a costmap cell needs to be a wall, 2 by default, 1 to 10: two places at least `MOSS_NEW_VIEWPOINT_M` apart, never one spot, so somebody standing next to a parked rover never walls it in. 1 makes the first sighting a wall: a faster block, and every passer-by a wall |
 | `MOSS_NEW_VIEWPOINT_M` | how far the rover must move before the same cell takes another hit, 0.10 m by default, 0 to 1 |

@@ -8,3 +8,4 @@ __pycache__/
 recordings/
 .venv/
 firmware/**/build/
+firmware/MOSS_QTPY_MDD3A/build_*/

@@ -27,7 +27,7 @@ To reflash the QT Py, from the root of the checkout: build the images with `ardu
 | Module | Role |
 |---|---|
 | `moss_adapter.py`, `moss_mock.py` | the tracked-base adapter (twist to track percent, keepalive inside the firmware's 300 ms deadman) and a fake firmware for runs without motors |
-| `gamepad.py` | the pad: twist behind a deadman, slew-limited, sized to the base |
+| `gamepad.py` | the pad: twist from the sticks (no deadman by default), slew-limited, sized to the base |
 | `c1_serial.py`, `rplidar_c1.py` | the RPLidar C1 driver and its dimOS module |
 | `lidar_odometry.py` | the pose, from the lidar (kiss-icp) |
 | `costmap2d.py` | the 2D map the planner and the cockpit read |
@@ -60,6 +60,12 @@ On a computer where dimOS sits on wheels built for that board, install this pack
 
 dimOS's bus (LCM) needs multicast on the loopback interface, a `224.0.0.0/4` route on it, and 64 MB socket buffers (`net.core.rmem_max`, `net.core.rmem_default`). None of it survives a reboot. dimOS checks them at each launch and sets what is missing with sudo, so either the robot's user has passwordless sudo, or `tools/lcm-loopback.service` applies them at boot (install line in [docs/cockpit.md](docs/cockpit.md#the-cockpit-as-a-service)). Without either, a launch stops on a `CalledProcessError` from `sudo ip ...`.
 
+### Speaker on the Jetson's I2S
+
+The rover's speaker is a MAX98357A I2S amplifier on the Jetson's 40-pin header, I2S2: BCLK on pin 12, LRCLK on pin 35, DIN on pin 40 (the Jetson's data out), 5 V and ground. The header has no function enabled by default; `sudo /opt/nvidia/jetson-io/config-by-function.py -o dt 1="i2s2"` writes a device-tree overlay and a boot entry for it, and the board reboots. Then the I2S2 controls of the `APE` sound card (`amixer -c APE controls | grep -i i2s2`): codec frame mode `i2s`, codec master mode `cbs-cfs`, playback bit format `16`, sample rate `44100`, playback channels `2`, kept across reboots with `sudo alsactl store`. As done on the Orin Nano devkit under JetPack 6; `paplay assets/sounds/hello_01.wav` is the test.
+
+PulseAudio: make the card the default sink (`pactl set-default-sink alsa_output.platform-sound.analog-stereo`, then `pactl set-sink-volume @DEFAULT_SINK@ 100%`) and keep the sink from suspending between cues, which clicks on this amplifier, with a `~/.config/pulse/default.pa` of two lines: `.include /etc/pulse/default.pa` and `unload-module module-suspend-on-idle`. The sound module (`moss_dimos/sounds.py`, [docs/cockpit.md](docs/cockpit.md)) plays into that session: a stack launched from a login shell or over ssh as the robot's user finds it, the boot service's stack does not and stays silent.
+
 ## Run
 
 ```
@@ -72,7 +78,7 @@ MOCK=1 tools/moss-fly.sh map          # fake motor board, no motor; the lidar mu
 tools/moss-teleop.sh                  # the pad only: gates, then moss-gamepad
 ```
 
-Pad on the dimOS path: hold R1 to drive (the deadman), left stick forward and back, right stick to turn, R2 boost. Release R1 and the tracks stop.
+Pad on the dimOS path: left stick forward and back, right stick to turn, R2 boost; centre the sticks and the tracks stop. To drive as soon as the rover is powered, install `tools/moss-teleop.service` (its header has the three lines): it retries the launcher at boot until the pad and the board are there. No deadman by default (`MOSS_PAD_DEADMAN=r1` in `robot.env` brings the held R1 back).
 
 Every gate refuses rather than guesses, with the fix on the same line: a stack already up, a missing board, a port held by another program, a mute firmware, a battery at the BMS floor, a lidar that does not spin. Nothing moves by itself: in `map` only the pad drives; in `explore` the planner moves on a goal or once exploration is armed. The firmware stops the tracks 300 ms after the last command, whatever happens above it.
 

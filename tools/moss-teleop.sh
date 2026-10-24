@@ -14,8 +14,9 @@
 # Every gate REFUSES rather than guesses: a stack already up,
 # no pad, no board, a port held by a bench, a mute firmware, a battery at the
 # BMS floor - each is a refusal with the fix on the same line. Nothing moves
-# until the deadman is held AND a stick leaves the deadzone; the stack can
-# stay up with the pad on the table.
+# until a stick leaves the deadzone (no deadman by default; MOSS_PAD_DEADMAN=r1
+# in robot.env brings the held button back); the stack can stay up with the pad
+# on the table.
 set -u
 cd "$(dirname "$0")/.." || exit 1
 # robot.env: what THIS robot is (MOSS_DRIVER, MOSS_PAD_LAYOUT, measured numbers), next to the
@@ -63,6 +64,14 @@ echo "== 1/5 gamepad =="
 # any /dev/input/js*: the pad on its cable (an Xbox 360 pad to the kernel) keeps the number after the
 # dongle's, and SDL numbers the pads it can see from 0 whatever the js number (MOSS_PAD_INDEX picks)
 if ! ls /dev/input/js* >/dev/null 2>&1; then
+  # the GameSir 2.4G receiver in its XInput mode (3537:1098, "2.4G XBOX 360 For Windows") has no Linux
+  # driver: the kernel sees a keyboard and nothing else. Its DInput mode shows up as a DualShock 4 and works.
+  if command -v lsusb >/dev/null 2>&1 && lsusb -d 3537:1098 >/dev/null 2>&1; then
+    echo "NO PAD: the GameSir receiver is in XInput mode (3537:1098, no Linux driver) - on the pad, hold View + Menu to cycle modes (or reset the pad) until the receiver shows up as a Sony DualShock 4 (lsusb)"; exit 1
+  fi
+  if command -v lsusb >/dev/null 2>&1 && lsusb -d 3537:2106 >/dev/null 2>&1; then
+    echo "NO PAD: the GameSir receiver is plugged but no pad is connected to it (3537:2106) - switch the pad on (Home); if it keeps blinking: Home + Share held 3 s, then the receiver's button"; exit 1
+  fi
   echo "NO PAD (no /dev/input/js*) - receiver or cable plugged into the rover? if plugged but invisible: replug it, else sudo reboot"; exit 1
 fi
 echo "  pad(s): $(for j in /dev/input/js*; do n=$(basename $j); printf '%s=%s ' "$n" "$(cat /sys/class/input/$n/device/name 2>/dev/null | tr ' ' '_')"; done)(dongle mute: button UNDER the pad, then move a stick; cable: MOSS_PAD_LAYOUT=xinput)"
@@ -139,7 +148,11 @@ if [ $OK_BASE != 1 ] || [ $OK_PAD != 1 ] || [ $OK_TRUST != 1 ]; then
 fi
 
 echo "== 5/5 YOU CAN DRIVE (base connected, pad seen at neutral by the stack, layout ${MOSS_PAD_LAYOUT:-android}) =="
-echo "  deadman = R1 (right shoulder) held the whole time"
+if [ -n "${MOSS_PAD_DEADMAN:-}" ] && [ "${MOSS_PAD_DEADMAN}" != "none" ]; then
+  echo "  deadman = MOSS_PAD_DEADMAN (${MOSS_PAD_DEADMAN}) held the whole time; release = 0.5 s of zeros then silence"
+else
+  echo "  no deadman: a stick out of its deadzone drives, centred sticks = 0.5 s of zeros then silence"
+fi
 echo "  left stick up/down = forward/back   right stick left/right = turn   R2 = boost (capped at ${MOSS_MAX_PCT} %)"
-echo "  release R1 = 0.5 s of zeros then silence; the firmware stops 300 ms after the last drive"
+echo "  the firmware stops 300 ms after the last drive"
 echo "  stop:  tools/moss-teleop.sh stop      watch:  tools/moss-teleop.sh log"

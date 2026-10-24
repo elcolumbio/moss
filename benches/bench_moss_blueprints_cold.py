@@ -459,14 +459,15 @@ check("moss-gamepad: twist_command -> cmd_vel and tele_cmd_vel -> cmd_vel (direc
 gk = atom(pad_bp, "GamepadTeleop").kwargs
 g = MossGeometry.from_env()
 lin, ang = teleop_speeds(g)
-check("moss-gamepad: stick scale = the base's: 0.45 m/s, 6.7669 rad/s (default geometry)",
-      close(gk.get("linear_speed"), 0.45) and close(gk.get("angular_speed"), 2.0 * 2.0 * 0.45 / 0.266)
+V = g.mps_at_limit   # the measured plateau at 100 % (moss_adapter.MossGeometry), not a literal
+check(f"moss-gamepad: stick scale = the base's: {V} m/s, {2.0 * 2.0 * V / 0.266:.4f} rad/s (default geometry)",
+      close(gk.get("linear_speed"), V) and close(gk.get("angular_speed"), 2.0 * 2.0 * V / 0.266)
       and (gk.get("linear_speed"), gk.get("angular_speed")) == (lin, ang),
       f"{gk.get('linear_speed')} m/s, {gk.get('angular_speed')} rad/s")
 env_d = gk.get("envelope")
-check("moss-gamepad: the envelope rides as a plain dict: linear 0.45, lever 0.133, rim 1.35",
+check(f"moss-gamepad: the envelope rides as a plain dict: linear {V}, lever 0.133, rim {3.0 * V:.2f}",
       isinstance(env_d, dict) and env_d == teleop_envelope(g)
-      and close(env_d["lever"], 0.133) and close(env_d["rim"], 1.35), f"{env_d}")
+      and close(env_d["lever"], 0.133) and close(env_d["rim"], 3.0 * V), f"{env_d}")
 os.environ["MOSS_MPS_AT_LIMIT"] = "0.30"
 slow = atom(mb.build_moss_gamepad(), "GamepadTeleop").kwargs
 os.environ.pop("MOSS_MPS_AT_LIMIT")
