@@ -72,7 +72,7 @@ MOCK=1 tools/moss-fly.sh map          # fake motor board, no motor; the lidar mu
 tools/moss-teleop.sh                  # the pad only: gates, then moss-gamepad
 ```
 
-Pad on the dimOS path: left stick forward and back, right stick to turn, R2 boost; centre the sticks and the tracks stop. No deadman by default (`MOSS_PAD_DEADMAN=r1` in `robot.env` brings the held R1 back).
+Pad on the dimOS path: left stick forward and back, right stick to turn, R2 boost; centre the sticks and the tracks stop. To drive as soon as the rover is powered, install `tools/moss-teleop.service` (its header has the three lines): it retries the launcher at boot until the pad and the board are there. No deadman by default (`MOSS_PAD_DEADMAN=r1` in `robot.env` brings the held R1 back).
 
 Every gate refuses rather than guesses, with the fix on the same line: a stack already up, a missing board, a port held by another program, a mute firmware, a battery at the BMS floor, a lidar that does not spin. Nothing moves by itself: in `map` only the pad drives; in `explore` the planner moves on a goal or once exploration is armed. The firmware stops the tracks 300 ms after the last command, whatever happens above it.
 
