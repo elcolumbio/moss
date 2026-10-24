@@ -80,13 +80,17 @@ check(gp.DEADMAN_BUTTON is None,
       f"no deadman by default: the sticks drive (MOSS_PAD_DEADMAN=r1 brings R1 back): {gp.DEADMAN_BUTTON}")
 # the pad on its USB cable is an Xbox 360 pad to the kernel (xpad): R1 = button 5, right stick X = axis 3,
 # triggers at rest = -1 on axes 2 and 5 (measured: js1 initial state axes 2 and 5 at -32767, sticks at 0)
-check(gp.pad_layout({}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 5}, "default layout = android, no deadman (None, 2, 5)")
-check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput"}) == {"deadman": None, "axis_right_x": 3, "axis_r2": 5}, "xinput layout = (None, 3, 5)")
-check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_DEADMAN": "4"}) == {"deadman": 4, "axis_right_x": 3, "axis_r2": 5}, "MOSS_PAD_DEADMAN=4 -> that SDL button")
+check(gp.pad_layout({}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 5, "y_sign": 1, "turn_sign": 1}, "default layout = android, no deadman (None, 2, 5)")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput"}) == {"deadman": None, "axis_right_x": 3, "axis_r2": 5, "y_sign": 1, "turn_sign": 1}, "xinput layout = (None, 3, 5)")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_DEADMAN": "4"}) == {"deadman": 4, "axis_right_x": 3, "axis_r2": 5, "y_sign": 1, "turn_sign": 1}, "MOSS_PAD_DEADMAN=4 -> that SDL button")
 check(gp.pad_layout({"MOSS_PAD_DEADMAN": "r1"})["deadman"] == 7 and gp.pad_layout({"MOSS_PAD_LAYOUT": "xinput", "MOSS_PAD_DEADMAN": "R1"})["deadman"] == 5
       and gp.pad_layout({"MOSS_PAD_DEADMAN": "none"})["deadman"] is None and gp.pad_layout({"MOSS_PAD_DEADMAN": "x"})["deadman"] is None,
       "MOSS_PAD_DEADMAN=r1 -> the layout's R1 (7 android, 5 xinput); none / unparseable -> no deadman")
-check(gp.pad_layout({"MOSS_PAD_LAYOUT": "nope", "MOSS_PAD_AXIS_R2": "x"}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 5}, "unknown layout / bad number -> android")
+check(gp.pad_layout({"MOSS_PAD_LAYOUT": "nope", "MOSS_PAD_AXIS_R2": "x"}) == {"deadman": None, "axis_right_x": 2, "axis_r2": 5, "y_sign": 1, "turn_sign": 1}, "unknown layout / bad number -> android")
+check((gp.pad_layout({})["y_sign"], gp.pad_layout({})["turn_sign"]) == (1, 1)
+      and (gp.pad_layout({"MOSS_PAD_INVERT_Y": "1"})["y_sign"], gp.pad_layout({"MOSS_PAD_INVERT_TURN": "yes"})["turn_sign"]) == (-1, -1)
+      and gp.pad_layout({"MOSS_PAD_INVERT_Y": "0"})["y_sign"] == 1 and (gp.Y_SIGN, gp.TURN_SIGN) == (1, 1),
+      "MOSS_PAD_INVERT_Y / MOSS_PAD_INVERT_TURN: off by default (sign +1), 1/yes -> -1, 0 -> +1")
 check(gp.pad_index({}) == 0 and gp.pad_index({"MOSS_PAD_INDEX": "1"}) == 1 and gp.pad_index({"MOSS_PAD_INDEX": "-3"}) == 0, "MOSS_PAD_INDEX: 0 by default, clamped at 0")
 check((gp.AXIS_LEFT_X, gp.AXIS_LEFT_Y, gp.AXIS_RIGHT_X, gp.AXIS_R2) == (0, 1, 2, 5),
       "strafe = left X (axis 0), throttle = left Y (axis 1), turn = right X (axis 2), boost = R2 (axis 5)")

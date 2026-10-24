@@ -75,13 +75,20 @@ RESCAN_PERIOD_S = 2.0         # how often we re-scan SDL for a pad
 # kernel xpad), where R1 is button 5, the right stick X is axis 3 and the triggers are axes 2 and 5.
 # MOSS_PAD_LAYOUT=android|xinput picks a set; MOSS_PAD_AXIS_RIGHT_X / MOSS_PAD_AXIS_R2 override one
 # value each; MOSS_PAD_DEADMAN adds a held button (none by default: r1 = the layout's R1, or an SDL
-# button number); MOSS_PAD_INDEX picks the SDL joystick when several are plugged (the mute dongle is
-# usually index 0). All read once at import.
+# button number); MOSS_PAD_INVERT_Y=1 / MOSS_PAD_INVERT_TURN=1 flip a stick whose sign is the other way
+# round (a pad that reports stick UP as positive drives backwards on a forward push); MOSS_PAD_INDEX
+# picks the SDL joystick when several are plugged (the mute dongle is usually index 0). All read once
+# at import.
 PAD_LAYOUTS = {
     "android": {"r1": 7, "axis_right_x": 2, "axis_r2": 5},
     "xinput": {"r1": 5, "axis_right_x": 3, "axis_r2": 5},
 }
 DEADMAN_OFF = ("", "none", "off", "no")   # MOSS_PAD_DEADMAN values that mean: no deadman
+
+
+def _on(raw: str | None) -> bool:
+    """An on/off switch as the stack reads them: 1 / true / yes / on."""
+    return (raw or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def pad_layout(env: Mapping[str, str] | None = None) -> dict[str, int | None]:
@@ -91,7 +98,9 @@ def pad_layout(env: Mapping[str, str] | None = None) -> dict[str, int | None]:
     e = os.environ if env is None else env
     name = (e.get("MOSS_PAD_LAYOUT") or "android").strip().lower()
     base = PAD_LAYOUTS.get(name, PAD_LAYOUTS["android"])
-    out: dict[str, int | None] = {"deadman": None, "axis_right_x": base["axis_right_x"], "axis_r2": base["axis_r2"]}
+    out: dict[str, int | None] = {"deadman": None, "axis_right_x": base["axis_right_x"], "axis_r2": base["axis_r2"],
+                                  "y_sign": -1 if _on(e.get("MOSS_PAD_INVERT_Y")) else 1,
+                                  "turn_sign": -1 if _on(e.get("MOSS_PAD_INVERT_TURN")) else 1}
     raw = (e.get("MOSS_PAD_DEADMAN") or "").strip().lower()
     if raw == "r1":
         out["deadman"] = base["r1"]
@@ -124,6 +133,8 @@ AXIS_LEFT_X = 0
 AXIS_LEFT_Y = 1
 AXIS_RIGHT_X = _LAYOUT["axis_right_x"]   # android: measured on the 2563:0526 pad, right-stick X sweeps axis 2 over its full travel (axis 3 is its vertical, which leaks a little)
 AXIS_R2 = _LAYOUT["axis_r2"]
+Y_SIGN = _LAYOUT["y_sign"]          # -1 with MOSS_PAD_INVERT_Y: the pad reports stick up as positive
+TURN_SIGN = _LAYOUT["turn_sign"]    # -1 with MOSS_PAD_INVERT_TURN: the pad reports stick right as negative
 
 
 @dataclass(frozen=True)
@@ -457,8 +468,8 @@ class GamepadTeleop(Module):
                                 "before trusting a single command", pad.get_name())
                 try:
                     pygame.event.pump()
-                    axes = (_axis(pad, AXIS_LEFT_X), _axis(pad, AXIS_LEFT_Y),
-                            _axis(pad, AXIS_RIGHT_X), _axis(pad, AXIS_R2))
+                    axes = (_axis(pad, AXIS_LEFT_X), Y_SIGN * _axis(pad, AXIS_LEFT_Y),
+                            TURN_SIGN * _axis(pad, AXIS_RIGHT_X), _axis(pad, AXIS_R2))
                     if DEADMAN_BUTTON is None:
                         deadman = True        # no held button required
                     else:

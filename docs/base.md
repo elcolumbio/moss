@@ -20,6 +20,7 @@ Pad (a shanwan receiver in Android mode): **no deadman**, a stick out of its
 deadzone drives and centred sticks stop (`MOSS_PAD_DEADMAN=r1` brings a held
 button back: R1 is SDL button 7 on this pad, 5 on its USB cable),
 left stick up/down = forward/back, right stick left/right = turn, R2 = boost
+(`MOSS_PAD_INVERT_Y=1` / `MOSS_PAD_INVERT_TURN=1` in `robot.env` flip a stick whose sign is the other way round)
 (capped at `MOSS_MAX_PCT`). The stick scale comes from the base's envelope
 (`teleop_speeds`: full stick = `MOSS_MPS_AT_LIMIT`, full turn = a pivot at that
 limit), so the stick stays proportional across its travel. With the default
