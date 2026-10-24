@@ -59,6 +59,7 @@ var S = {
   pendingGoal: null, camPaused: false, camOk: false, camAt: 0, camLost: null, pfAll: false,
   stateAt: 0, stallLatch: { count: null, until: 0 },
   decisions: null, decHtml: null, decKeys: null,
+  ui: "advanced", simpleCam: "nose", say: null, lastLog: null,   // the Simple view: which view, its camera, its status line
   noteTs: undefined             // the launcher note last seen (undefined: no state yet)
 };
 
@@ -136,6 +137,7 @@ function say(text, bad) {
   var el = $("say");
   el.textContent = text;
   el.className = bad ? "err" : "ok";
+  S.say = { text: text, bad: !!bad, at: Date.now() }; renderSimpleLog();
   clearTimeout(sayTimer);
   // a success line fades after a while; an error stays until the next action
   if (!bad) sayTimer = setTimeout(function () { if (el.textContent === text) el.textContent = ""; }, 8000);
@@ -417,6 +419,7 @@ function renderControls() {
   else if (st.running) title = "Stack up. Nothing moves by itself.";
   else title = "Nothing moves by itself.";
   setText("ctl-title", title);
+  renderSimple();
 }
 
 function epElapsed(ep) {
@@ -487,7 +490,7 @@ function camSilent(n) {
 
 function camConnect(n) {
   var c = CAMS[n], st = camState[n], img = $(c.img);
-  if (S.camPaused || document.hidden) { img.removeAttribute("src"); st.ok = false; return; }
+  if (S.camPaused || document.hidden || !camWanted(n)) { img.removeAttribute("src"); st.ok = false; return; }
   if (!img.getAttribute("src")) { st.at = Date.now(); img.src = c.src + "&t=" + Date.now(); }
 }
 function camConnectAll() { Object.keys(CAMS).forEach(camConnect); }
@@ -504,7 +507,7 @@ function camRestart(n, why) {
 
 function camWatch(n) {
   var st = camState[n];
-  if (S.camPaused || document.hidden || !S.online || st.timer) return;
+  if (S.camPaused || document.hidden || !S.online || st.timer || !camWanted(n)) return;
   if (!$(CAMS[n].img).getAttribute("src")) { camConnect(n); return; }
   var silent = camSilent(n) && !isDemo();
   if (Date.now() - st.at < CAM_GRACE_MS) { st.wasSilent = silent; return; }
@@ -1010,6 +1013,7 @@ function watchLaunch() {
       var ul = $("launch-tail"), html = "";
       lines.slice(-5).forEach(function (l) { html += "<li>" + esc(l) + "</li>"; });
       ul.innerHTML = html;
+      if (lines.length) { S.lastLog = { text: String(lines[lines.length - 1]), warn: false }; renderSimpleLog(); }
       if (d && d.running) { setTimeout(step, POLL.launch); return; }
       launchWatching = false;
       var was = S.launchAction;
@@ -1061,7 +1065,7 @@ $("b-ep").addEventListener("click", function () {
 
 var stopTimer = null;
 function stopShow(label, bad) {         // #say may be scrolled away: the button that was pressed tells too
-  ["b-stop", "stop-fab"].forEach(function (id) { var b = $(id); b.textContent = label; b.classList.toggle("fail", !!bad); });
+  ["b-stop", "stop-fab", "b-s-stop"].forEach(function (id) { var b = $(id); b.textContent = label; b.classList.toggle("fail", !!bad); });
   clearTimeout(stopTimer);
   stopTimer = setTimeout(function () { stopShow("STOP", false); }, bad ? 8000 : 2500);
 }
@@ -1077,6 +1081,107 @@ function softStop() {
 }
 $("b-stop").addEventListener("click", softStop);
 $("stop-fab").addEventListener("click", softStop);
+
+// ---------------------------------------------------------------- Simple view
+
+// Two views of one page. Advanced is everything above: the modules, the map, the feed. Simple is
+// the column for a phone or a tablet (#simple in index.html): the word for now and the battery,
+// one camera, STOP, the stack, one line of log. ?view=simple or ?view=advanced picks a view and
+// the device remembers it; otherwise the remembered choice; otherwise a first visit narrower than
+// SIMPLE_MAX_W opens Simple. The cameras' elements move into #simple and back, so the streams and
+// their watch are the same code; the camera not shown is not streamed (camWanted).
+var SIMPLE_MAX_W = 700;
+var VIEW_KEY = "moss.cockpit.view";
+var SAY_SIMPLE_MS = 8000;     // a press's answer holds the Simple status line this long; an error until the next action
+var BATTERY_LOW_V = 10.8;     // the base module's own line
+
+function viewFor(query, stored, width) {
+  if (query === "simple" || query === "advanced") return query;
+  if (stored === "simple" || stored === "advanced") return stored;
+  return typeof width === "number" && width < SIMPLE_MAX_W ? "simple" : "advanced";
+}
+
+function storedView() { try { return localStorage.getItem(VIEW_KEY); } catch (e) { return null; } }
+
+function camWanted(n) { return S.ui !== "simple" || S.simpleCam === n; }
+
+// The word for now in Simple, from the state: {word, cls, detail}. One word, the worst thing first,
+// and a line that says what it means for the hand on the pad.
+function simpleView(state, online, busy, stalled) {
+  var st = (state && state.stack) || { running: false };
+  if (!online) return { word: "OFFLINE", cls: "attn",
+                        detail: "The cockpit does not answer. The pad still drives; the firmware stops the tracks 300 ms after its last command." };
+  if (busy) return { word: "LAUNCHING", cls: "", detail: "The stack is starting; its last line is below." };
+  if (!st.running) return { word: "NO STACK", cls: "dim", detail: "Launch map: the lidar map and the pad." };
+  var b = state.base;
+  if (!b) return { word: "NO TELEMETRY", cls: "dim", detail: "Stack up; the base has not spoken yet." };
+  var age = (typeof b.age_s === "number" ? b.age_s : 0) + (typeof b.firmware_age_s === "number" ? b.firmware_age_s : 0);
+  if (age > LIVE_S) return { word: "NO TELEMETRY", cls: "attn", detail: "Nothing from the base for " + dur(age) + "." };
+  if (typeof b.battery_v === "number" && b.battery_v < BATTERY_LOW_V) return { word: "BATTERY LOW", cls: "attn", detail: "Land it." };
+  if (stalled) return { word: "STALLED", cls: "attn",
+                        detail: "A commanded track did not move and the base stopped it. Centre the sticks, then drive again." };
+  if (state.nav && state.nav.exploring) return { word: "EXPLORING", cls: "accent", detail: "On its own. A stick or STOP takes over." };
+  if (b.mode === 2) return { word: "DRIVING", cls: "accent", detail: "The pad drives." };
+  if (b.mode === 1) return { word: "READY", cls: "", detail: "Armed. Centred sticks, tracks stopped." };
+  return { word: "DISARMED", cls: "dim", detail: "Stack up, base disarmed." };
+}
+
+function renderSimple() {
+  if (S.ui !== "simple") return;
+  var v = simpleView(S.state, S.online, S.launchBusy, !$("b-stall").hidden);
+  setText("s-word", v.word);
+  $("s-word").className = ("s-word " + v.cls).trim();
+  setText("s-detail", v.detail);
+  var b = S.state && S.state.base, low = !!(b && typeof b.battery_v === "number" && b.battery_v < BATTERY_LOW_V);
+  setText("s-volt", b ? num(b.battery_v, 2) : "--");
+  setText("s-pct", b && typeof b.battery_pct === "number" ? Math.round(b.battery_pct) + " %"
+                   : (b && b.ina_ok === false ? "battery sensor not seen" : ""));
+  $("s-batt").classList.toggle("attn", low);
+  var st = stack(), on = S.online, busy = S.launchBusy;
+  $("b-s-launch").disabled = !on || st.running || busy;
+  $("b-s-stack-stop").disabled = !on || (!st.running && !busy);
+  renderSimpleLog();
+}
+
+// The Simple status line: what the page just said (a press's answer) while it is fresh, else the
+// newest log line (the launcher's while a stack starts): {text, cls}.
+function simpleLogView(said, last, nowMs) {
+  if (said && (said.bad || nowMs - said.at < SAY_SIMPLE_MS)) return { text: said.text, cls: said.bad ? "attn" : "ok" };
+  if (last) return { text: last.text, cls: last.warn ? "attn" : "dim" };
+  return { text: "No stack, no log.", cls: "dim" };
+}
+
+function renderSimpleLog() {
+  var v = simpleLogView(S.say, S.lastLog, Date.now());
+  setText("s-log", v.text);
+  $("s-log").className = "s-log num " + v.cls;
+}
+
+function applyView(v) {
+  S.ui = v;
+  var simple = v === "simple";
+  document.body.classList.toggle("simple", simple);
+  $("simple").hidden = !simple;
+  $("b-view").textContent = simple ? "Advanced" : "Simple";
+  $("b-view").setAttribute("aria-pressed", simple ? "true" : "false");
+  var home = simple ? $("s-cam") : $("cams");
+  ["nose", "wrist"].forEach(function (n) {
+    var el = $("cam-" + n);
+    if (el.parentNode !== home) home.insertBefore(el, simple ? $("b-s-cam") : null);
+    el.hidden = simple && n !== S.simpleCam;
+  });
+  $("b-s-cam").textContent = S.simpleCam === "nose" ? "WRIST" : "NOSE";
+  try { localStorage.setItem(VIEW_KEY, v); } catch (e) {}
+  camConnectAll(); renderCamera();
+  if (!simple) { S.fitted = false; resize(); fitView(); }
+  renderSimple();
+}
+
+$("b-view").addEventListener("click", function () { applyView(S.ui === "simple" ? "advanced" : "simple"); });
+$("b-s-cam").addEventListener("click", function () { S.simpleCam = S.simpleCam === "nose" ? "wrist" : "nose"; applyView("simple"); });
+$("b-s-stop").addEventListener("click", softStop);
+$("b-s-launch").addEventListener("click", function () { stackCmd("map", "Launching the mapping stack."); });
+$("b-s-stack-stop").addEventListener("click", function () { stackCmd("stop", "Stopping the stack."); });
 
 // ---------------------------------------------------------------- flight check
 
@@ -1156,6 +1261,11 @@ function pollLog() {
     });
     if (!html) html = '<li><span class="t"></span><span class="e dim">' + (stack().running ? "Log is empty." : "No stack, no log.") + "</span></li>";
     if (el.innerHTML !== html) el.innerHTML = html;
+    var last = lines.length ? lines[lines.length - 1] : null;
+    S.lastLog = last ? { text: fmtTs(last.ts) + "  " + last.event,
+                         warn: /warn|error|crit/.test(String(last.level || "").toLowerCase()) }
+                     : { text: stack().running ? "Log is empty." : "No stack, no log.", warn: false };
+    renderSimpleLog();
   }, function () {});
 }
 
@@ -1295,6 +1405,7 @@ function renderDecisions() {
 
 if ("ResizeObserver" in window) new ResizeObserver(function () { resize(); if (!S.fitted) fitView(); }).observe(wrap);
 window.addEventListener("resize", resize);
+applyView(viewFor(window.URLSearchParams ? new URLSearchParams(location.search).get("view") : null, storedView(), window.innerWidth));
 resize();
 camConnectAll();
 renderCamera();

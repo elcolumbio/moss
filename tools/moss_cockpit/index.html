@@ -268,6 +268,46 @@
   body.offline [data-live] { opacity: .45; transition: opacity var(--moss-fade-out) var(--moss-ease); }
   .stale { opacity: .5; }
 
+  /* ---- Simple view: the page for a phone or a tablet (?view=simple, or a narrow first visit); the
+     whole page is Advanced. One column: the word for now and the battery, one camera, STOP, the
+     stack, one line of log. The cameras' elements move in here, so their streams are the same. ---- */
+  body.simple #app { display: block; height: auto; padding: 0 16px; }
+  body.simple header { padding: 18px 0 10px; gap: 14px; min-height: 0; flex-wrap: wrap; }
+  body.simple .lockup .mark { width: 26px; }
+  body.simple .lockup .wm { height: 24.5px; }
+  body.simple .lockup { gap: 10px; }
+  body.simple #run-name { white-space: normal; overflow-wrap: anywhere; }
+  body.simple .runline .row { flex-wrap: wrap; row-gap: 4px; }   /* the run name wraps and the chip stays on screen */
+  body.simple #idle-note { white-space: normal; }
+  body.simple main { display: none; }
+  body.simple #stop-fab { display: none; }   /* the Simple STOP is in the column, sticky at the bottom */
+  #b-view { margin-left: auto; align-self: flex-start; flex: none; }
+  #simple { display: flex; flex-direction: column; gap: 14px; max-width: 720px; margin: 0 auto; padding-bottom: 28px; }
+  .s-status { position: relative; border-top: 1px solid var(--moss-hairline); padding-top: 12px; }
+  .s-status::before { content: ""; position: absolute; left: 0; top: -1px; width: var(--moss-accent-len);
+                      height: var(--moss-accent-w); background: var(--moss-mint); }
+  .s-word { font-size: clamp(36px, 11vw, 60px); font-weight: var(--moss-w-display); line-height: 1; letter-spacing: .03em;
+            text-transform: uppercase; overflow-wrap: anywhere; margin-top: 6px; }
+  .s-word.attn { color: var(--ui-attention); }
+  .s-word.accent { color: var(--moss-mint); }
+  .s-word.dim { color: var(--ui-dim); }
+  .s-detail { font-size: var(--ui-fs-body); margin-top: 8px; overflow-wrap: anywhere; }
+  .s-batt { display: flex; align-items: baseline; gap: 12px; }
+  .s-batt .s-volt { font-size: 48px; font-weight: 600; line-height: 1; letter-spacing: -.01em; }
+  .s-batt .unit { font-size: 20px; font-weight: 500; margin-left: -8px; }
+  .s-batt .s-pct { font-size: 20px; }
+  .s-batt.attn .s-volt, .s-batt.attn .unit { color: var(--ui-attention); }
+  /* 36 vh: the word, the battery, the camera and STOP fit one phone screen without a scroll */
+  #s-cam { position: relative; height: 36vh; min-height: 200px; background: rgba(8, 15, 26, .35); overflow: hidden; }
+  #s-cam .cam { position: absolute; inset: 0; height: 100%; }
+  #b-s-cam { position: absolute; right: 10px; top: 8px; z-index: 3; background: rgba(61, 87, 106, .7);
+             backdrop-filter: blur(2px); }   /* top right: the sticky STOP never covers it */
+  .s-stop { position: sticky; bottom: 12px; z-index: 5; font-size: 34px; padding: 22px 0 21px;
+            box-shadow: 0 6px 24px rgba(8, 15, 26, .5); }
+  .s-row .btn { padding: 14px 13px; font-size: 16px; }
+  .s-log { font-size: 13px; overflow-wrap: anywhere; min-height: 1.4em; }
+  .s-log.ok { color: var(--moss-mint); }
+
   /* ---- phone and narrow windows: one column, map first ---- */
   @media (max-width: 1099px) {
     #app { display: block; height: auto; padding: 0 16px; }
@@ -318,7 +358,31 @@
       <button id="idle-note" class="num dim" type="button" data-live hidden
               title="Keep the stack up: the idle count starts again"></button>
     </div>
+    <button class="btn link" id="b-view" type="button" aria-pressed="false"
+            title="Simple: the page for a phone or a tablet. Advanced: the whole cockpit.">Simple</button>
   </header>
+
+  <!-- the Simple view: one column for a phone or a tablet; the script fills it and moves the cameras in -->
+  <section id="simple" hidden aria-label="Simple view">
+    <div class="s-status" data-live>
+      <p class="kicker">NOW</p>
+      <p id="s-word" class="s-word dim" role="status" aria-live="polite">--</p>
+      <p id="s-detail" class="s-detail dim">Waiting for the cockpit.</p>
+    </div>
+    <div class="s-batt num" id="s-batt" data-live>
+      <span id="s-volt" class="s-volt">--</span><span class="unit">V</span>
+      <span id="s-pct" class="s-pct dim"></span>
+    </div>
+    <div id="s-cam" data-live>
+      <button class="btn" id="b-s-cam" type="button" title="Switch between the nose and the wrist camera">WRIST</button>
+    </div>
+    <button class="stop s-stop" id="b-s-stop" type="button">STOP</button>
+    <div class="btnrow s-row">
+      <button class="btn primary" id="b-s-launch" type="button">Launch map</button>
+      <button class="btn" id="b-s-stack-stop" type="button">Stop stack</button>
+    </div>
+    <p id="s-log" class="s-log num dim">No stack, no log.</p>
+  </section>
 
   <main>
     <!-- column 1: flight check, base, system -->

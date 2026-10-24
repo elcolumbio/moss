@@ -484,6 +484,18 @@ over the run.
 `tools/moss_cockpit.py --demo` serves synthetic data for working on the page
 without a robot.
 
+### Simple and Advanced
+
+The page has two views. **Advanced** is the whole cockpit described above. **Simple** is one
+column for a phone or a tablet: the word for now (OFFLINE, NO STACK, LAUNCHING, NO TELEMETRY,
+BATTERY LOW, STALLED, EXPLORING, DRIVING, READY, DISARMED; the worst first) with a line that
+says what it means for the hand on the pad, the battery, one camera (a button switches nose and
+wrist; the one not shown is not streamed), a STOP that stays in reach at the bottom of the
+screen, Launch map and Stop stack, and one line of log (the page's last answer while it is
+fresh, then the newest log line). `?view=simple` or `?view=advanced` picks a view and the
+browser remembers it; without either, a first visit narrower than 700 px opens Simple. The
+button at the top right switches at any time.
+
 ## What it decides
 
 The map shows what the rover sees; the "What it decides." panel says what it

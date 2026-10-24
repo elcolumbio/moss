@@ -931,6 +931,100 @@ console.log(JSON.stringify({ n: rows.length, kinds: rows.map(function (r) { retu
           and not F.get("unknown") and F.get("newest") == evs[-1].get("text") and F.get("wordKnown") is True,
           json.dumps({"kinds": sorted(k for k in kinds if k), "page": F})[:400] + r.stderr[:200])
 
+# ---------------------------------------------------------------------------
+print("F. the Simple view")
+need_s = ["b-view", "simple", "s-word", "s-detail", "s-batt", "s-volt", "s-pct", "s-cam", "b-s-cam", "b-s-stop",
+          "b-s-launch", "b-s-stack-stop", "s-log"]
+check("index.html has the Simple view's elements: #b-view in the header, #simple with the word, the battery, the "
+      "camera frame, STOP, the stack buttons and the log line", all(i in E for i in need_s),
+      ", ".join(i for i in need_s if i not in E))
+sm, mn = E.get("simple", {}), E.get("b-map", {})
+check("#simple sits in #app before <main> and is hidden until the script picks a view: without the script the page "
+      "is Advanced", bool(sm and mn) and sm["pos"] < mn["pos"] and "hidden" in sm.get("attrs", {})
+      and "app" in sm.get("in", []) and "col-right" not in sm.get("in", []),
+      json.dumps({"simple": sm.get("pos"), "b-map": mn.get("pos"), "attrs": sm.get("attrs")}))
+check("#b-view is in the header and says 'Simple' on the Advanced page",
+      re.search(r'<header>[\s\S]*?<button class="btn link" id="b-view"[^>]*>Simple</button>[\s\S]*?</header>', html) is not None)
+check("in Simple the page hides the modules and the floating STOP; its own STOP is sticky at the bottom (always in reach)",
+      "body.simple main { display: none; }" in html and "body.simple #stop-fab { display: none; }" in html
+      and "position: sticky" in rule(".s-stop") and "bottom: 12px" in rule(".s-stop"), rule(".s-stop"))
+check("the word's colours are the page's tokens: .attn = --ui-attention, .accent = mint, .dim = --ui-dim; the word is uppercase",
+      "color: var(--ui-attention)" in rule(".s-word.attn") and "color: var(--moss-mint)" in rule(".s-word.accent")
+      and "color: var(--ui-dim)" in rule(".s-word.dim") and "text-transform: uppercase" in rule(".s-word"))
+check("app.js: STOP in Simple is the same soft stop and its answer shows on all three STOP buttons; Launch map and Stop "
+      "stack are the same stack commands; the view button and the camera switch are wired",
+      '$("b-s-stop").addEventListener("click", softStop);' in js and '["b-stop", "stop-fab", "b-s-stop"]' in js
+      and '$("b-s-launch").addEventListener("click", function () { stackCmd("map"' in js
+      and '$("b-s-stack-stop").addEventListener("click", function () { stackCmd("stop"' in js
+      and '$("b-view").addEventListener("click"' in js and '$("b-s-cam").addEventListener("click"' in js)
+check("app.js: the camera not shown in Simple is not streamed (camWanted in camConnect and camWatch); the view is picked "
+      "at load from ?view=, the device's memory and the width",
+      js.count("!camWanted(n)") >= 2
+      and re.search(r'applyView\(viewFor\(.*"view".*storedView\(\), window\.innerWidth\)\);', js) is not None)
+if node is None:
+    print("  -- skipped, no node here: viewFor, simpleView and simpleLogView on known input")
+else:
+    sdefs = {n: js_def(n) for n in ("SIMPLE_MAX_W", "VIEW_KEY", "SAY_SIMPLE_MS", "BATTERY_LOW_V", "LIVE_S", "dur",
+                                     "viewFor", "simpleView", "simpleLogView")}
+    check("the Simple view's functions and constants are found in app.js", all(sdefs.values()),
+          ", ".join(n for n, d in sdefs.items() if not d))
+    sjs = "\n".join(sdefs.values()) + r"""
+var base = function (o) { var b = { battery_v: 11.9, battery_pct: 70, mode: 1, age_s: 0.2, firmware_age_s: 0.1, ina_ok: true, stall_count: 0 };
+                          Object.keys(o || {}).forEach(function (k) { b[k] = o[k]; }); return b; };
+var up = function (b, nav) { return { stack: { running: true, blueprint: "moss-nav" }, base: b, nav: nav || {} }; };
+var out = {
+  views: [viewFor("simple", null, 1440), viewFor("advanced", "simple", 390), viewFor(null, "advanced", 390),
+          viewFor(null, "simple", 1440), viewFor(null, null, 390), viewFor(null, null, 699), viewFor(null, null, 700),
+          viewFor("junk", "junk", 1440)],
+  offline: simpleView(up(base()), false, false, false),
+  busy: simpleView(up(base()), true, true, false),
+  noStack: simpleView({ stack: { running: false } }, true, false, false),
+  noBase: simpleView({ stack: { running: true }, base: null }, true, false, false),
+  stale: simpleView(up(base({ age_s: 4 })), true, false, false),
+  low: simpleView(up(base({ battery_v: 10.5 })), true, false, false),
+  stalled: simpleView(up(base()), true, false, true),
+  exploring: simpleView(up(base({ mode: 2 }), { exploring: true }), true, false, false),
+  driving: simpleView(up(base({ mode: 2 })), true, false, false),
+  ready: simpleView(up(base({ mode: 1 })), true, false, false),
+  disarmed: simpleView(up(base({ mode: 0 })), true, false, false),
+  lowBeatsStall: simpleView(up(base({ battery_v: 10.0 })), true, false, true).word,
+  logs: [simpleLogView(null, null, 0), simpleLogView(null, { text: "12:00:01  base up", warn: false }, 0),
+         simpleLogView({ text: "Sent.", bad: false, at: 0 }, { text: "x", warn: false }, 7999),
+         simpleLogView({ text: "Sent.", bad: false, at: 0 }, { text: "x", warn: false }, 8000),
+         simpleLogView({ text: "Refused.", bad: true, at: 0 }, { text: "x", warn: false }, 999999),
+         simpleLogView(null, { text: "stall", warn: true }, 0)]
+};
+console.log(JSON.stringify(out));
+"""
+    r = subprocess.run([node, "-e", sjs], capture_output=True, text=True, timeout=30)
+    try:
+        SJ = json.loads(r.stdout)
+    except ValueError:
+        SJ = {}
+        print("  node said:", r.stderr.strip()[:400])
+    check("viewFor: ?view= wins over the memory, the memory over the width, a first visit under 700 px is Simple, "
+          "junk is Advanced",
+          SJ.get("views") == ["simple", "advanced", "advanced", "simple", "simple", "simple", "advanced", "advanced"],
+          json.dumps(SJ.get("views")))
+    W = {k: ((SJ.get(k) or {}).get("word"), (SJ.get(k) or {}).get("cls")) for k in
+         ("offline", "busy", "noStack", "noBase", "stale", "low", "stalled", "exploring", "driving", "ready", "disarmed")}
+    want = {"offline": ("OFFLINE", "attn"), "busy": ("LAUNCHING", ""), "noStack": ("NO STACK", "dim"),
+            "noBase": ("NO TELEMETRY", "dim"), "stale": ("NO TELEMETRY", "attn"), "low": ("BATTERY LOW", "attn"),
+            "stalled": ("STALLED", "attn"), "exploring": ("EXPLORING", "accent"), "driving": ("DRIVING", "accent"),
+            "ready": ("READY", ""), "disarmed": ("DISARMED", "dim")}
+    check("simpleView: one word per state, the worst first: OFFLINE attn, LAUNCHING, NO STACK dim, NO TELEMETRY (dim before "
+          "the base spoke, attn when stale 4 s), BATTERY LOW attn, STALLED attn, EXPLORING / DRIVING accent, READY, "
+          "DISARMED dim", W == want, json.dumps({k: v for k, v in W.items() if want.get(k) != v}))
+    check("simpleView: a low battery outranks a stall; the stale detail says the age ('Nothing from the base for 4 s.')",
+          SJ.get("lowBeatsStall") == "BATTERY LOW" and (SJ.get("stale") or {}).get("detail") == "Nothing from the base for 4 s.",
+          json.dumps([SJ.get("lowBeatsStall"), (SJ.get("stale") or {}).get("detail")]))
+    L = SJ.get("logs") or []
+    check("the Simple status line: nothing -> 'No stack, no log.' dim; the newest log line dim (attn when it warns); a press's "
+          "answer holds it 8 s (mint), an error until the next action (attn)",
+          L == [{"text": "No stack, no log.", "cls": "dim"}, {"text": "12:00:01  base up", "cls": "dim"},
+                {"text": "Sent.", "cls": "ok"}, {"text": "x", "cls": "dim"}, {"text": "Refused.", "cls": "attn"},
+                {"text": "stall", "cls": "attn"}], json.dumps(L))
+
 _TMPDIR.cleanup()
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")
