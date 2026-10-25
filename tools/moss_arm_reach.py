@@ -37,7 +37,7 @@ TCP_IN_TOOL_M = (0.0, 0.0, -0.035)     # as tools/moss_arm_drop.py
 JAWS_BELOW_TCP_M = 0.020               # the jaws' lowest point under the tool point, gripper vertical
 TICKS_PER_REV = 4096
 SCANNER_XY_CHASSIS = (0.130, 0.084)    # the lidar's axis in the chassis frame (CAD R31): base_link = chassis - this
-TILT_MAX_DEG = 25.0                    # the gripper within this of vertical
+TILT_MAX_DEG = 10.0                    # the gripper within this of vertical (a gripper 20-30 deg forward rests on a can instead of closing on it)
 JAW_MIN_M, JAW_MAX_M = 0.008, 0.040    # the jaws' lowest point above the floor
 ABOVE_MIN_M, ABOVE_MAX_M = 0.050, 0.140  # the jaws' lowest point for a pose ABOVE a floor point (the pre-pick / post-pick)
 
@@ -145,7 +145,8 @@ def nearest(doc: dict, x: float, y: float, like=PICK_LOW_TICKS) -> tuple[dict, f
     best = float(d.min())
     cands = [k for k in range(len(d)) if d[k] <= best + NEAR_BAND_M]
     like = np.array(like, dtype=float)
-    k = min(cands, key=lambda i: float(np.abs(np.array(doc["poses"][i]["ticks"], dtype=float) - like).max()))
+    k = min(cands, key=lambda i: (round(doc["poses"][i]["tilt_deg"] / 5.0),
+                                  float(np.abs(np.array(doc["poses"][i]["ticks"], dtype=float) - like).max())))
     return doc["poses"][k], float(d[k])
 
 
