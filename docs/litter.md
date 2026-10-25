@@ -60,9 +60,9 @@ and, with `--expect X Y`, how far the median is from where the tape measure
 put the object.
 
 ```sh
-tools/moss-fly.sh stop                                   # the camera must be free
-tools/moss_litter_probe.py --seconds 10 --expect 1.00 0.00   # a can 1.00 m ahead of the lidar axis, on it
-tools/moss_litter_probe.py --fake --frames 20            # no camera, no torch: the chain on a synthetic frame
+tools/moss-fly.sh stop                                   # the camera must be free; the robot's venv has torch and ultralytics, the system python does not
+.venv/bin/python tools/moss_litter_probe.py --seconds 10 --expect 1.00 0.00   # a can 1.00 m ahead of base_link's origin, on its x axis
+.venv/bin/python tools/moss_litter_probe.py --fake --frames 20            # no camera, no torch: the chain on a synthetic frame
 ```
 
 Three or four pieces of litter at measured places, ten seconds each, give the
