@@ -27,10 +27,11 @@ from moss_dimos.arm_feetech import FeetechSo101Adapter  # noqa: E402
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pick-pose", default=None)
+    ap.add_argument("--poses", default=None, help="the cycle file (default config/arm_drop_poses.json; e.g. config/arm_pick_at.json)")
     ap.add_argument("--speed", type=float, default=A.SPEED_TICKS_PER_S)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    cycle = A.load_cycle(speed=a.speed, pick_pose=a.pick_pose or A.pick_pose_name())
+    cycle = A.load_cycle(*( [a.poses] if a.poses else [] ), speed=a.speed, pick_pose=a.pick_pose or A.pick_pose_name())
     port = os.environ.get(A.ARM_PORT_ENV, A.ARM_PORT_DEFAULT)
     ad = FeetechSo101Adapter(address=port)
     if not ad.connect():

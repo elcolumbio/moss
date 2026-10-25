@@ -39,6 +39,7 @@ TICKS_PER_REV = 4096
 SCANNER_XY_CHASSIS = (0.130, 0.084)    # the lidar's axis in the chassis frame (CAD R31): base_link = chassis - this
 TILT_MAX_DEG = 25.0                    # the gripper within this of vertical
 JAW_MIN_M, JAW_MAX_M = 0.008, 0.040    # the jaws' lowest point above the floor
+ABOVE_MIN_M, ABOVE_MAX_M = 0.050, 0.140  # the jaws' lowest point for a pose ABOVE a floor point (the pre-pick / post-pick)
 
 
 def find_cad() -> Path | None:
@@ -77,7 +78,7 @@ def scan(out: Path = OUT_PATH, say=print) -> dict:
     free = np.argwhere(~guard.occ)
     say(f"{cad.name}: {len(free)} allowed cells of {guard.occ.size}, scanning")
     t0 = time.monotonic()
-    rows = []
+    rows, above = [], []
     tcp_off = np.array(TCP_IN_TOOL_M)
     for idx in free:
         q = [float(g[i]) for g, i in zip(grids, idx)]
@@ -92,9 +93,13 @@ def scan(out: Path = OUT_PATH, say=print) -> dict:
         if tilt > TILT_MAX_DEG:
             continue
         jaw = float(tcp[2]) - JAWS_BELOW_TCP_M
-        if not JAW_MIN_M <= jaw <= JAW_MAX_M:
+        if JAW_MIN_M <= jaw <= JAW_MAX_M:
+            dest = rows
+        elif ABOVE_MIN_M <= jaw <= ABOVE_MAX_M:
+            dest = above
+        else:
             continue
-        rows.append({"idx": [int(i) for i in idx],
+        dest.append({"idx": [int(i) for i in idx],
                      "rad": [round(v, 6) for v in q],
                      "ticks": [rad_to_ticks(v, jmap[j]) for v, j in zip(q, joints)],
                      "tcp_chassis_m": [round(float(x), 4) for x in tcp],
@@ -104,9 +109,10 @@ def scan(out: Path = OUT_PATH, say=print) -> dict:
     doc = {"format": "moss-arm-floor-reach/1", "model": {"path": cad.name}, "table": TABLE_PATH.name,
            "joints": joints, "scanner_xy_chassis_m": list(SCANNER_XY_CHASSIS),
            "rule": {"tilt_max_deg": TILT_MAX_DEG, "jaw_floor_m": [JAW_MIN_M, JAW_MAX_M], "jaws_below_tcp_m": JAWS_BELOW_TCP_M},
-           "scanned_cells": int(len(free)), "poses": rows, "seconds": round(dt, 1)}
+           "scanned_cells": int(len(free)), "poses": rows, "above": above, "seconds": round(dt, 1),
+           "above_rule": {"jaw_floor_m": [ABOVE_MIN_M, ABOVE_MAX_M]}}
     out.write_text(json.dumps(doc, indent=0))
-    say(f"{len(rows)} floor poses in {dt:.1f} s -> {out}")
+    say(f"{len(rows)} floor poses and {len(above)} poses above the floor in {dt:.1f} s -> {out}")
     envelope(doc, say)
     return doc
 

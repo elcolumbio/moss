@@ -476,6 +476,18 @@ python3 tools/moss_arm_reach.py scan              # mujoco and the CAD scene; a 
 python3 tools/moss_arm_reach.py near 0.40 -0.11   # today's can: 10 cm beyond the reach
 ```
 
+`tools/moss_arm_pick_at.py X Y` aims the cycle at a point on the floor (base_link
+metres): the floor pose nearest to it becomes `pick`, a pose 5 to 12 cm above it
+with the same pan becomes `travel` and `lift`, the rest of the cycle is the
+delivered one, written to `config/arm_pick_at.json`. It refuses a point more
+than 4 cm beyond the reach and says how far the base has to move first. Check
+the file before playing it, as any cycle: `tools/moss_arm_drop.py plan --poses
+config/arm_pick_at.json --mujoco auto` must report zero contact in the CAD
+scene (the coarse table refuses the moves near the hull and the lidar base at
+clearance 1, as it does for the delivered cycle; `--suggest` proposes the
+shifts and vias). Then `tools/moss_arm_direct.py --poses config/arm_pick_at.json
+--pick-pose pick` plays it.
+
 `tools/moss_arm_direct.py` plays the pick-and-drop cycle straight on the servo
 bus, without the coordinator (the trajectory, the goto and the pick pose are the
 same as `moss_arm_play.py`; what is missing is the RPC and the lag cancel, the
