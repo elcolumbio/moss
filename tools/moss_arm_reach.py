@@ -126,10 +126,20 @@ def envelope(doc: dict, say=print) -> None:
             say(f"  at x {x0:.2f} m: none")
 
 
-def nearest(doc: dict, x: float, y: float) -> tuple[dict, float]:
+PICK_LOW_TICKS = (2922, 2593, 1978, 2609, 1015)   # the family of poses the cycle uses: the arm forward over the nose
+NEAR_BAND_M = 0.015                                 # among the poses this close to the nearest, the one nearest pick_low in joint space wins
+
+
+def nearest(doc: dict, x: float, y: float, like=PICK_LOW_TICKS) -> tuple[dict, float]:
+    """The floor pose nearest to (x, y) in base_link; ties within NEAR_BAND_M go to the
+    pose closest to `like` in joint space (the same floor point can be reached from the
+    other side of the pan, the arm bent backwards over the robot: legal, not wanted)."""
     pts = np.array([p["xy_base_m"] for p in doc["poses"]])
     d = np.hypot(pts[:, 0] - x, pts[:, 1] - y)
-    k = int(np.argmin(d))
+    best = float(d.min())
+    cands = [k for k in range(len(d)) if d[k] <= best + NEAR_BAND_M]
+    like = np.array(like, dtype=float)
+    k = min(cands, key=lambda i: float(np.abs(np.array(doc["poses"][i]["ticks"], dtype=float) - like).max()))
     return doc["poses"][k], float(d[k])
 
 
