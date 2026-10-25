@@ -68,9 +68,11 @@ tools/moss_litter_probe.py --fake --frames 20            # no camera, no torch: 
 Three or four pieces of litter at measured places, ten seconds each, give the
 two numbers this chain needs before any training: the hit rate on our floor
 and the position error at the approach distance. The geometry is the one the
-stack uses: `MOSS_CAMERA_XYZ_M` and `MOSS_CAMERA_PITCH_DEG` from the robot
-profile (`--camera-xyz`, `--pitch-deg` override them for a test). The CSV
-lands in `<MOSS_STATE_DIR>/litter_probe/`.
+stack uses: the tool reads `<MOSS_STATE_DIR>/robot.env` first, as the launcher
+does, so `MOSS_CAMERA_XYZ_M` and `MOSS_CAMERA_PITCH_DEG` set there are the ones
+it runs with (the shell's own values win, `--camera-xyz` and `--pitch-deg` win
+over both; the first line it prints says which file and which keys it took).
+The CSV lands in `<MOSS_STATE_DIR>/litter_probe/`.
 
 ## The mission
 
