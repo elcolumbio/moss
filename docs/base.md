@@ -35,6 +35,12 @@ then silence (`MOSS_BRAKE_S`, 0 to 1.0 s). Unloaded, the motors start between
 adapter delivers every non-zero command as full-duty pulses (`MOSS_PULSE_MS`,
 see [cockpit.md](cockpit.md)).
 
+`MOSS_TRACK_SIGN=-1` in `robot.env` flips the sign of both tracks on the wire and takes it off the
+encoder ticks, for a build whose firmware positive drives the rover backwards: every commander
+(the planner, the mission, a script) keeps forward positive, the pad needs no inversion of its
+own any more, and the odometry counts forward as positive. Prove it with a tape measure before
+setting it: a `vx=+0.1` twist for two seconds must move the rover forward.
+
 This is the dimOS path. The bench tool in `moss_pi/` drives the same firmware
 without dimOS and reads raw SDL button 4 as its deadman: L1 on an Xbox-layout
 pad, not on this one ([Software.md](../Software.md)).

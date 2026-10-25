@@ -758,6 +758,36 @@ finally:
     os.environ.pop("MOSS_PULSE_MS", None)
     os.environ.pop("MOSS_BUS_REF_MV", None)
 
+# ── track polarity: MOSS_TRACK_SIGN=-1 (the firmware's positive drives the rover backwards) ──
+print("T. MOSS_TRACK_SIGN=-1: the wire and the raw ticks flip, the commander's convention does not")
+os.environ["MOSS_TRACK_SIGN"] = "-1"
+fwT = FakeMossFirmware()
+fT = lambda: fwT
+fT.is_mock = True
+GT = MossGeometry(track_m=0.30, mps_at_limit=0.15, max_pct=25, ticks_per_m=10000.0, min_pct=0)
+aT = MossBaseAdapter(dof=3, port_factory=fT, geometry=GT)
+os.environ.pop("MOSS_TRACK_SIGN", None)
+check(aT.connect() is True and aT.write_enable(True) is True, "sign -1: connect and arm")
+check(aT.write_velocities([0.15, 0.0, 0.0]) is True and (fwT.left, fwT.right) == (-25, -25),
+      f"sign -1: a forward twist goes on the wire as drive -25 -25 (got {fwT.left} {fwT.right})")
+check(aT.target_pct == (-25, -25), f"sign -1: target_pct is the wire pair (-25, -25): {aT.target_pct}")
+check(aT.write_velocities([0.0, 0.0, 1.0]) is True and fwT.left > 0 and fwT.right < 0,
+      f"sign -1: a left turn (wz +1) is L={fwT.left} R={fwT.right} on the wire: the pivot flips with the sign")
+fwT.ticks = [0, 0]; fwT.emit_telemetry(); settle(0.15)
+fwT.ticks = [-1000, -1000]; fwT.emit_telemetry(); settle(0.15)
+od = aT.read_odometry()
+vel = aT.read_velocities()
+check(od is not None and od[0] > 0.05, f"sign -1: raw ticks going negative are the rover going FORWARD: odometry x {od}")
+check(vel is not None and vel[0] > 0.0, f"sign -1: the velocity from the encoders is forward too: {vel}")
+aT.write_stop(); aT.disconnect()
+fwU = FakeMossFirmware()
+fU = lambda: fwU
+fU.is_mock = True
+aU = MossBaseAdapter(dof=3, port_factory=fU, geometry=GT)
+check(aU.connect() is True and aU.write_enable(True) is True and aU.write_velocities([0.15, 0.0, 0.0]) is True
+      and (fwU.left, fwU.right) == (25, 25), "no MOSS_TRACK_SIGN: the wire is drive 25 25 as before")
+aU.write_stop(); aU.disconnect()
+
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")
 sys.exit(1 if KO else 0)

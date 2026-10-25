@@ -60,6 +60,10 @@ Calibration (env, all optional):
                         (default robot_profile.MOSS.track_m, 0.266 CAD, placeholder)
     MOSS_MPS_AT_LIMIT   floor speed in m/s at MOSS_MAX_PCT, measured
     MOSS_MAX_PCT        percent ceiling, <= the firmware's 100
+    MOSS_TRACK_SIGN     1 (default) or -1: the sign put on BOTH tracks on the wire, and taken off the encoder ticks, when the
+                        firmware's positive drives the rover backwards (measured on the rover: a positive twist reversed it, and the
+                        pad had been corrected with MOSS_PAD_INVERT_Y instead of the wire). Commands, the floor, the stall guard
+                        and the odometry all keep the forward-positive convention; only the wire and the raw ticks differ.
     MOSS_MIN_PCT        static-friction floor in percent (0 = off, default 50: measured 40 on a full battery, 10 of margin for the sag): a non-zero track command below it is raised to it, sign kept; an arc is scaled up whole so its curvature survives (floor_tracks)
     MOSS_BUS_REF_MV     the bus voltage the floor and the speeds were measured at (default 12400): every command is scaled by ref/bus so a sagging pack puts the same voltage on the motors (never below 1, at most x1.5, capped at the limit); 0 = off
     MOSS_ONE_TRACK_PIVOT a pivot whose one track freezes while the other turns is not a contact: that track is braked and the pivot turns on the other, for the rest of the run (default on; 0 = off, such a pivot is a stall)
@@ -399,6 +403,7 @@ class MossBaseAdapter:
         self._hardware_id = hardware_id
         self._port_factory = port_factory
         self._geometry = geometry or MossGeometry.from_env()
+        self._track_sign = -1 if _env_float("MOSS_TRACK_SIGN", 1) < 0 else 1   # see MOSS_TRACK_SIGN above
         self._ser = None
         self._mock = False
         self._lock = threading.RLock()
@@ -764,7 +769,8 @@ class MossBaseAdapter:
         then the pulse slice of this tick when pulsing. The commander's pair
         itself (`_want`) stays as asked: the stall guard and the push compare
         percents between themselves, which the gain does not change."""
-        return self._slice(bus_scaled(want, self._gain(), int(self._geometry.max_pct)))
+        l, r = self._slice(bus_scaled(want, self._gain(), int(self._geometry.max_pct)))
+        return self._track_sign * l, self._track_sign * r
 
     def _pivot_fallback(self, want: tuple[int, int]) -> tuple[int, int]:
         """A pivot whose one track is known not to turn in that direction (it froze
@@ -975,7 +981,7 @@ class MossBaseAdapter:
             return
         try:
             l, r = tel["ticks"]
-            l, r = int(l), int(r)
+            l, r = self._track_sign * int(l), self._track_sign * int(r)
         except (KeyError, TypeError, ValueError):
             return
         now = time.monotonic()
