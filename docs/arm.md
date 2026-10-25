@@ -458,6 +458,31 @@ grid step apart at most) with the guard, `segment_allowed` and the sweep's
 box rule, prints one line per move with the reason of a refusal, and with
 `--mujoco` counts the contacts of the whole sequence in the CAD scene.
 
+## The floor the gripper reaches
+
+`tools/moss_arm_reach.py scan` poses every allowed cell of the keep-out table in
+the CAD scene and keeps the poses whose gripper points down (within 25 degrees
+of vertical) with the jaws' lowest point 8 to 40 mm above the floor. The result,
+`config/arm_floor_reach.json`, is the floor the arm can pick at, in base_link
+(from the lidar's floor point, x forward, y left) and in the chassis frame, one
+pose (ticks) per point. `near X Y` prints the pose nearest to a point on the
+floor and how far its tool point is from it. On the R31 scene the reach ends
+31 cm ahead of the lidar's point and spans 34 cm to the right and 24 cm to the
+left; a piece of litter farther than that needs one base move first, by the
+difference, not a fine approach.
+
+```sh
+python3 tools/moss_arm_reach.py scan              # mujoco and the CAD scene; a few seconds
+python3 tools/moss_arm_reach.py near 0.40 -0.11   # today's can: 10 cm beyond the reach
+```
+
+`tools/moss_arm_direct.py` plays the pick-and-drop cycle straight on the servo
+bus, without the coordinator (the trajectory, the goto and the pick pose are the
+same as `moss_arm_play.py`; what is missing is the RPC and the lag cancel, the
+worst following error is printed at the end). It is the player that ran the
+cycle on the robot first, on 25 October: 57 s, back at drive, pan 491 and lift
+145 ticks of worst lag.
+
 ## The arm in dimOS
 
 `moss_dimos/arm.py` puts the arm under dimOS's control coordinator: one
