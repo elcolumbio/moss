@@ -351,8 +351,16 @@ class MissionLogic:
 
 # ── the dimOS module ──
 
+_MISSION_CLASS = None
+
+
 def _module_class():
-    """Built on first use: the dimOS imports stay out of a plain import of this file."""
+    """Built on first use: the dimOS imports stay out of a plain import of this file.
+    One class per process, exposed as `moss_dimos.mission.LitterMission` with that
+    qualname, so dimOS can pickle it by reference into its worker processes."""
+    global _MISSION_CLASS
+    if _MISSION_CLASS is not None:
+        return _MISSION_CLASS
     from dimos.core.core import rpc
     from dimos.core.module import Module
     from dimos.core.stream import In, Out
@@ -526,6 +534,9 @@ def _module_class():
             self._pick_thread = threading.Thread(target=run, name="litter-pick", daemon=True)
             self._pick_thread.start()
 
+    LitterMission.__module__ = __name__
+    LitterMission.__qualname__ = "LitterMission"
+    _MISSION_CLASS = LitterMission
     return LitterMission
 
 
