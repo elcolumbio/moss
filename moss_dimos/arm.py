@@ -66,6 +66,20 @@ ARM_COORDINATOR_NAME = "ArmCoordinator"   # the arm's coordinator serves its RPC
 SIM_ADAPTER = "sim_mujoco"                                    # dimOS's shared-memory MuJoCo adapter
 REAL_ADAPTER = "feetech_so101"
 REAL_ADAPTER_PATH = "moss_dimos.arm_feetech:FeetechSo101Adapter"
+
+# The coordinator's own process creates the adapter by name from dimOS's manipulator
+# registry; that registry is a plain in-process dict. `moss_dimos.blueprints` registers
+# the path in the launcher, and this module registers it again wherever it is imported
+# (the ArmCoordinator process imports this module for its class), so the name resolves
+# there too. Twice the same path is a no-op; another path under the name is said, not hidden.
+try:
+    from dimos.hardware.manipulators.registry import adapter_registry as _manipulator_registry
+    _manipulator_registry.register_path(REAL_ADAPTER, REAL_ADAPTER_PATH)
+except ImportError:
+    pass
+except ValueError as _exc:
+    import logging as _logging
+    _logging.getLogger(__name__).warning(f"manipulator adapter {REAL_ADAPTER!r} already registered elsewhere: {_exc}")
 ARM_PORT_ENV = "MOSS_ARM_PORT"
 ARM_PORT_DEFAULT = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B3D041749-if00"
 
