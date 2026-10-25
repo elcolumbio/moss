@@ -337,6 +337,44 @@ def run(camera, detector, wanted: set[str], camera_xyz, pitch_deg: float, out: P
     return s
 
 
+def load_robot_env(text: str) -> dict[str, str]:
+    """KEY=VALUE lines of a robot.env (optional `export `, # comments, quotes stripped). Pure."""
+    out: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key, val = key.strip(), val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]
+        if key:
+            out[key] = val
+    return out
+
+
+def apply_robot_env(env: dict | None = None) -> tuple[Path, list[str]]:
+    """The launchers source <MOSS_STATE_DIR>/robot.env before the stack starts; this tool reads the
+    same file so its camera geometry is the stack's (the flight check does the same). The shell's
+    own values win. Returns the path and the keys taken from the file."""
+    e = os.environ if env is None else env
+    path = moss_state_dir(e) / "robot.env"
+    try:
+        text = path.read_text()
+    except OSError:
+        return path, []
+    taken = []
+    for key, val in load_robot_env(text).items():
+        if key not in e:
+            e[key] = val
+            taken.append(key)
+    return path, taken
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Measure the litter detector on the floor: hits and positions.")
     ap.add_argument("--fake", action="store_true", help="no camera, no torch: a synthetic frame and a fake detector")
@@ -357,6 +395,12 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=None, help="CSV path")
     a = ap.parse_args(argv)
 
+    env_path, taken = apply_robot_env()
+    if taken:
+        print(f"robot.env {env_path}: {', '.join(sorted(taken))}")
+    else:
+        print(f"robot.env {env_path}: {'nothing taken (the shell sets everything)' if env_path.is_file() else 'absent'}"
+              " - the camera geometry is the profile's default unless MOSS_CAMERA_XYZ_M / --camera-xyz says otherwise")
     profile = moss_profile()
     camera_xyz = parse_xyz(a.camera_xyz) if a.camera_xyz else profile.camera_xyz_base_m
     pitch = profile.camera_pitch_deg if a.pitch_deg is None else a.pitch_deg

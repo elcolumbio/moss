@@ -142,6 +142,30 @@ with tempfile.TemporaryDirectory(prefix="moss_litter_probe_") as td:
     r3 = subprocess.run([sys.executable, str(ROOT / "tools" / "moss_litter_probe.py"), "--fake", "--frames", "0", "--seconds", "0"],
                         capture_output=True, text=True, timeout=60, env=env)
     check(r3.returncode == 2 and "nothing to do" in r3.stderr, "no frames and no seconds -> exit 2 with a reason")
+    check("robot.env" in r.stdout and "absent" in r.stdout, "without a robot.env the tool says so", r.stdout[:300])
+
+    print("E. robot.env, the stack's own geometry")
+    check(lp.load_robot_env('# c\nexport MOSS_CAMERA_XYZ_M="0.026 -0.084 0.075"\nMOSS_CAMERA_PITCH_DEG=12\nbad line\n')
+          == {"MOSS_CAMERA_XYZ_M": "0.026 -0.084 0.075", "MOSS_CAMERA_PITCH_DEG": "12"},
+          "load_robot_env: export, quotes, comments and junk lines")
+    e2 = {"MOSS_STATE_DIR": td, "MOSS_CAMERA_PITCH_DEG": "3"}
+    (Path(td) / "robot.env").write_text('MOSS_CAMERA_XYZ_M="0.026 -0.084 0.075"\nMOSS_CAMERA_PITCH_DEG=0\n')
+    path, taken = lp.apply_robot_env(e2)
+    check(path == Path(td) / "robot.env" and taken == ["MOSS_CAMERA_XYZ_M"] and e2["MOSS_CAMERA_PITCH_DEG"] == "3",
+          "apply_robot_env: takes what the shell does not set, the shell's value wins", (taken, e2))
+    r4 = subprocess.run([sys.executable, str(ROOT / "tools" / "moss_litter_probe.py"), "--fake", "--frames", "2", "--seconds", "0",
+                         "--out", str(Path(td) / "p4.csv")], capture_output=True, text=True, timeout=120, env=env)
+    rows4 = list(csv.DictReader((Path(td) / "p4.csv").open())) if (Path(td) / "p4.csv").is_file() else []
+    check(r4.returncode == 0 and rows4 and near(float(rows4[0]["x_m"]), 1.026, 2e-3) and near(float(rows4[0]["y_m"]), -0.184, 2e-3)
+          and "MOSS_CAMERA_XYZ_M" in r4.stdout,
+          "the tool reads robot.env from MOSS_STATE_DIR: camera (0.026, -0.084, 0.075) -> x 1.026, y -0.184, and says it",
+          rows4[:1] if rows4 else r4.stderr[-300:])
+    r5 = subprocess.run([sys.executable, str(ROOT / "tools" / "moss_litter_probe.py"), "--fake", "--frames", "2", "--seconds", "0",
+                         "--out", str(Path(td) / "p5.csv"), "--camera-xyz", "0.156 0 0.075", "--pitch-deg", "0"],
+                        capture_output=True, text=True, timeout=120, env=env)
+    rows5 = list(csv.DictReader((Path(td) / "p5.csv").open())) if (Path(td) / "p5.csv").is_file() else []
+    check(r5.returncode == 0 and rows5 and near(float(rows5[0]["x_m"]), 1.156, 2e-3) and near(float(rows5[0]["y_m"]), -0.100, 2e-3),
+          "--camera-xyz on the command line beats robot.env", rows5[:1] if rows5 else r5.stderr[-300:])
 
 print(f"{OK} OK, {KO} KO")
 print("TEST PASSED" if KO == 0 else "TEST FAILED")
