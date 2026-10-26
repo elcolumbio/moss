@@ -7,9 +7,10 @@ one shaft, a spring instead, and tipping. The full write-up with charts and
 tables is `out/report.html` (download it and open it in a browser).
 
 **Status: simulation evidence, not a bench result.** The arm is the model's,
-scaled to the 768 g weighed in issue #2; servo figures are Feetech's; bracket
-stiffness, encoder offsets and the follower's behaviour are modelled, not
-measured. The bench steps at the end are what would settle them.
+scaled to the 768 g weighed in issue #2; servo figures are Feetech's; how
+stiffly the servo holds its goal, bracket stiffness, encoder offsets and the
+follower's behaviour are modelled, not measured. The bench steps at the end
+are what would settle them.
 
 ## Findings
 
@@ -38,16 +39,21 @@ Heat is (torque / 0.98 N·m)², the servo's continuous rating (10 kg·cm); stall
    and its tie-break picks the pose nearest `pick_low`, not the lightest. Whether
    the nose camera still sees the object that close is a check on the robot
    (`s6_pick_point`).
-4. **Two servos given the same goal mostly idle or fight.** Each STS3215 reaches
-   full torque about 2 ticks (0.17°) off its goal (firmware P = 32). Through a
-   printed bracket, the second servo takes 14 % of the load when perfectly
-   calibrated; 4 ticks of encoder offset make them push against each other, and
-   the hotter one runs at 2.9×, against 0.89× for one servo. To share evenly, B
-   has to twist its bracket by half the load, so the right offset changes with
-   pose and payload, and a stiffer bracket makes it worse. Across 84 variants
-   (offset −8…+8 ticks, bracket 50, 200 or 1000 N·m/rad, play 0 or 0.3°, P 32 or 16), same
-   goal was hotter than one servo in 47 at the pick pose.
-5. **A follower shares evenly.** Servo A holds position; servo B runs open-loop
+4. **Whether two servos given the same goal share depends on how stiffly the
+   servo holds its goal.** With the model's servo (Menagerie's 998 N·m/rad: full
+   torque about 2 ticks, 0.17°, off its goal), the second servo takes 14 % of the
+   load through a printed bracket when perfectly calibrated, and at 4 ticks of
+   encoder offset the hotter one runs at 2.9×, against 0.89× for one servo; same
+   goal was hotter than one servo in 47 of 84 variants at the pick. The bench
+   note in issue #2 says the real loop is much softer near its goal: under load,
+   a goal a few ticks away does not move the arm, which a 998 N·m/rad servo
+   cannot do. With a servo soft enough that one alone sags 0.5° at the pick
+   (100 N·m/rad), same goal with RoArm's zero at boot beats one servo at any
+   offset up to ±4 ticks (0.74× at worst); at a 1° sag it is 0.53× at worst. One
+   reading on today's arm decides it: one servo at `pick_low`,
+   `Present_Position` minus the goal. About 6 ticks or more and same goal will
+   share; 1–2 ticks and it fights.
+5. **If the loop is stiff, a follower shares evenly.** Servo A holds position; servo B runs open-loop
    PWM (mode 2) and copies A's `Present_Load` over the bus. That splits 50/50 at
    any offset: 0.22× each at the pick. B has to follow with a time constant of
    about 0.1 s (at 50 Hz, 20-30 % of the gap per update); faster, it rings
@@ -55,7 +61,7 @@ Heat is (torque / 0.98 N·m)², the servo's continuous rating (10 kg·cm); stall
 6. **For a load that is all arm weight, a spring fits better.** A gravity-balance
    spring of 0.66 N·m peak (zero free length, torque A·sin(θ − φ)) brings the
    pick pose to 0.08×, with nothing to sync. With a 250 g glass bottle at the
-   pick: one servo 2.0×, spring 0.57×, follower pair 0.50× each.
+   pick: one servo 2.0×, spring 0.57×, two servos sharing evenly 0.50× each.
 7. **Tipping is not a risk** at these weights: 1.09 kg held stretched out to the
    side before the rover tips on flat ground.
 
@@ -65,13 +71,17 @@ when it writes its own scene; the XML alone does not.
 
 ## Bench steps that would settle it
 
-1. Encoder offset across the travel: both servos on the joint, torque off,
+1. How stiffly one servo holds, on today's arm: at `pick_low`, the shoulder's
+   `Present_Position` minus its goal, arriving from above; then step the goal by
+   2, 4 and 8 ticks and note when the arm moves. About 6 ticks of sag or more:
+   same goal will share. 1–2 ticks: expect a fight, use the follower.
+2. Encoder offset across the travel: both servos on the joint, torque off,
    swing the arm by hand end to end, log both `Present_Position`.
-2. Idle fight: torque on, arm in the drive pose, log `Present_Load` and
+3. Idle fight: torque on, arm in the drive pose, log `Present_Load` and
    `Present_Current` on both for 30 s. Opposite signs mean they fight.
-3. Issue #2's hold with the can, 60 s at `pick_low` and at full reach, logging
+4. Issue #2's hold with the can, 60 s at `pick_low` and at full reach, logging
    `Present_Temperature` on both: one servo, same goal, follower, spring.
-4. The pick point a few cm closer: does the nose camera still see the object,
+5. The pick point a few cm closer: does the nose camera still see the object,
    and does the approach land it there?
 
 ## Run
@@ -81,14 +91,14 @@ The same environment as `../mujoco`:
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-make all        # about 15 minutes; writes out/*.json and out/report.html
+make all        # about 25 minutes; writes out/*.json and out/report.html
 ```
 
 | Study | Question |
 |---|---|
 | `s1_torque_budget` | Holding torque per joint at every pose MOSS uses (cycle, drive, 645 floor picks, worst stretch), against the servo's continuous and stall torque |
 | `s2_cycle` | The pick-and-drop sequence of `config/arm_drop_poses.json` under full dynamics, one vs two shoulder servos, payload and a 20 s wait at the pick |
-| `s3_two_servos` | Two STS3215 on one shaft: same goal vs follower, encoder offset × bracket stiffness × play × P; the follower's gain and bus rate |
+| `s3_two_servos` | Two STS3215 on one shaft: same goal vs follower, encoder offset × bracket stiffness × play × P; the follower's gain and bus rate; same goal against how stiffly the servo holds its goal |
 | `s4_tipping` | Least payload that tips the rover, and the slope margin |
 | `s5_spring` | A gravity-balance spring instead of (or with) a second servo |
 | `s6_pick_point` | Shoulder load against where the arm picks, straight ahead, from the reach table |

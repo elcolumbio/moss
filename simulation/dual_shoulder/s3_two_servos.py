@@ -8,7 +8,7 @@ two disagree on is not backlash inside the gearbox (the encoder sits after it)
 but the offset between their two encoders: delta, in ticks (0.088° each).
 
 Strategies for "software sync":
-  same_goal  both servos get the same goal (RoArm-M2 does this, after zeroing
+  same_goal  both servos get the same goal (RoArm-M2 and M3 do this, after zeroing
              the second servo while the first holds the middle pose)
   follower   A holds position; B runs open-loop PWM (STS mode 2) and copies A's
              Present_Load (its PWM duty) over the bus: d_B += alpha*(d_A - d_B)
@@ -18,6 +18,13 @@ Strategies for "software sync":
 
 A servo here: tau = clip(Kp*e - Kv*w, ±stall at the pack voltage), back-EMF as
 joint damping 0.6 N·m·s (the model's value), gear friction 0.052 N·m.
+
+Kp is the one figure same_goal hinges on, and the least known. The main runs use
+the model's 998 N·m/rad (Menagerie, P = 32: full torque 2 ticks off the goal).
+The bench note in issue #2 (under load, a goal a few ticks away does not move the
+arm) says the real loop is much softer near its goal, so the last part sweeps Kp
+from 25 to 998 at the pick. A softer loop sags more under the same load, and that
+sag, Present_Position minus the goal with one servo, is how to read Kp on the arm.
 """
 from __future__ import annotations
 
@@ -32,6 +39,8 @@ from s2_cycle import PACK_V
 
 DT = 0.0005
 KV = 2.731
+DELTAS = (-8, -4, -2, 0, 2, 4, 8)
+STIFFNESS = (25.0, 50.0, 100.0, 250.0, ma.KP_P16, ma.KP_P32)   # N·m/rad at the output
 STALL_V = ma.STALL_NM * PACK_V / 12.0
 
 
@@ -156,7 +165,7 @@ def main() -> None:
     cases = {"pick_low + MOSS can": (poses["pick_low"], ma.MOSS_CAN_KG),
              "far pick + glass bottle": (far_pick_pose(), ma.GLASS_BOTTLE_KG),
              "clear (light load)": (poses["clear"], 0.0)}
-    out = {"stall_v": STALL_V, "rows": [], "follower": [], "moves": []}
+    out = {"stall_v": STALL_V, "rows": [], "follower": [], "moves": [], "stiffness": []}
 
     print("— the load each servo carries, holding still (mean of the last second) —")
     print(f"{'case':22s} {'strategy':9s} {'δ':>4s} {'k_s':>5s} {'play':>5s} {'P':>3s} | {'τA':>6s} {'τB':>6s} {'fight':>6s} {'heatmax':>7s} {'Cu W':>5s} {'err°':>6s}")
@@ -195,6 +204,20 @@ def main() -> None:
         r = simulate(s, poses["pick_low"], poses["lift"], move_s=2.6, hold_s=1.5)
         out["moves"].append(r)
         print(f"{s.strategy:9s} δ {s.delta_ticks:3.0f} | max err {r['max_err_deg']:5.2f}°  end τA {r['tau_a']:5.2f} τB {r['tau_b']:5.2f}")
+
+    print("\n— how stiff the servo holds its goal: same goal at the pick, MOSS's can, no play —")
+    print("sag = one servo's Present_Position below its goal; then the hotter servo's heat per offset δ, ticks")
+    print(f"{'Kp':>5s} {'k_s':>5s} | {'sag°':>5s} {'ticks':>5s} | " + " ".join(f"{dl:+5d}" for dl in DELTAS))
+    q, kg = cases["pick_low + MOSS can"]
+    for kp in STIFFNESS:
+        single = simulate(Setup("single", kp=kp, payload_kg=kg), q, hold_s=3.0)
+        for k_s in (50.0, 200.0, 1000.0):
+            rs = [simulate(Setup("same_goal", dl, k_s, 0.0, kp, payload_kg=kg), q, hold_s=3.0) for dl in DELTAS]
+            out["stiffness"].append({"kp": kp, "k_s": k_s, "sag_deg": abs(single["err_deg"]), "single_heat": single["heat_max"],
+                                     "same_goal": [{"delta_ticks": dl, "heat_max": r["heat_max"], "share_b": r["share_b"], "fight_nm": r["fight_nm"]}
+                                                   for dl, r in zip(DELTAS, rs)]})
+            print(f"{kp:5.0f} {k_s:5.0f} | {abs(single['err_deg']):5.2f} {abs(single['err_deg']) / math.degrees(ma.TICK_RAD):5.1f} | "
+                  + " ".join(f"{r['heat_max']:5.2f}" for r in rs))
     ma.save("s3_two_servos", out)
 
 

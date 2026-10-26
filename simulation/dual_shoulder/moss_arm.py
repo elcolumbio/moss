@@ -36,6 +36,8 @@ R_OHM = 12.0 / STALL_A              # 4.4: the winding, from 12 V / stall curren
 TICK_RAD = 2 * math.pi / 4096
 # Position stiffness of the servo's P loop at the output. The model's kp 998 N·m/rad
 # is MuJoCo Menagerie's SO101 value (firmware P=32); LeRobot writes P=16 on followers.
+# Not measured: the bench note in issue #2 says the real loop is much softer near its
+# goal, so s3 sweeps it.
 KP_P32 = 998.22
 KP_P16 = KP_P32 / 2
 

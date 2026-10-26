@@ -117,12 +117,24 @@ def fight_fig(s3: dict) -> tuple[str, dict]:
         series.append({"name": f"Same goal, {nm}", "var": var, "pts": pts, "label": nm.split(" (")[0]})
     fol_heat = max(r["heat_max"] for r in fol)
     fig = figure("f-fight", "Two servos given the same goal: the hotter servo's heat",
-                 "Arm at MOSS's pick pose holding its 20 g can. x = how far servo B's encoder disagrees with A's, in ticks (1 tick = 0.088°). Firmware P = 32.",
+                 "Arm at MOSS's pick pose holding its 20 g can. x = how far servo B's encoder disagrees with A's, in ticks (1 tick = 0.088°). The model's servo stiffness (998 N·m/rad, firmware P = 32).",
                  series, "encoder offset between the two servos, ticks", "heat of the hotter servo / rating",
                  refs=[{"y": single["heat_max"], "label": f"one servo {single['heat_max']:.2f}"},
                        {"y": fol_heat, "label": f"follower {fol_heat:.2f}"}],
                  y_range=(0, 8), x_fmt="{:.0f}", y_fmt="{:.2f}")
     return fig, {"single": single, "follower_heat": fol_heat}
+
+
+def soft_fig(s3: dict, single_heat: float) -> str:
+    series = []
+    for kp, var in ((50.0, "--s1"), (100.0, "--s2"), (250.0, "--s4")):
+        r = next(r for r in s3["stiffness"] if r["kp"] == kp and r["k_s"] == 200.0)
+        series.append({"name": f"Kp {kp:.0f} N·m/rad: one servo sags {r['sag_deg']:.2f}° at the pick", "var": var,
+                       "pts": [(x["delta_ticks"], x["heat_max"]) for x in r["same_goal"]], "label": f"sags {r['sag_deg']:.1f}°"})
+    return figure("f-soft", "Same goal again, with a softer servo",
+                  "Printed bracket (200 N·m/rad), MOSS's pick pose and its 20 g can. Each line is a servo that holds its goal less stiffly than the model's 998 N·m/rad; the softer it is, the more one servo alone sags under the arm.",
+                  series, "encoder offset between the two servos, ticks", "heat of the hotter servo / rating",
+                  refs=[{"y": single_heat, "label": f"one servo {single_heat:.2f}"}], x_fmt="{:.0f}", y_fmt="{:.2f}")
 
 
 def pick_fig(s6: dict) -> str:
@@ -214,6 +226,19 @@ def main() -> None:
     nice = {"single": "one servo", "same_goal": "same goal", "follower": "follower"}
     rows3m = [[nice[r["setup"]["strategy"]], "" if r["setup"]["strategy"] == "single" else f"{r['setup']['delta_ticks']:.0f}", f"{r['max_err_deg']:.2f}°", f"{r['tau_a']:.2f}", f"{r['tau_b']:.2f}"] for r in s3["moves"]]
 
+    # study 3, the servo's stiffness: same goal against how softly the loop holds its goal
+    st = s3["stiffness"]
+    tick_deg = math.degrees(ma.TICK_RAD)
+    def worst(kp, lim):
+        return max(x["heat_max"] for r in st if r["kp"] == kp for x in r["same_goal"] if abs(x["delta_ticks"]) <= lim)
+    def sag(kp):
+        return next(r["sag_deg"] for r in st if r["kp"] == kp)
+    kps = sorted({r["kp"] for r in st})
+    soft = max(kp for kp in kps if worst(kp, 4) < s_single["heat_max"])
+    tag = {ma.KP_P32: " (model, P 32)", ma.KP_P16: " (model, P 16)"}
+    rows3s = [[f"{kp:.0f}{tag.get(kp, '')}", f"{sag(kp):.2f}° · {sag(kp) / tick_deg:.1f} ticks", f"{worst(kp, 0):.2f}",
+               f"{worst(kp, 4):.2f}", f"{worst(kp, 8):.2f}"] for kp in kps]
+
     # robustness across all same-goal setups: how often is the hotter servo worse than one servo alone?
     agg = []
     for case in ("pick_low + MOSS can", "far pick + glass bottle", "clear (light load)"):
@@ -245,14 +270,14 @@ def main() -> None:
 
     verdict = f"""
 <div class="verdict">
-<p><b>Short answer, for the litter MOSS is built for (its 20 g reference can): the shoulder is strong enough, and the cycle as written stays cool. Its one weak moment is holding the arm still at the pick, and that load is the arm's own weight, not the litter. The cheapest fix is where the arm picks. After that, a spring. A second servo helps only if the two share the load, and synced the usual way, by sending both servos the same goal, they don't.</b></p>
+<p><b>Short answer, for the litter MOSS is built for (its 20 g reference can): the shoulder is strong enough, and the cycle as written stays cool. Its one weak moment is holding the arm still at the pick, and that load is the arm's own weight, not the litter. The cheapest fix is where the arm picks. After that, a spring. A second servo helps only if the two share the load. Sent the same goal, as RoArm's firmware does it, they share if the servo holds its goal softly and fight if it holds it stiffly, and one reading on the arm tells which.</b></p>
 <ol>
 <li><b>The litter barely counts.</b> MOSS's own test object (<code>scene.xml</code>: 66 × 115 mm, 20 g) adds {can_adds:.2f} N·m at the pick. Over a whole cycle the shoulder peaks at {max(r['joints']['shoulder_lift']['peak_of_stall'] for r in can_cycles)*100:.0f}% of stall and averages {max(r['joints']['shoulder_lift']['mean_heat'] for r in can_cycles):.2f}× its continuous rating. The elbow stays under its rating the whole time.</li>
 <li><b>The weak moment is waiting at the pick.</b> MOSS picks every object at one pose (pick_low), where the shoulder holds {hold_can:.2f} N·m, {ma.heat_ratio(hold_can):.2f}× its continuous rating, with the can or without it. Today the cycle stays above the rating there for about 3 s. A wrist-camera check before the grasp (not built yet, per <code>docs/litter.md</code>) or a re-grasp would add time there. Issue #2's test, a can held at full reach for a minute, is {ma.heat_ratio(hold_reach):.1f}× the rating. It can pass without drift while the servo heats, so log the temperature.</li>
 <li><b>The cheapest fix is where the arm picks.</b> The arm sits on top of the rover behind its nose, so today's pick is a stretched reach {s6['pick_low_x'] - s6['track_front_x']:.2f} m past the tracks' front end. Picking {(s6['pick_low_x'] - near['x'])*100:.0f} cm closer (x {near['x']:.2f} m instead of {s6['pick_low_x']:.3f} m) brings the shoulder from {s6['pick_low_heat']['shoulder']:.2f}× to {near['best_shoulder']:.2f}×. That is a change to the pick pose and <code>MOSS_PICK_XY_M</code>, not to the hardware. At a given point, the pose matters too: at x {mixed['x']:.2f} m the reach table's poses run the shoulder anywhere from {mixed['best_shoulder']:.2f}× to over {mixed['median_shoulder']:.1f}×. Its tie-break picks the pose nearest <code>pick_low</code>, not the lightest.</li>
-<li><b>A second servo with the same goal mostly idles or fights.</b> Each STS3215 reaches full torque about 2 ticks (0.17°) off its goal. Behind a printed bracket the second servo takes only {sg[[r['setup']['delta_ticks'] for r in sg].index(0)]['share_b']*100:.0f}% of the load even when perfectly calibrated. At a 4-tick encoder offset the two push against each other, and the hotter one runs at {[r for r in sg if r['setup']['delta_ticks'] == 4][0]['heat_max']:.1f}× its rating, worse than one servo alone ({s_single['heat_max']:.2f}×). No single calibration fixes this: to share evenly, B must twist its bracket by half the load, so the right offset changes with every pose. A stiffer bracket makes it worse.</li>
-<li><b>What does work is a follower.</b> Servo A holds position. Servo B runs open-loop PWM (STS mode 2) and copies A's <code>Present_Load</code> over the bus. That gives an even 50/50 split at any encoder offset, so at the pick each servo runs at {max(r['heat_max'] for r in fo):.2f}×. B must follow slowly, with a time constant of about 0.1 s (at 50 Hz, 20–30% of the gap per update), or it rings against A's loop.</li>
-<li><b>For a load that is all arm weight, a spring is the better fit.</b> A gravity-balance spring of {sp['A_nm']:.2f} N·m peak takes the pick pose to {ma.heat_ratio(sp_low['spring']):.2f}× (follower pair: {ma.heat_ratio(sp_low['dual']):.2f}× each), with nothing to sync. Two servos only pull ahead with heavier litter. MOSS's detector also picks glass: with a 250 g bottle at the pick, one servo is at {ma.heat_ratio(sp_glass['single']):.1f}×, the spring {ma.heat_ratio(sp_glass['spring']):.2f}×, and the follower pair {ma.heat_ratio(sp_glass['dual']):.2f}×. Tipping is no risk at these weights; it takes {s4w['m_tip_kg']:.1f} kg held stretched out to the side.</li>
+<li><b>Whether the same goal works depends on how stiffly the servo holds its goal.</b> The model's servo (Menagerie's, full torque about 2 ticks off the goal) gives a poor split: behind a printed bracket the second servo takes only {sg[[r['setup']['delta_ticks'] for r in sg].index(0)]['share_b']*100:.0f}% of the load when perfectly calibrated, and at a 4-tick encoder offset the two push against each other, the hotter one at {[r for r in sg if r['setup']['delta_ticks'] == 4][0]['heat_max']:.1f}× its rating against {s_single['heat_max']:.2f}× for one servo. The bench note in issue #2 says the real loop is much softer near its goal: under load, a goal a few ticks away does not move the arm. With a servo soft enough that one alone sags {sag(soft):.1f}° at the pick, same goal with RoArm's zero at boot beats one servo at any offset up to ±4 ticks (hotter servo {worst(soft, 4):.2f}× at worst), and the softer the servo, the lower that worst case ({worst(50.0, 4):.2f}× at a {sag(50.0):.1f}° sag). One reading on today's arm decides it: one servo at pick_low, <code>Present_Position</code> minus the goal. About {sag(soft) / tick_deg:.0f} ticks or more, and same goal will share; 1–2 ticks, and it fights.</li>
+<li><b>If the loop is stiff, a follower shares evenly.</b> Servo A holds position. Servo B runs open-loop PWM (STS mode 2) and copies A's <code>Present_Load</code> over the bus. That gives an even 50/50 split at any encoder offset, so at the pick each servo runs at {max(r['heat_max'] for r in fo):.2f}×. B must follow slowly, with a time constant of about 0.1 s (at 50 Hz, 20–30% of the gap per update), or it rings against A's loop.</li>
+<li><b>For a load that is all arm weight, a spring is the better fit.</b> A gravity-balance spring of {sp['A_nm']:.2f} N·m peak takes the pick pose to {ma.heat_ratio(sp_low['spring']):.2f}× (two servos sharing evenly: {ma.heat_ratio(sp_low['dual']):.2f}× each), with nothing to sync. Two servos only pull ahead with heavier litter. MOSS's detector also picks glass: with a 250 g bottle at the pick, one servo is at {ma.heat_ratio(sp_glass['single']):.1f}×, the spring {ma.heat_ratio(sp_glass['spring']):.2f}×, and an even pair {ma.heat_ratio(sp_glass['dual']):.2f}× each. Tipping is no risk at these weights; it takes {s4w['m_tip_kg']:.1f} kg held stretched out to the side.</li>
 </ol>
 </div>"""
 
@@ -284,12 +309,17 @@ def main() -> None:
 <p class="note">What the model cannot say: whether the nose camera still sees the object that close, and whether the last, open-loop part of the approach lands it there. Both are checks on the robot.</p>
 
 <h2>4 · Two servos on one shaft: share or fight?</h2>
-<p>Servo B sits on the far side of the upper arm, mirrored, and reaches the joint through its horn and the printed bracket (a torsion spring, optionally with play). Each STS3215 closes its own position loop on its own <i>output</i> encoder. Gearbox backlash sits inside that loop and hardly matters. What matters is how far the two encoders disagree about the same shaft angle, plus the bracket's flex. Zeroing B against A at one angle (what RoArm-M2's firmware does) removes the disagreement at that angle only.</p>
+<p>Servo B sits on the far side of the upper arm, mirrored, and reaches the joint through its horn and the printed bracket (a torsion spring, optionally with play). Each STS3215 closes its own position loop on its own <i>output</i> encoder. Gearbox backlash sits inside that loop and hardly matters. What matters is how far the two encoders disagree about the same shaft angle, plus the bracket's flex. Zeroing B against A at one angle (what RoArm-M2's and M3's firmware does at every boot) removes the disagreement at that angle only. How much a leftover offset matters depends on how stiffly each servo holds its goal, which the model takes from Menagerie and the last part of this section sweeps.</p>
 {ff}
 {table(["strategy", "offset, ticks", "τ A, N·m", "τ B, N·m", "fight, N·m", "hotter servo heat", "copper loss, W"], rows3)}
-<p class="note">Printed bracket (200 N·m/rad), no play, P = 32, at MOSS's pick pose with its 20 g can. Negative τ holds the arm up. A <i>fight</i> is where the two push in opposite directions: both get hot and the arm gains nothing.</p>
-<p>Across every same-goal variant tried (offset −8…+8 ticks, bracket 50 / 200 / 1000 N·m/rad, play 0 / 0.3°, firmware P 32 / 16):</p>
+<p class="note">Printed bracket (200 N·m/rad), no play, the model's stiffness (P = 32), at MOSS's pick pose with its 20 g can. Negative τ holds the arm up. A <i>fight</i> is where the two push in opposite directions: both get hot and the arm gains nothing.</p>
+<p>Across every same-goal variant tried at the model's stiffness (offset −8…+8 ticks, bracket 50 / 200 / 1000 N·m/rad, play 0 / 0.3°, firmware P 32 / 16):</p>
 {table(["case", "one servo heat", "same goal, median", "same goal worse than one servo", "follower, worst"], agg)}
+<h3>How stiffly the servo holds its goal</h3>
+<p>The model's 998 N·m/rad is Menagerie's value, not a measurement. The bench note in issue #2 (under load, a goal a few ticks away does not move the arm) rules it out: at that stiffness a few ticks are worth more than the servo's full torque. So the same goal again, with servos that hold their goal less stiffly. The softer the servo, the more one alone sags under the arm, which is what makes it measurable.</p>
+{soft_fig(s3, s_single['heat_max'])}
+{table(["servo stiffness, N·m/rad", "one servo sags at the pick", "same goal, offset 0", "offset up to ±4 ticks", "up to ±8 ticks"], rows3s)}
+<p class="note">Heat of the hotter servo, worst over the three brackets (50 / 200 / 1000 N·m/rad), no play, MOSS's pick pose with its can. One servo: {s_single['heat_max']:.2f}×. A soft loop forgives a stiff bracket; a stiff loop does not. The loop here is linear: a deadband or gear stiction, which the bench note may also point at, would make a small offset leave one servo idle rather than fight.</p>
 <h3>The follower's one setting</h3>
 <p>B's PWM duty moves towards A's measured duty by a fraction α per bus update, one update late. Too eager and it rings against A's own loop:</p>
 {table(["bus rate", "α", "B's share", "ripple, N·m", ""], rows3f, num_from=2)}
@@ -298,8 +328,8 @@ def main() -> None:
 
 <h2>5 · Weak spots</h2>
 <ul class="tight">
-<li><b>The sync is the design.</b> "Software sync both servos" usually means sending both the same goal, and that is the mode that fights. Before any payload test, run both servos at a rest pose with nothing in the gripper and read <code>Present_Load</code> on both. If the signs are opposite, they are fighting.</li>
-<li><b>Stiff bracket + same goal = heat.</b> If the printed prototype couples B rigidly and both servos get the same goal, expect the two to fight at some poses. Both servos' <code>Present_Load</code> will show it, with opposite signs.</li>
+<li><b>The sync is the design.</b> The same goal the way RoArm does it (zero at boot, P 16, mirrored goals in one packet with the same speed and acceleration, the same torque limit) shares if the loop is soft and fights if it is stiff. Before any payload test, run both servos at a rest pose with nothing in the gripper and read <code>Present_Load</code> on both. If the signs are opposite, they are fighting.</li>
+<li><b>Stiff loop + stiff bracket = heat.</b> The fight grows with the stiffness of both the servo's loop and the bracket. With a stiff loop, a printed prototype that couples B rigidly will fight at some poses, and both servos' <code>Present_Load</code> will show it, with opposite signs.</li>
 <li><b>The elbow, with heavier litter.</b> With MOSS's can the elbow never passes its rating. With a 250 g glass bottle it is over for {glass1['joints']['elbow_flex']['s_over_rated']:.0f} s of each cycle (mean {glass1['joints']['elbow_flex']['mean_heat']:.2f}×, so still sustainable). Only with full containers, which are beyond what MOSS is built to pick, does it reach 13–20 s per cycle. A stronger shoulder does nothing for it.</li>
 <li><b>The pack voltage.</b> The servos run straight off the 3S pack: 12.6 V full, about 10.5 V under load at the end. Stall torque scales with voltage, so the 30 kg·cm figure is closer to 25 kg·cm in use and about 23 at a low pack. The continuous rating (heat) does not change.</li>
 <li><b>The follower's failure mode.</b> In PWM mode, B keeps its last duty if the bus or the host stops. Cap B's torque limit (register 48), zero it when A's reading goes stale, and clamp it whenever A is at an end stop. Pinch force near the floor also doubles.</li>
@@ -310,7 +340,8 @@ def main() -> None:
 
 <h2>6 · What to measure on the bench</h2>
 <ol>
-<li><b>Encoder offset across the travel</b> (5 min, no power to the motors): couple both servos to the joint, torque off on both, swing the arm by hand end to end, and log both servos' <code>Present_Position</code>. Offset = A − mirror(B). This number decides how hard same-goal fights. Even at zero, same-goal shares poorly through a printed bracket, so the follower is the recommendation either way.</li>
+<li><b>How stiffly one servo holds</b> (2 min, today's arm, one servo): at pick_low, read the shoulder's <code>Present_Position</code> minus its goal, arriving from above as the cycle does; then step the goal by 2, 4 and 8 ticks and note when the arm moves. About {sag(soft) / tick_deg:.0f} ticks of sag or more: same goal will share. 1–2 ticks: expect a fight, and use the follower.</li>
+<li><b>Encoder offset across the travel</b> (5 min, no power to the motors): couple both servos to the joint, torque off on both, swing the arm by hand end to end, and log both servos' <code>Present_Position</code>. Offset = A − mirror(B). With a soft loop a few ticks are harmless; with a stiff one this number decides how hard same goal fights.</li>
 <li><b>Idle fight</b>: torque on, the arm resting in the drive pose. Log <code>Present_Load</code> and <code>Present_Current</code> on both for 30 s.</li>
 <li><b>Issue #2's own test</b> with MOSS's can, held for 60 s at the pick pose (pick_low) as well as at full reach. Log <code>Present_Temperature</code> and load on both servos, and compare one servo, two with the same goal, two with the follower, and one with a spring. Report the temperature rise per minute, not just "it held".</li>
 <li><b>The pick point</b>: move <code>MOSS_PICK_XY_M</code> and the pick pose a few cm closer, then check that the nose camera still sees the object and the approach lands it there. Log the shoulder's <code>Present_Load</code> at both points.</li>
@@ -321,7 +352,7 @@ def main() -> None:
 <ul class="tight note">
 <li>Arm masses: MuJoCo Menagerie SO101 plus the R92 gripper, scaled to the weighed 768 g (15 g added at the hand). Rover body 4.0 kg (the model's estimate).</li>
 <li>Litter: MOSS's own can from <code>scene.xml</code> (20 g), an empty 0.33 l glass bottle (250 g, the detector's "glass" class), and full containers marked "stress", which MOSS isn't designed to pick. The object sits at the model's tcp. MOSS holds a standing can a few cm farther along the gripper. At the pick the gripper points down, so this barely moves the lever arm: for 20 g it is under 0.01 N·m at any pose.</li>
-<li>Servo: Feetech figures (stall 30 kg·cm, continuous 10 kg·cm, 2.7 A stall at 12 V); position stiffness 998 N·m/rad from the model (firmware P = 32), 499 for P = 16. The thermal threshold is the continuous rating, not a measured temperature curve. No thermal time constant is claimed.</li>
+<li>Servo: Feetech figures (stall 30 kg·cm, continuous 10 kg·cm, 2.7 A stall at 12 V); position stiffness 998 N·m/rad from the model (firmware P = 32), 499 for P = 16, and a sweep from 25 to 998 because the real loop is softer near its goal (issue #2). The loop is linear, with no deadband or stiction. The holding torques and heat do not depend on it; only the split between two servos does. The thermal threshold is the continuous rating, not a measured temperature curve. No thermal time constant is claimed.</li>
 <li>Two servos: B's path to the joint is a torsion spring of 50–1000 N·m/rad with 0–0.3° play. Real brackets need measuring. Encoder errors that vary with angle enter as the offset sweep. The follower is modelled with PWM duty proportional to torque at low speed, one bus sample of delay, and no read noise.</li>
 <li>Contacts are off in the dynamic studies: they measure what the servos must give, not grasp success. The base is pinned; tipping is static.</li>
 <li>Spring: an ideal zero-free-length balancer (torque A·sin(θ − φ)), fitted for the lowest worst-case shoulder load over MOSS's poses. A real spring and its cable or linkage would get somewhat less.</li>
