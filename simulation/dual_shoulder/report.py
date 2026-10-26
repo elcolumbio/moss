@@ -125,6 +125,19 @@ def fight_fig(s3: dict) -> tuple[str, dict]:
     return fig, {"single": single, "follower_heat": fol_heat}
 
 
+def pick_fig(s6: dict) -> str:
+    b = s6["bins"]
+    x0 = s6["pick_low_x"]
+    return figure("f-pick", "Shoulder heat against where the arm picks, straight ahead",
+                  "Every floor pose of MOSS's reach table within 5 cm of the pick line, posed in the R92 model with the 20 g can. x in the model frame: the tracks end at 0.17 m.",
+                  [{"name": "Shoulder, best pose at that point", "var": "--s1", "pts": [(r["x"], r["best_shoulder"]) for r in b], "label": "shoulder, best"},
+                   {"name": "Shoulder, median pose", "var": "--s2", "pts": [(r["x"], r["median_shoulder"]) for r in b], "label": "shoulder, median"},
+                   {"name": "Elbow (best pose)", "var": "--s4", "pts": [(r["x"], r["best_elbow"]) for r in b], "label": "elbow"}],
+                  "tool x, m (rover frame)", "heat / continuous rating",
+                  refs=[{"y": 1.0, "label": "rating"}], y_range=(0, 1.5), x_fmt="{:.2f}", y_fmt="{:.2f}",
+                  bands=[{"x0": x0 - 0.0015, "x1": x0 + 0.0015, "label": "today"}])
+
+
 CSS = """
 :root{color-scheme:light;--bg:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;
 --line:rgba(11,11,11,.10);--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#6250d6;--band:rgba(11,11,11,.035);--accent:#2a78d6}
@@ -158,7 +171,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}tr:last-child t
 
 
 def main() -> None:
-    s1, s2, s3, s4, s5 = (load(n) for n in ("s1_torque_budget", "s2_cycle", "s3_two_servos", "s4_tipping", "s5_spring"))
+    s1, s2, s3, s4, s5, s6 = (load(n) for n in ("s1_torque_budget", "s2_cycle", "s3_two_servos", "s4_tipping", "s5_spring", "s6_pick_point"))
+    near = min((r for r in s6["bins"] if r["x"] < s6["pick_low_x"] - 0.03), key=lambda r: abs(r["x"] - (s6["pick_low_x"] - 0.055)))
+    mixed = max(s6["bins"], key=lambda r: r["median_shoulder"] - r["best_shoulder"])
     pf, cross = payload_fig(s5)
     ff, fight = fight_fig(s3)
 
@@ -230,10 +245,11 @@ def main() -> None:
 
     verdict = f"""
 <div class="verdict">
-<p><b>Short answer, for the litter MOSS is built for (its 20 g reference can): the shoulder is strong enough, and the cycle as written stays cool. Its one weak moment is holding the arm still at the pick, and that load is the arm's own weight, not the litter. A second servo helps only if the two share the load. Synced the usual way, by sending both servos the same goal, they don't. A spring fixes this exact load more simply.</b></p>
+<p><b>Short answer, for the litter MOSS is built for (its 20 g reference can): the shoulder is strong enough, and the cycle as written stays cool. Its one weak moment is holding the arm still at the pick, and that load is the arm's own weight, not the litter. The cheapest fix is where the arm picks. After that, a spring. A second servo helps only if the two share the load, and synced the usual way, by sending both servos the same goal, they don't.</b></p>
 <ol>
 <li><b>The litter barely counts.</b> MOSS's own test object (<code>scene.xml</code>: 66 × 115 mm, 20 g) adds {can_adds:.2f} N·m at the pick. Over a whole cycle the shoulder peaks at {max(r['joints']['shoulder_lift']['peak_of_stall'] for r in can_cycles)*100:.0f}% of stall and averages {max(r['joints']['shoulder_lift']['mean_heat'] for r in can_cycles):.2f}× its continuous rating. The elbow stays under its rating the whole time.</li>
 <li><b>The weak moment is waiting at the pick.</b> MOSS picks every object at one pose (pick_low), where the shoulder holds {hold_can:.2f} N·m, {ma.heat_ratio(hold_can):.2f}× its continuous rating, with the can or without it. Today the cycle stays above the rating there for about 3 s. A wrist-camera check before the grasp (not built yet, per <code>docs/litter.md</code>) or a re-grasp would add time there. Issue #2's test, a can held at full reach for a minute, is {ma.heat_ratio(hold_reach):.1f}× the rating. It can pass without drift while the servo heats, so log the temperature.</li>
+<li><b>The cheapest fix is where the arm picks.</b> The arm sits on top of the rover behind its nose, so today's pick is a stretched reach {s6['pick_low_x'] - s6['track_front_x']:.2f} m past the tracks' front end. Picking {(s6['pick_low_x'] - near['x'])*100:.0f} cm closer (x {near['x']:.2f} m instead of {s6['pick_low_x']:.3f} m) brings the shoulder from {s6['pick_low_heat']['shoulder']:.2f}× to {near['best_shoulder']:.2f}×. That is a change to the pick pose and <code>MOSS_PICK_XY_M</code>, not to the hardware. At a given point, the pose matters too: at x {mixed['x']:.2f} m the reach table's poses run the shoulder anywhere from {mixed['best_shoulder']:.2f}× to over {mixed['median_shoulder']:.1f}×. Its tie-break picks the pose nearest <code>pick_low</code>, not the lightest.</li>
 <li><b>A second servo with the same goal mostly idles or fights.</b> Each STS3215 reaches full torque about 2 ticks (0.17°) off its goal. Behind a printed bracket the second servo takes only {sg[[r['setup']['delta_ticks'] for r in sg].index(0)]['share_b']*100:.0f}% of the load even when perfectly calibrated. At a 4-tick encoder offset the two push against each other, and the hotter one runs at {[r for r in sg if r['setup']['delta_ticks'] == 4][0]['heat_max']:.1f}× its rating, worse than one servo alone ({s_single['heat_max']:.2f}×). No single calibration fixes this: to share evenly, B must twist its bracket by half the load, so the right offset changes with every pose. A stiffer bracket makes it worse.</li>
 <li><b>What does work is a follower.</b> Servo A holds position. Servo B runs open-loop PWM (STS mode 2) and copies A's <code>Present_Load</code> over the bus. That gives an even 50/50 split at any encoder offset, so at the pick each servo runs at {max(r['heat_max'] for r in fo):.2f}×. B must follow slowly, with a time constant of about 0.1 s (at 50 Hz, 20–30% of the gap per update), or it rings against A's loop.</li>
 <li><b>For a load that is all arm weight, a spring is the better fit.</b> A gravity-balance spring of {sp['A_nm']:.2f} N·m peak takes the pick pose to {ma.heat_ratio(sp_low['spring']):.2f}× (follower pair: {ma.heat_ratio(sp_low['dual']):.2f}× each), with nothing to sync. Two servos only pull ahead with heavier litter. MOSS's detector also picks glass: with a 250 g bottle at the pick, one servo is at {ma.heat_ratio(sp_glass['single']):.1f}×, the spring {ma.heat_ratio(sp_glass['spring']):.2f}×, and the follower pair {ma.heat_ratio(sp_glass['dual']):.2f}×. Tipping is no risk at these weights; it takes {s4w['m_tip_kg']:.1f} kg held stretched out to the side.</li>
@@ -260,7 +276,14 @@ def main() -> None:
 {table(["pick", "object", "hover", "servos", "peak/stall", "heat", "s over", "sag", "elbow heat", "elbow s over"], rows2, num_from=4)}
 <p class="note">Shoulder columns first (peak torque over stall, mean heat over the cycle, time over the rating, worst sag), then the elbow.</p>
 
-<h2>3 · Two servos on one shaft: share or fight?</h2>
+<h2>3 · The cheapest fix: where the arm picks</h2>
+<p>The mission drives the rover until the object sits at one pick point; the arm never reaches for it. That point decides how far out the arm stretches. Below: every floor pose of the reach table straight ahead, posed in the R92 model with the can.</p>
+{pick_fig(s6)}
+{table(["tool x, m", "past the tracks, m", "poses", "shoulder, best pose", "shoulder, median", "elbow, best pose"],
+       [[f"{r['x']:.2f}", f"{r['ahead_of_tracks_m']:.2f}", str(r['n']), f"{r['best_shoulder']:.2f}", f"{r['median_shoulder']:.2f}", f"{r['best_elbow']:.2f}"] for r in s6['bins']])}
+<p class="note">What the model cannot say: whether the nose camera still sees the object that close, and whether the last, open-loop part of the approach lands it there. Both are checks on the robot.</p>
+
+<h2>4 · Two servos on one shaft: share or fight?</h2>
 <p>Servo B sits on the far side of the upper arm, mirrored, and reaches the joint through its horn and the printed bracket (a torsion spring, optionally with play). Each STS3215 closes its own position loop on its own <i>output</i> encoder. Gearbox backlash sits inside that loop and hardly matters. What matters is how far the two encoders disagree about the same shaft angle, plus the bracket's flex. Zeroing B against A at one angle (what RoArm-M2's firmware does) removes the disagreement at that angle only.</p>
 {ff}
 {table(["strategy", "offset, ticks", "τ A, N·m", "τ B, N·m", "fight, N·m", "hotter servo heat", "copper loss, W"], rows3)}
@@ -273,7 +296,7 @@ def main() -> None:
 <p>The lift itself (pick_low → lift with MOSS's can, 2.6 s):</p>
 {table(["strategy", "offset", "worst tracking error", "end τ A", "end τ B"], rows3m)}
 
-<h2>4 · Weak spots</h2>
+<h2>5 · Weak spots</h2>
 <ul class="tight">
 <li><b>The sync is the design.</b> "Software sync both servos" usually means sending both the same goal, and that is the mode that fights. Before any payload test, run both servos at a rest pose with nothing in the gripper and read <code>Present_Load</code> on both. If the signs are opposite, they are fighting.</li>
 <li><b>Stiff bracket + same goal = heat.</b> If the printed prototype couples B rigidly and both servos get the same goal, expect the two to fight at some poses. Both servos' <code>Present_Load</code> will show it, with opposite signs.</li>
@@ -285,11 +308,12 @@ def main() -> None:
 <li><b>A model note for the R92 sim:</b> the shipped XML's shoulder range (±100°) stops short of MOSS's drive pose (−104.4°, ticks 860, the calibrated end stop). <code>moss_dimos</code> widens the ranges when it writes its own sim scene; the plain XML does not.</li>
 </ul>
 
-<h2>5 · What to measure on the bench</h2>
+<h2>6 · What to measure on the bench</h2>
 <ol>
 <li><b>Encoder offset across the travel</b> (5 min, no power to the motors): couple both servos to the joint, torque off on both, swing the arm by hand end to end, and log both servos' <code>Present_Position</code>. Offset = A − mirror(B). This number decides how hard same-goal fights. Even at zero, same-goal shares poorly through a printed bracket, so the follower is the recommendation either way.</li>
 <li><b>Idle fight</b>: torque on, the arm resting in the drive pose. Log <code>Present_Load</code> and <code>Present_Current</code> on both for 30 s.</li>
 <li><b>Issue #2's own test</b> with MOSS's can, held for 60 s at the pick pose (pick_low) as well as at full reach. Log <code>Present_Temperature</code> and load on both servos, and compare one servo, two with the same goal, two with the follower, and one with a spring. Report the temperature rise per minute, not just "it held".</li>
+<li><b>The pick point</b>: move <code>MOSS_PICK_XY_M</code> and the pick pose a few cm closer, then check that the nose camera still sees the object and the approach lands it there. Log the shoulder's <code>Present_Load</code> at both points.</li>
 <li><b>Payload lift</b> last. It only measures stall, which this arm never comes near with litter.</li>
 </ol>
 

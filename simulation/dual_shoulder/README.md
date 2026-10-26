@@ -29,7 +29,16 @@ Heat is (torque / 0.98 N·m)², the servo's continuous rating (10 kg·cm); stall
    there today; a wrist-camera check before the grasp, or a re-grasp, adds time
    exactly there. Issue #2's test (a can at full reach for a minute) is 2.1× the
    rating: it can pass without drift while the servo heats.
-3. **Two servos given the same goal mostly idle or fight.** Each STS3215 reaches
+3. **The cheapest fix is where the arm picks.** The arm sits on top of the
+   rover behind its nose, so today's pick is a stretched reach 0.18 m past the
+   tracks' front end (tool at x 0.346 m). The mission drives the object to one
+   pick point, so moving it closer is a config change (`MOSS_PICK_XY_M` and the
+   pick pose): at x 0.29 m the shoulder runs at 0.46× instead of 0.89×. The pose
+   matters too: at x 0.31 m the reach table's poses range from 0.46× to 1.19×,
+   and its tie-break picks the pose nearest `pick_low`, not the lightest. Whether
+   the nose camera still sees the object that close is a check on the robot
+   (`s6_pick_point`).
+4. **Two servos given the same goal mostly idle or fight.** Each STS3215 reaches
    full torque about 2 ticks (0.17°) off its goal (firmware P = 32). Through a
    printed bracket, the second servo takes 14 % of the load when perfectly
    calibrated; 4 ticks of encoder offset make them push against each other, and
@@ -38,16 +47,16 @@ Heat is (torque / 0.98 N·m)², the servo's continuous rating (10 kg·cm); stall
    pose and payload, and a stiffer bracket makes it worse. Across 84 variants
    (offset −8…+8 ticks, bracket 50, 200 or 1000 N·m/rad, play 0 or 0.3°, P 32 or 16), same
    goal was hotter than one servo in 47 at the pick pose.
-4. **A follower shares evenly.** Servo A holds position; servo B runs open-loop
+5. **A follower shares evenly.** Servo A holds position; servo B runs open-loop
    PWM (mode 2) and copies A's `Present_Load` over the bus. That splits 50/50 at
    any offset: 0.22× each at the pick. B has to follow with a time constant of
    about 0.1 s (at 50 Hz, 20-30 % of the gap per update); faster, it rings
    against A's loop.
-5. **For a load that is all arm weight, a spring fits better.** A gravity-balance
+6. **For a load that is all arm weight, a spring fits better.** A gravity-balance
    spring of 0.66 N·m peak (zero free length, torque A·sin(θ − φ)) brings the
    pick pose to 0.08×, with nothing to sync. With a 250 g glass bottle at the
    pick: one servo 2.0×, spring 0.57×, follower pair 0.50× each.
-6. **Tipping is not a risk** at these weights: 1.09 kg held stretched out to the
+7. **Tipping is not a risk** at these weights: 1.09 kg held stretched out to the
    side before the rover tips on flat ground.
 
 A model note: the XML's shoulder range (±100°) stops short of the drive pose
@@ -62,6 +71,8 @@ when it writes its own scene; the XML alone does not.
    `Present_Current` on both for 30 s. Opposite signs mean they fight.
 3. Issue #2's hold with the can, 60 s at `pick_low` and at full reach, logging
    `Present_Temperature` on both: one servo, same goal, follower, spring.
+4. The pick point a few cm closer: does the nose camera still see the object,
+   and does the approach land it there?
 
 ## Run
 
@@ -80,6 +91,7 @@ make all        # about 15 minutes; writes out/*.json and out/report.html
 | `s3_two_servos` | Two STS3215 on one shaft: same goal vs follower, encoder offset × bracket stiffness × play × P; the follower's gain and bus rate |
 | `s4_tipping` | Least payload that tips the rover, and the slope margin |
 | `s5_spring` | A gravity-balance spring instead of (or with) a second servo |
+| `s6_pick_point` | Shoulder load against where the arm picks, straight ahead, from the reach table |
 
 `moss_arm.py` holds the shared model edits (rover pinned, arm scaled to 768 g,
 payload at the tcp) and the servo figures. Contacts are off in the dynamic
